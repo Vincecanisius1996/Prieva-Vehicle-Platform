@@ -172,6 +172,21 @@
   .infobar{display:flex;align-items:center;gap:12px;padding:11px 15px;border-radius:10px;font-size:13.5px;margin-top:4px;background:var(--blue-soft);border:1px solid #c5dcef;color:#215883}
   .infobar .ai{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;flex:none;font-weight:800;background:#cfe1f2;color:var(--blue)}
   .muted{color:var(--muted)}
+  .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:12px}
+  .ptile{position:relative;width:100%;aspect-ratio:4/3;border:2px dashed #cdd8e2;border-radius:10px;display:grid;place-items:center;cursor:pointer;background:#f7fafd;overflow:hidden;transition:.15s}
+  .ptile:hover{border-color:var(--blue);background:#eef5fb}
+  .ptile.has{border-style:solid;border-color:var(--green);background:#fff}
+  .ptile img{width:100%;height:100%;object-fit:cover}
+  .ptile .pcam{font-size:22px;opacity:.55}
+  .ptile .padd{position:absolute;bottom:6px;font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+  .ptile .pcheck{position:absolute;top:5px;left:5px;width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:800;box-shadow:0 1px 4px rgba(16,40,64,.3)}
+  .ptile .premove{position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:rgba(192,57,43,.94);color:#fff;border:0;font-size:15px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
+  .plabel{font-size:12px;font-weight:650;margin-top:6px;line-height:1.25}
+  .preq{font-size:10px;font-weight:700;color:var(--amber);background:var(--amber-soft);padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.2px}
+  .popt{font-size:10px;font-weight:700;color:var(--slate);background:var(--slate-soft);padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.2px}
+  .pgroup-h{font-size:11.5px;font-weight:750;color:var(--slate);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 9px;display:flex;align-items:center;gap:9px}
+  .pgroup-h .gc{font-size:11px;background:var(--slate-soft);color:var(--slate);padding:1px 8px;border-radius:999px;font-weight:700}
+  .pinstr{font-size:11px;color:var(--muted);line-height:1.3;margin-top:2px}
   @media(max-width:900px){.kpis{grid-template-columns:1fr 1fr}.cols,.det-grid{grid-template-columns:1fr}nav.main{display:none}.hero{width:100%}}
 </style>
 </head>
@@ -223,6 +238,30 @@ const CATS=["RDW Foto's","Papieren Foto's","BPM Taxatie","S-TAX","Importeren","R
 const ACTIEVERB={"RDW Foto's":"RDW-foto's maken","Papieren Foto's":"Papieren-foto's maken","Papieren uploaden":"Papieren uploaden","S-TAX: auto klaar ter taxatie":"S-TAX: auto klaar ter taxatie melden","BPM-rapport geüpload door S-TAX":"BPM-rapport ophalen bij S-TAX","RDW Importeer":"RDW importeren","RDW Goedkeuring":"RDW-goedkeuring afwachten","BPM-taxatierapport versturen":"BPM-taxatierapport versturen","BPM-rapport maken":"BPM-rapport maken","Versturen":"BPM-rapport versturen","Wachten op BIN":"Wachten op BIN","BIN":"BIN verwerken","Fotograaf":"Fotograaf inplannen","Mobilox Online":"Advertentie online zetten (Mobilox)"};
 const PEOPLE = ["Leonie","Sjoerd","Vince","Floris"];
 const PKEY = {Leonie:"leonie",Sjoerd:"sjoerd",Vince:"vince",Floris:"floris"};
+/* RDW-foto's & documentatie (RDW-keuring), conform Mobilox. req=verplicht */
+const PHOTO_GROUPS = [
+  {group:"Voertuig", step:"RDW Foto's", stepIdx:0, items:[
+    {key:"v_linksvoor",label:"Voertuig linksvoor",req:true,instr:"Hele auto schuin van linksvoor"},
+    {key:"v_rechtsachter",label:"Voertuig rechtsachter",req:true,instr:"Hele auto schuin van rechtsachter"},
+    {key:"v_vin",label:"Ingeslagen voertuigidentificatienummer",req:true,instr:"Ingeslagen VIN, scherp leesbaar"},
+    {key:"v_constructieplaat",label:"Constructieplaat",req:true,instr:"Volledige constructieplaat, leesbaar"},
+    {key:"v_cp2",label:"Constructieplaat 2e fase fabrikant",req:false,instr:"Indien aanwezig"},
+    {key:"v_cp3",label:"Constructieplaat 3e fase fabrikant",req:false,instr:"Indien aanwezig"},
+    {key:"v_teller",label:"Tellerstand",req:true,instr:"Kilometerteller met duidelijke stand"},
+  ]},
+  {group:"Documentatie", step:"Papieren Foto's", stepIdx:1, items:[
+    {key:"d_kb1v",label:"Buitenlands kentekenbewijs deel I — voorkant",req:true,instr:""},
+    {key:"d_kb1a",label:"Buitenlands kentekenbewijs deel I — achterkant",req:true,instr:""},
+    {key:"d_kb2v",label:"Buitenlands kentekenbewijs deel II — voorkant",req:false,instr:""},
+    {key:"d_kb2a",label:"Buitenlands kentekenbewijs deel II — achterkant",req:false,instr:""},
+    {key:"d_cov_v",label:"Certificaat van Overeenstemming — voorkant",req:false,instr:""},
+    {key:"d_cov_a",label:"Certificaat van Overeenstemming — achterkant",req:false,instr:""},
+    {key:"d_apk",label:"Buitenlands APK rapport",req:false,instr:""},
+  ]},
+];
+const PHOTO_ALL = PHOTO_GROUPS.flatMap(g=>g.items);
+const PHOTO_REQ = PHOTO_ALL.filter(p=>p.req);
+const PHOTO_BY_KEY = Object.fromEntries(PHOTO_ALL.map(p=>[p.key,p]));
 const initials = n => n? n.split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase() : "?";
 
 /* ===== Komende auto's — live overgenomen uit Autoboek PRIEVA (tab "Komende Autos"), 12-08-2026 ===== */
@@ -253,7 +292,7 @@ const V = [
   {id:"TB-198-D",vin:"—",kenteken:"TB-198-D",merk:"Volkswagen",model:"Polo",uitv:"6R 1.2 Easyline",kleur:"Wit",brandstof:"Benzine",transm:"Handgeschakeld",reg:"12-04-2010",km:180000,inkoopdatum:"—",lev:"Inruil",importAuto:false,batch:null,note:"Inruil (Marcel Otten)",status:"komende"},
   {id:"X-204-GF",vin:"—",kenteken:"X-204-GF",merk:"Opel",model:"Corsa",uitv:"F 1.2",kleur:"Wit",brandstof:"Benzine",transm:"Handgeschakeld",reg:"18-08-2020",km:60800,inkoopdatum:"—",lev:"Inruil",importAuto:false,batch:null,note:"Inruil (Emily Paul) — telefonisch verkocht",status:"komende"},
 ];
-V.forEach(v=>{v.owner=null; v.klaar=0; v.route=null;});
+V.forEach(v=>{v.owner=null; v.klaar=0; v.route=null; v.photos={};});
 
 /* ===== Helpers ===== */
 const km = n => (n==null?"—":n.toLocaleString("nl-NL")+" km");
@@ -428,6 +467,7 @@ function openVeh(id){
           }).join("")}
           ${v.importAuto&&!v.route?`<div class="muted" style="font-size:12px;padding:8px 2px 0">Kies bij “BPM Taxatie?” JA of NEE om de vervolgstappen te bepalen.</div>`:''}
         </div></div>`:''}
+        ${v.status==='lopende'&&v.importAuto?PHOTO_GROUPS.map(g=>photoCard(v,g)).join(''):''}
         <div class="card"><h3>Specificaties</h3><div class="card-body"><div class="spec-grid">${specs.map(([k,val])=>`<div class="spec"><span class="k">${k}</span><span class="v">${val||'—'}</span></div>`).join("")}</div></div></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:18px">
@@ -461,6 +501,46 @@ function setStep(id,i,checked){const v=V.find(x=>x.id===id); if(!v)return;
   const lbl=stepList(v)[i]?stepList(v)[i].label:'stap';
   pushUndo(`${v.merk} ${v.model} — ${checked?'afgevinkt':'teruggezet'}: ${lbl}`, ()=>{v.klaar=pk;});
   rerender();}
+/* ===== Foto's per stap: Voertuig→RDW Foto's, Documentatie→Papieren Foto's ===== */
+function grpReqCount(v,g){return g.items.filter(p=>p.req&&v.photos[p.key]).length;}
+function grpReqTotal(g){return g.items.filter(p=>p.req).length;}
+function setPhoto(id,key,input){const v=V.find(x=>x.id===id); if(!v||!input.files||!input.files[0])return;
+  const f=input.files[0]; const r=new FileReader();
+  r.onload=e=>{const prev=v.photos[key]; v.photos[key]=e.target.result;
+    pushUndo(`${v.merk} ${v.model} — foto toegevoegd: ${PHOTO_BY_KEY[key].label}`, ()=>{ if(prev)v.photos[key]=prev; else delete v.photos[key]; });
+    rerender();};
+  r.readAsDataURL(f); input.value="";}
+function removePhoto(id,key){const v=V.find(x=>x.id===id); if(!v)return; const prev=v.photos[key]; if(!prev)return;
+  delete v.photos[key];
+  pushUndo(`${v.merk} ${v.model} — foto verwijderd: ${PHOTO_BY_KEY[key].label}`, ()=>{v.photos[key]=prev;});
+  rerender();}
+function finishPhotoStep(id,stepIdx){const v=V.find(x=>x.id===id); if(!v)return; const pk=v.klaar; v.klaar=Math.max(v.klaar||0,stepIdx+1);
+  pushUndo(`${v.merk} ${v.model} — stap afgerond`, ()=>{v.klaar=pk;}); rerender();}
+function photoCard(v,g){
+  const reqDone=grpReqCount(v,g), reqTot=grpReqTotal(g);
+  const optDone=g.items.filter(p=>!p.req&&v.photos[p.key]).length;
+  const allReq=reqDone===reqTot, stepDone=(v.klaar||0)>=g.stepIdx+1;
+  const slots=g.items.map(p=>{const img=v.photos[p.key]; const inputId=`ph-${v.id}-${p.key}`;
+    return `<div class="pslot">
+      <div class="ptile ${img?'has':''}" onclick="document.getElementById('${inputId}').click()" title="${img?'Vervangen':'Foto toevoegen'}">
+        ${img?`<img src="${img}" alt=""><span class="pcheck">✓</span><button class="premove" title="Verwijderen" onclick="event.stopPropagation();removePhoto('${v.id}','${p.key}')">×</button>`
+             :`<span class="pcam">📷</span><span class="padd">Toevoegen</span>`}
+      </div>
+      <input id="${inputId}" type="file" accept="image/*" capture="environment" style="display:none" onchange="setPhoto('${v.id}','${p.key}',this)">
+      <div class="plabel">${p.label} ${p.req?`<span class="preq">verplicht</span>`:`<span class="popt">optioneel</span>`}</div>
+      ${p.instr?`<div class="pinstr">${p.instr}</div>`:''}
+    </div>`;}).join("");
+  return `<div class="card"><h3>${g.step} <span class="muted" style="font-weight:500;font-size:12.5px">${reqDone}/${reqTot} verplicht${optDone?` · ${optDone} extra`:''}</span></h3>
+    <div class="card-body">
+      <div class="pgrid">${slots}</div>
+      ${allReq
+        ? (stepDone
+            ? `<div class="infobar" style="background:var(--green-soft);border-color:#bfe6d1;color:var(--green);margin-top:12px"><div class="ai" style="background:#cbecdb;color:var(--green)">✓</div><div>Alle verplichte foto's compleet — stap “${g.step}” afgerond.</div></div>`
+            : `<button class="btn btn-primary" style="margin-top:12px" onclick="finishPhotoStep('${v.id}',${g.stepIdx})">${g.step} afronden → volgende stap</button>`)
+        : `<div class="muted" style="font-size:12px;margin-top:10px">Voeg de ${reqTot} verplichte foto's toe om deze stap af te ronden.</div>`}
+      <div class="note" style="margin-top:10px">Demo: foto's worden nu alleen in je browser bewaard (nog niet op een server). Met de database komen ze centraal en gedeeld.</div>
+    </div></div>`;
+}
 function rerender(){
   if(state.view==="vandaag")renderVandaag();
   else if(state.view==="komende")renderKomende();
