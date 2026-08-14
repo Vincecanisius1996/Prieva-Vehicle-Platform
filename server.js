@@ -1,0 +1,97 @@
+// PVP backend — puur Node (geen externe pakketten nodig).
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+const DATA_DIR = process.env.PVP_DATA || '/var/pvp';
+const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+const STATE_FILE = path.join(DATA_DIR, 'state.json');
+const ADPHOTOS_FILE = path.join(DATA_DIR, 'adphotos.json');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const SECRET_FILE = path.join(DATA_DIR, 'secret');
+
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+let SECRET;
+try { SECRET = fs.readFileSync(SECRET_FILE, 'utf8').trim(); }
+catch (e) { SECRET = crypto.randomBytes(32).toString('hex'); try { fs.writeFileSync(SECRET_FILE, SECRET); } catch (_) {} }
+
+function readJson(file, fb) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return fb; } }
+function writeJson(file, obj) { const tmp = file + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(obj)); fs.renameSync(tmp, file); }
+function hashPw(pw, salt) { return crypto.scryptSync(String(pw), salt, 64).toString('hex'); }
+function findUser(username) { const users = readJson(USERS_FILE, []); return users.find(u => u.username === String(username || '').toLowerCase()); }
+function sign(p) { return crypto.createHmac('sha256', SECRET).update(p).digest('hex'); }
+function makeToken(u) { const p = Buffer.from(JSON.stringify({ u: u.username, r: u.role, n: u.name || u.username })).toString('base64'); return p + '.' + sign(p); }
+function verifyToken(tok) { if (!tok || tok.indexOf('.') < 0) return null; const i = tok.lastIndexOf('.'); const p = tok.slice(0, i), sig = tok.slice(i + 1); if (sign(p) !== sig) return null; try { return JSON.parse(Buffer.from(p, 'base64').toString('utf8')); } catch (e) { return null; } }
+function parseCookies(req) { const h = req.headers.cookie || ''; const out = {}; h.split(';').forEach(c => { const i = c.indexOf('='); if (i > 0) out[c.slice(0, i).trim()] = decodeURIComponent(c.slice(i + 1).trim()); }); return out; }
+function userFromReq(req) { return verifyToken(parseCookies(req).pvp_session); }
+function saveDataUrl(dataUrl, id, prefix) {
+  const m = /^data:image\/(\w+);base64,(.+)$/.exec(dataUrl || '');
+  if (!m) return null;
+  const ext = m[1].toLowerCase() === 'jpeg' ? 'jpg' : m[1].toLowerCase();
+  const safeId = String(id).replace(/[^A-Za-z0-9._-]/g, '_');
+  const dir = path.join(UPLOAD_DIR, safeId);
+  fs.mkdirSync(dir, { recursive: true });
+  const fname = prefix + '_' + crypto.randomBytes(6).toString('hex') + '.' + ext;
+  fs.writeFileSync(path.join(dir, fname), Buffer.from(m[2], 'base64'));
+  return '/uploads/' + safeId + '/' + fname;
+}
+function sendJson(res, code, obj, headers) { res.writeHead(code, Object.assign({ 'Content-Type': 'application/json' }, headers || {})); res.end(JSON.stringify(obj)); }
+function readBody(req) {
+  return new Promise((resolve) => {
+    let data = ''; let bad = false;
+    req.on('data', c => { data += c; if (data.length > 32 * 1024 * 1024) { bad = true; req.destroy(); } });
+    req.on('end', () => { if (bad) return resolve(null); if (!data) return resolve({}); try { resolve(JSON.parse(data)); } catch (e) { resolve(null); } });
+    req.on('error', () => resolve(null));
+  });
+}
+const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.heic': 'image/heic', '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+
+function serveUpload(req, res, url) {
+  if (!userFromReq(req)) return sendJson(res, 401, { error: 'auth' });
+  const rel = decodeURIComponent(url.replace(/^\/uploads\//, ''));
+  if (rel.indexOf('..') >= 0) return sendJson(res, 400, { error: 'bad' });
+  const fp = path.join(UPLOAD_DIR, rel);
+  fs.stat(fp, (e, st) => {
+    if (e || !st.isFile()) return sendJson(res, 404, { error: 'notfound' });
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(fp).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'private, max-age=300' });
+    fs.createReadStream(fp).pipe(res);
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = req.url.split('?')[0];
+  const method = req.method;
+  try {
+    if (method === 'GET' && url === '/api/health') return sendJson(res, 200, { ok: true, time: Date.now() });
+    if (method === 'POST' && url === '/api/login') {
+      const b = await readBody(req) || {};
+      const user = findUser(b.username);
+      if (!user || hashPw(b.password, user.salt) !== user.hash) return sendJson(res, 401, { error: 'invalid' });
+      return sendJson(res, 200, { name: user.name || user.username, role: user.role }, { 'Set-Cookie': `pvp_session=${makeToken(user)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000` });
+    }
+    if (method === 'POST' && url === '/api/logout') return sendJson(res, 200, { ok: true }, { 'Set-Cookie': 'pvp_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' });
+    if (method === 'GET' && url === '/api/me') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); return sendJson(res, 200, { name: u.n, role: u.r }); }
+
+    if (method === 'GET' && url.indexOf('/uploads/') === 0) return serveUpload(req, res, url);
+
+    if (url === '/api/state' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team') return sendJson(res, 403, { error: 'forbidden' }); return sendJson(res, 200, readJson(STATE_FILE, { vehicles: {}, subUid: 1 })); }
+    if (url === '/api/state' && method === 'PUT') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req); if (b === null) return sendJson(res, 400, { error: 'bad' }); writeJson(STATE_FILE, b); return sendJson(res, 200, { ok: true }); }
+    if (url === '/api/photo' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.key || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = saveDataUrl(b.dataUrl, b.id, String(b.key).replace(/[^A-Za-z0-9._-]/g, '_')); if (!up) return sendJson(res, 400, { error: 'format' }); return sendJson(res, 200, { url: up }); }
+
+    if (url === '/api/status' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const s = readJson(STATE_FILE, { vehicles: {} }); const out = {}; for (const id in (s.vehicles || {})) out[id] = { status: s.vehicles[id].status }; return sendJson(res, 200, { vehicles: out }); }
+
+    if (url === '/api/adphotos' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); return sendJson(res, 200, readJson(ADPHOTOS_FILE, {})); }
+    if (url === '/api/adphoto' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const b = await readBody(req) || {}; if (!b.id || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = saveDataUrl(b.dataUrl, b.id, 'ad'); if (!up) return sendJson(res, 400, { error: 'format' }); const all = readJson(ADPHOTOS_FILE, {}); if (!Array.isArray(all[b.id])) all[b.id] = []; all[b.id].push(up); writeJson(ADPHOTOS_FILE, all); return sendJson(res, 200, { url: up }); }
+    if (url === '/api/adphotos-set' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const b = await readBody(req) || {}; if (!b.id || !Array.isArray(b.urls)) return sendJson(res, 400, { error: 'missing' }); const all = readJson(ADPHOTOS_FILE, {}); all[b.id] = b.urls; writeJson(ADPHOTOS_FILE, all); return sendJson(res, 200, { ok: true }); }
+
+    if (process.env.PVP_FRONTEND && method === 'GET') {
+      let p = (url === '/' ? '/index.html' : url).replace(/\.\./g, '');
+      const fp = path.join(process.env.PVP_FRONTEND, p);
+      return fs.readFile(fp, (e, data) => { if (e) return sendJson(res, 404, { error: 'notfound' }); res.writeHead(200, { 'Content-Type': MIME[path.extname(fp).toLowerCase()] || 'text/html' }); res.end(data); });
+    }
+    return sendJson(res, 404, { error: 'notfound' });
+  } catch (e) { return sendJson(res, 500, { error: 'server' }); }
+});
+server.listen(3000, '127.0.0.1', () => console.log('PVP API (node) op 127.0.0.1:3000'));
