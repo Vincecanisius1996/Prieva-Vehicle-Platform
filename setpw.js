@@ -1,5 +1,5 @@
 // Account aanmaken/wijzigen voor PVP.
-// Gebruik: node setpw.js <gebruikersnaam> <rol: team|foto> <wachtwoord> [weergavenaam]
+// Gebruik: node setpw.js <gebruikersnaam> <rol: team|admin|foto|taxateur> <wachtwoord> [weergavenaam]
 const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
@@ -9,10 +9,10 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');
 
 const [, , username, role, password, ...nameParts] = process.argv;
 if (!username || !role || !password) {
-  console.log('Gebruik: node setpw.js <gebruikersnaam> <rol: team|foto> <wachtwoord> [weergavenaam]');
+  console.log('Gebruik: node setpw.js <gebruikersnaam> <rol: team|admin|foto|taxateur> <wachtwoord> [weergavenaam]');
   process.exit(1);
 }
-if (role !== 'team' && role !== 'foto') { console.log("Rol moet 'team' of 'foto' zijn."); process.exit(1); }
+if (!['team','admin','foto','taxateur'].includes(role)) { console.log("Rol moet 'team', 'admin', 'foto' of 'taxateur' zijn."); process.exit(1); }
 
 const name = nameParts.join(' ') || username;
 let users = [];
