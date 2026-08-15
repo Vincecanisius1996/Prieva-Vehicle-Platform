@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<script type="application/json" id="cowork-artifact-meta">
+{
+  "name": "Prieva Vehicle Platform",
+  "schemaVersion": 1,
+  "description": "Klikbaar prototype van het interne Prieva Vehicle Platform (PVP): dashboard met KPI's en pijplijn, voorraadoverzicht met filters op Komende/Lopende/Verkocht en zoeken, plus een per-voertuig PVP-hub met specs, uitrusting, foto's, documenten (Vehicle Details, schaderapport, inkoopfactuur), statustijdlijn en financiën/marge. Voorbeelddata gebaseerd op echte Prieva-voertuigen.",
+  "mcpTools": [],
+  "mcpServerNames": []
+}
+</script>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Prieva Vehicle Platform — Komende auto's</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    /* PRIEVA huisstijl: blauwverloop #0D9EBF → #056A7F, zwart woordmerk, Montserrat */
+    --brand:#0d9ebf; --brand-2:#056a7f;
+    --navy:#12333d; --navy-2:#0b2830; --ink:#16232b; --muted:#67808c;
+    --line:#e2e9ed; --bg:#f3f8fa; --card:#ffffff; --accent:#0d9ebf; --radius:12px;
+    --green:#1f8a5b; --green-soft:#e4f4ec; --blue:#056a7f; --blue-soft:#e1f1f5;
+    --amber:#b9791a; --amber-soft:#fbf0dc; --red:#c0392b; --red-soft:#fdecec;
+    --slate:#5b6b7b; --slate-soft:#eef2f6;
+    --shadow:0 1px 2px rgba(9,50,63,.06),0 8px 24px rgba(9,50,63,.08);
+    --leonie:#7c3aed; --sjoerd:#0f9488; --vince:#475569; --floris:#2563eb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Montserrat",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .demo-bar{background:var(--blue-soft);color:var(--brand-2);text-align:center;font-size:12.5px;padding:6px 12px;font-weight:600;border-bottom:1px solid #cfe6ec}
+  header.top{background:linear-gradient(120deg,var(--brand-2),var(--brand));color:#fff;padding:0 22px;display:flex;align-items:center;gap:22px;height:62px;position:sticky;top:0;z-index:40;box-shadow:0 2px 14px rgba(5,106,127,.3)}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:18px;letter-spacing:1.5px}
+  .logo{width:30px;height:34px;filter:drop-shadow(0 2px 5px rgba(0,0,0,.22))}
+  .brand small{display:block;font-size:10px;font-weight:600;color:#d3edf3;letter-spacing:1.4px;margin-top:1px}
+  nav.main{display:flex;gap:4px;margin-left:6px}
+  nav.main button{background:transparent;border:0;color:#e3f4f8;font-size:12.5px;font-weight:700;padding:8px 14px;border-radius:8px;cursor:pointer;transition:.15s;text-transform:uppercase;letter-spacing:.6px}
+  nav.main button:hover{background:rgba(255,255,255,.09);color:#fff}
+  nav.main button.active{background:rgba(255,255,255,.16);color:#fff}
+  .top-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+  .search{position:relative}
+  .search input{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.18);border-radius:8px;color:#fff;padding:8px 12px 8px 32px;font-size:13.5px;width:200px;outline:none}
+  .search input::placeholder{color:#a9c4dc}
+  .search svg{position:absolute;left:10px;top:9px;opacity:.7}
+  .avatar{width:34px;height:34px;border-radius:50%;background:#2c5a80;display:grid;place-items:center;font-weight:700;font-size:13px;border:1px solid rgba(255,255,255,.2)}
+  main{max-width:1160px;margin:0 auto;padding:24px 22px 70px}
+  .page-title{font-size:21px;font-weight:800;margin:0 0 3px;letter-spacing:.4px;text-transform:uppercase}
+  .page-sub{color:var(--muted);font-size:14px;margin:0 0 20px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .kpi .lab{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+  .kpi .val{font-size:26px;font-weight:750;margin-top:5px;letter-spacing:-.5px}
+  .kpi .sub{font-size:12px;color:var(--muted);margin-top:1px}
+  .kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .card h3{margin:0;padding:14px 18px;font-size:15px;border-bottom:1px solid var(--line);font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .card-body{padding:14px 18px}
+
+  .banner{display:flex;align-items:center;gap:16px;padding:16px 18px;border-radius:var(--radius);margin-bottom:20px;border:1px solid #c5dcef;background:linear-gradient(180deg,#f2f8fd,#e9f2fb)}
+  .banner .bi{width:42px;height:42px;border-radius:11px;background:var(--blue);color:#fff;display:grid;place-items:center;font-size:20px;flex:none;box-shadow:0 3px 10px rgba(43,108,176,.35)}
+  .banner .bt{font-weight:700;font-size:15px} .banner .bs{font-size:13px;color:var(--muted);margin-top:2px}
+  .btn{border:0;border-radius:9px;padding:9px 15px;font-size:13.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:.15s}
+  .btn-primary{background:linear-gradient(120deg,var(--brand),var(--brand-2));color:#fff;box-shadow:0 2px 8px rgba(13,158,191,.35)} .btn-primary:hover{filter:brightness(1.06)}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--navy)} .btn-ghost:hover{background:#f2f6fa}
+  .btn-sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
+  .banner .sp{margin-left:auto;display:flex;gap:8px}
+
+  .groupwrap{display:flex;flex-direction:column;gap:18px}
+  .grp{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+  .grp-head{display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid var(--line)}
+  .grp-head .gt{font-weight:750;font-size:15px}
+  .grp-head .gcount{font-size:12px;background:var(--slate-soft);color:var(--slate);padding:2px 9px;border-radius:999px;font-weight:700}
+  .grp-head .gdate{font-size:12.5px;color:var(--muted);font-weight:600}
+  .grp-head .sp{margin-left:auto}
+  .grp-head.batch{background:linear-gradient(180deg,#eef6ff,#e6f0fa)}
+  .grp-head.batch .gt{color:var(--navy)}
+
+  table{width:100%;border-collapse:collapse}
+  thead th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;padding:10px 14px;border-bottom:1px solid var(--line);background:#fafbfc;white-space:nowrap}
+  tbody td{padding:10px 14px;border-bottom:1px solid var(--line);font-size:13.5px;vertical-align:middle}
+  tbody tr{transition:background .12s} tbody tr:hover{background:#f7fafd} tbody tr:last-child td{border-bottom:0}
+  .veh-cell{display:flex;align-items:center;gap:11px;cursor:pointer}
+  .thumb{width:44px;height:33px;border-radius:6px;flex:none;display:grid;place-items:center;background:linear-gradient(135deg,#eef3f8,#dde6ef);border:1px solid var(--line);color:#8aa0b4}
+  .veh-cell .nm{font-weight:650;font-size:13.5px} .veh-cell .id{font-size:11.5px;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:var(--slate-soft);color:var(--slate)}
+  .tag-imp{background:var(--blue-soft);color:var(--blue)} .tag-nl{background:var(--slate-soft);color:var(--slate)}
+  .note{font-size:11.5px;color:var(--muted)}
+  .agechip{display:inline-block;font-size:11px;font-weight:700;color:var(--amber);background:var(--amber-soft);padding:1px 7px;border-radius:999px}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .b-komende{background:var(--blue-soft);color:var(--blue)} .b-lopende{background:var(--green-soft);color:var(--green)}
+  .segbar{display:flex;gap:3px;align-items:center}
+  .seg{width:14px;height:8px;border-radius:2px;background:var(--slate-soft)}
+  .seg.done{background:var(--green)} .seg.current{background:var(--blue)} .seg.todo{background:#cdd8e2} .seg.nvt{background:#eef2f6}
+  .phase-lab{font-size:12.5px;font-weight:600}
+  .funnel{display:flex;flex-direction:column;gap:8px}
+  .fn{display:flex;align-items:center;gap:12px}
+  .fn .fl{width:150px;font-size:12.5px;color:var(--ink);font-weight:600;flex:none}
+  .fn .track{flex:1;height:22px;background:var(--slate-soft);border-radius:6px;overflow:hidden}
+  .fn .fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--navy-2));border-radius:6px;display:flex;align-items:center;justify-content:flex-end;color:#fff;font-size:11.5px;font-weight:700;padding-right:7px;min-width:22px}
+  .fn .fc{width:26px;text-align:right;font-weight:700;font-size:13px;flex:none}
+  .cols{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  .person-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+  .person-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .pav{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:12px;color:#fff}
+  .person-head .pn{font-weight:700;font-size:14.5px} .person-head .pc{margin-left:auto;font-size:12px;color:var(--muted);font-weight:600}
+  .todo{display:flex;align-items:center;gap:11px;padding:11px 16px;border-bottom:1px solid var(--line)}
+  .todo:last-child{border-bottom:0} .todo:hover{background:#f7fafd}
+  .todo .tk{width:8px;height:8px;border-radius:50%;flex:none;background:var(--blue)}
+  .todo .body{min-width:0;flex:1;cursor:pointer} .todo .act{font-weight:650;font-size:13.5px}
+  .todo .veh{font-size:12px;color:var(--muted)}
+  select.assign{border:1px solid var(--line);border-radius:7px;padding:4px 6px;font-size:12px;background:#fff;color:var(--ink);cursor:pointer}
+  .chk{display:inline-flex;cursor:pointer;position:relative;align-items:center}
+  .chk input{position:absolute;opacity:0;width:0;height:0}
+  .chk .box{width:24px;height:24px;border-radius:7px;border:2px solid #cdd8e2;background:#fff;display:grid;place-items:center;transition:.15s}
+  .chk .box:after{content:"✓";color:#fff;font-size:15px;font-weight:800;opacity:0;transform:scale(.5);transition:.15s;line-height:1}
+  .chk input:checked + .box{background:var(--green);border-color:var(--green)}
+  .chk input:checked + .box:after{opacity:1;transform:scale(1)}
+  .chk:hover .box{border-color:var(--green)}
+  tr.row-arrived{background:#f3fbf6} tr.row-arrived:hover{background:#eaf7f0}
+  .arr-lab{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--green)}
+  .pbar{height:8px;border-radius:5px;background:var(--slate-soft);overflow:hidden}
+  .pfill{height:100%;background:linear-gradient(90deg,var(--green),#2fae74);border-radius:5px}
+  .need{font-size:11px;font-weight:700;color:var(--amber);background:var(--amber-soft);padding:1px 7px;border-radius:999px}
+  .route-badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .rbg-ja{background:var(--green-soft);color:var(--green)} .rbg-nee{background:var(--blue-soft);color:var(--blue)}
+  .tstep{display:flex;gap:12px;align-items:flex-start;padding:10px 2px;border-bottom:1px solid var(--line)}
+  .tstep:last-child{border-bottom:0}
+  .tstep .h{font-weight:650;font-size:13.5px}
+  .tstep.todo .h{color:var(--muted);font-weight:600}
+  .tstep.current .h{color:var(--navy)}
+  .tstep .d{font-size:12px;color:var(--muted)}
+  .tnum{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;flex:none;font-size:12px;font-weight:800;border:2px solid #eddcb8;background:var(--amber-soft);color:var(--amber)}
+  .tnum.done{background:var(--green);border-color:var(--green);color:#fff}
+  .route-btns{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .rb{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 13px;font-weight:700;font-size:12.5px;cursor:pointer;transition:.12s}
+  .rb.ja{border-color:#bfe6d1;color:var(--green)} .rb.ja:hover{background:var(--green-soft)}
+  .rb.nee{border-color:#cfe0f1;color:var(--blue)} .rb.nee:hover{background:var(--blue-soft)}
+  .rb.active-ja{background:var(--green);color:#fff;border-color:var(--green)}
+  .rb.active-nee{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .undo-btn{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.18);color:#fff;font-size:13px;font-weight:600;padding:7px 12px;border-radius:8px;cursor:pointer;transition:.15s;white-space:nowrap}
+  .undo-btn:hover:not(:disabled){background:rgba(255,255,255,.24)}
+  .undo-btn:disabled{opacity:.4;cursor:default}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--navy);color:#fff;padding:11px 14px 11px 16px;border-radius:11px;box-shadow:0 8px 30px rgba(15,47,76,.4);display:flex;align-items:center;gap:14px;font-size:13.5px;font-weight:600;opacity:0;pointer-events:none;transition:.2s;z-index:100;max-width:92vw}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+  .toast .tundo{background:var(--accent);border:0;color:#fff;font-weight:700;font-size:12.5px;padding:6px 11px;border-radius:8px;cursor:pointer;white-space:nowrap}
+  .toast .tx{background:transparent;border:0;color:#c4d6e6;font-size:18px;cursor:pointer;line-height:1;padding:0 2px}
+  .empty{padding:38px;text-align:center;color:var(--muted)}
+  .empty .eb{font-size:30px;margin-bottom:8px;opacity:.5}
+  .back{display:inline-flex;align-items:center;gap:6px;color:var(--blue);font-weight:600;font-size:13.5px;cursor:pointer;margin-bottom:14px}
+  .det-head{display:flex;gap:20px;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap}
+  .hero{width:250px;height:170px;border-radius:14px;flex:none;display:grid;place-items:center;background:linear-gradient(135deg,#e8eef4,#d3deea);border:1px solid var(--line);color:#8aa0b4}
+  .det-title h1{margin:0 0 4px;font-size:24px;letter-spacing:-.3px}
+  .det-title .sub{color:var(--muted);font-size:14px;margin-bottom:12px}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .chip{background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:600}
+  .chip b{color:var(--muted);font-weight:600}
+  .det-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:18px;align-items:start}
+  .spec-grid{display:grid;grid-template-columns:1fr 1fr;gap:0}
+  .spec{padding:10px 4px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
+  .spec .k{color:var(--muted);font-size:13px} .spec .v{font-weight:650;font-size:13.5px;text-align:right}
+  .plist{padding:2px 0}
+  .pstep{display:flex;gap:12px;align-items:flex-start}
+  .pstep .rail{display:flex;flex-direction:column;align-items:center;align-self:stretch}
+  .pstep .pt{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:none;font-size:12px;font-weight:800;border:2px solid var(--line);background:#fff;color:var(--muted)}
+  .pstep.done .pt{background:var(--green);border-color:var(--green);color:#fff}
+  .pstep.current .pt{background:var(--blue);border-color:var(--blue);color:#fff;box-shadow:0 0 0 4px var(--blue-soft)}
+  .pstep.nvt .pt{background:#f4f7fa;border-color:#e3e9ef;color:#c2ccd6}
+  .pstep .ln{width:2px;flex:1;background:var(--line);margin:2px 0}
+  .pstep.done .ln{background:var(--green)}
+  .pstep .ct{padding-bottom:14px;flex:1}
+  .pstep .h{font-weight:650;font-size:13.5px} .pstep.nvt .h{color:var(--muted);font-weight:500}
+  .pstep .d{font-size:12px;color:var(--muted)}
+  .owner-box{display:flex;align-items:center;gap:10px;padding:12px 16px}
+  .infobar{display:flex;align-items:center;gap:12px;padding:11px 15px;border-radius:10px;font-size:13.5px;margin-top:4px;background:var(--blue-soft);border:1px solid #c5dcef;color:#215883}
+  .infobar .ai{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;flex:none;font-weight:800;background:#cfe1f2;color:var(--blue)}
+  .muted{color:var(--muted)}
+  .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:12px}
+  .ptile{position:relative;width:100%;aspect-ratio:4/3;border:2px dashed #cdd8e2;border-radius:10px;display:grid;place-items:center;cursor:pointer;background:#f7fafd;overflow:hidden;transition:.15s}
+  .ptile:hover{border-color:var(--blue);background:#eef5fb}
+  .ptile.has{border-style:solid;border-color:var(--green);background:#fff}
+  .ptile img{width:100%;height:100%;object-fit:cover}
+  .ptile .pcam{font-size:22px;opacity:.55}
+  .ptile .padd{position:absolute;bottom:6px;font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+  .ptile .pcheck{position:absolute;top:5px;left:5px;width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:800;box-shadow:0 1px 4px rgba(16,40,64,.3)}
+  .ptile .premove{position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:rgba(192,57,43,.94);color:#fff;border:0;font-size:15px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
+  .plabel{font-size:12px;font-weight:650;margin-top:6px;line-height:1.25}
+  .preq{font-size:10px;font-weight:700;color:var(--amber);background:var(--amber-soft);padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.2px}
+  .popt{font-size:10px;font-weight:700;color:var(--slate);background:var(--slate-soft);padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.2px}
+  .pgroup-h{font-size:11.5px;font-weight:750;color:var(--slate);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 9px;display:flex;align-items:center;gap:9px}
+  .pgroup-h .gc{font-size:11px;background:var(--slate-soft);color:var(--slate);padding:1px 8px;border-radius:999px;font-weight:700}
+  .pinstr{font-size:11px;color:var(--muted);line-height:1.3;margin-top:2px}
+  .add-btn{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);color:#fff;font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:8px;cursor:pointer;white-space:nowrap;transition:.15s}
+  .add-btn:hover{background:rgba(255,255,255,.26)}
+  .modal-ov{position:fixed;inset:0;background:rgba(15,47,76,.45);display:none;align-items:center;justify-content:center;z-index:200;padding:20px}
+  .modal-ov.show{display:flex}
+  .modal{background:#fff;border-radius:14px;box-shadow:0 20px 60px rgba(15,47,76,.4);width:100%;max-width:430px;overflow:hidden;animation:pop .15s ease}
+  @keyframes pop{from{transform:translateY(8px);opacity:.6}to{transform:translateY(0);opacity:1}}
+  .modal h3{margin:0;padding:15px 18px;font-size:16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;font-weight:750}
+  .modal .mb{padding:16px 18px;display:flex;flex-direction:column;gap:13px}
+  .modal label{font-size:12.5px;font-weight:650;color:var(--slate);display:block;margin-bottom:5px}
+  .modal input[type=text],.modal select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:13.5px;background:#fff;color:var(--ink);outline:none}
+  .modal input[type=text]:focus,.modal select:focus{border-color:var(--blue)}
+  .modal .mf{display:flex;gap:8px;justify-content:flex-end;padding:14px 18px;border-top:1px solid var(--line);background:#fafbfc}
+  .mclose{background:transparent;border:0;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;padding:0 2px}
+  /* login */
+  .loginwrap{position:fixed;inset:0;z-index:300;background:linear-gradient(135deg,var(--brand-2),var(--brand));display:flex;align-items:center;justify-content:center;padding:22px}
+  .logincard{background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(5,40,48,.4);width:100%;max-width:380px;overflow:hidden}
+  .loginhead{display:flex;align-items:center;gap:11px;padding:22px 24px 6px}
+  .loginhead .lt{font-weight:800;font-size:20px;letter-spacing:1.5px;color:var(--ink);line-height:1.1}
+  .loginhead .lt small{display:block;font-size:9.5px;font-weight:600;color:var(--muted);letter-spacing:1.4px;margin-top:2px}
+  .loginbody{padding:14px 24px 24px;display:flex;flex-direction:column}
+  .loginbody label{font-size:12px;font-weight:650;color:var(--slate);margin:12px 0 5px}
+  .loginbody input{border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:14px;outline:none;font-family:inherit}
+  .loginbody input:focus{border-color:var(--brand)}
+  .loginerr{background:var(--red-soft);color:var(--red);font-size:12.5px;font-weight:600;padding:8px 11px;border-radius:8px;margin-top:12px}
+  /* advertentiefoto galerij */
+  .adgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:11px}
+  .adtile{position:relative;aspect-ratio:4/3;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#f2f6f8}
+  .adtile img{width:100%;height:100%;object-fit:cover;display:block}
+  .adtile .premove{position:absolute;top:5px;right:5px;width:23px;height:23px;border-radius:50%;background:rgba(192,57,43,.94);color:#fff;border:0;font-size:15px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
+  .adtile .addl{position:absolute;bottom:5px;right:5px;width:23px;height:23px;border-radius:50%;background:rgba(22,35,43,.72);color:#fff;font-size:12px;line-height:1;display:grid;place-items:center;text-decoration:none}
+  .adadd{border:2px dashed #cdd8e2;background:#f7fafd;display:grid;place-items:center;cursor:pointer;gap:2px;grid-auto-flow:row}
+  .adadd:hover{border-color:var(--brand);background:#eef7fa}
+  .adadd .pcam{font-size:22px;opacity:.55} .adadd .padd{position:static;font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+  /* selectie + laden bij foto-uploads */
+  .adtile.sel{outline:3px solid var(--brand);outline-offset:-3px}
+  .adcheck{position:absolute;top:5px;left:5px;cursor:pointer;z-index:2}
+  .adcheck input{position:absolute;opacity:0;width:0;height:0}
+  .adcheck .adcbox{width:23px;height:23px;border-radius:6px;border:2px solid #fff;background:rgba(22,35,43,.5);display:grid;place-items:center;box-shadow:0 1px 4px rgba(16,40,64,.35)}
+  .adcheck .adcbox:after{content:"✓";color:#fff;font-size:14px;font-weight:800;opacity:.25;line-height:1}
+  .adcheck input:checked + .adcbox{background:var(--brand);border-color:#fff}
+  .adcheck input:checked + .adcbox:after{opacity:1}
+  .aduploading{display:flex;align-items:center;gap:10px;background:var(--blue-soft);border:1px solid #c5dcef;color:#215883;border-radius:10px;padding:9px 13px;font-size:13px;font-weight:600;margin-bottom:11px}
+  .adselbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:11px}
+  .btn-danger{background:var(--red);color:#fff}
+  .btn-danger-o{background:#fff;border:1px solid var(--red);color:var(--red)}
+  .spin{width:16px;height:16px;border-radius:50%;border:2.5px solid #bcd6e6;border-top-color:var(--brand);display:inline-block;animation:spin .7s linear infinite;flex:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .ptile .puploading{position:absolute;inset:0;background:rgba(255,255,255,.66);display:grid;place-items:center;z-index:2}
+  /* fotograaf lijst */
+  .fotocar{display:flex;align-items:center;gap:13px;padding:13px 14px;border-bottom:1px solid var(--line);cursor:pointer;transition:.12s}
+  .fotocar:last-child{border-bottom:0} .fotocar:hover{background:#f2f8fa}
+  .fotocar .thumb{width:52px;height:39px}
+  .fotocar .nm{font-weight:650;font-size:14.5px} .fotocar .id{font-size:12px;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+  .fotocount{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--slate-soft);color:var(--slate)}
+  .fotocount.has{background:var(--green-soft);color:var(--green)}
+  /* sleep-bak (RDW-foto's in één keer) */
+  .traybar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .traygrid{display:flex;gap:8px;flex-wrap:wrap;padding:10px;background:#f2f8fa;border:1px dashed #bcd6de;border-radius:10px;margin-bottom:12px}
+  .traythumb{position:relative;width:64px;height:48px;border-radius:7px;overflow:hidden;border:1px solid var(--line);cursor:grab;background:#fff}
+  .traythumb:active{cursor:grabbing}
+  .traythumb img{width:100%;height:100%;object-fit:cover;pointer-events:none}
+  .traythumb .premove{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(192,57,43,.94);color:#fff;border:0;font-size:12px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
+  .ptile.drop{border-color:var(--brand)!important;border-style:solid!important;background:#e6f6fa}
+  /* advertentiefoto: sleepzone + knoppen */
+  .addrop{border-radius:12px;transition:.12s}
+  .addrop.drag{outline:2px dashed var(--brand);outline-offset:3px;background:#eef8fb}
+  .adtools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+  @media(max-width:900px){.kpis{grid-template-columns:1fr 1fr}.cols,.det-grid{grid-template-columns:1fr}nav.main{display:none}.hero{width:100%}.add-btn span.lbl{display:none}}
+</style>
+</head>
+<body>
+<div class="demo-bar">Spiegel van het Autoboek · Komende auto's (live overgenomen 12-08-2026) · vink aan wat binnen is → de to-do gaat lopen</div>
+<header class="top">
+  <div class="brand"><svg class="logo" viewBox="0 0 60 68" fill="none" aria-label="Prieva logo"><path d="M30 2.5 L53.9 16.3 V43.7 L30 57.5 L6.1 43.7 V16.3 Z" fill="#ffffff"/><path d="M30 14.5 L43.2 22.1 V37.3 L30 44.9 L16.8 37.3 V22.1 Z" fill="#056a7f"/><circle cx="30" cy="29.7" r="4.3" fill="#ffffff"/></svg><div>PRIEVA<small>VEHICLE PLATFORM</small></div></div>
+  <nav class="main" id="nav">
+    <button data-view="vandaag" class="active">Vandaag</button>
+    <button data-view="komende">Komende</button>
+    <button data-view="lopende">Lopende</button>
+    <button data-view="logboek" id="logboekBtn" style="display:none">📜 Logboek</button>
+  </nav>
+  <div class="top-right">
+    <div class="search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a9c4dc" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
+      <input id="search" placeholder="Zoek kenteken, VIN, merk…" autocomplete="off">
+    </div>
+    <button id="addTodoBtn" class="add-btn" onclick="openTodoModal()" title="Nieuwe to-do toevoegen">＋ To-do</button>
+    <button id="undoBtn" class="undo-btn" onclick="undoLast()" disabled>↩ Ongedaan</button>
+    <div class="avatar">VC</div>
+    <button id="logoutBtn" class="undo-btn" onclick="logout()" title="Uitloggen" style="display:none">Uitloggen</button>
+  </div>
+</header>
+<main id="app"></main>
+
+<script>
+/* ===== Traject = import/BPM-flow (schema IMG_7916). Elke auto krijgt deze stappen. ===== */
+const IMPORT_BASE=[{label:"RDW Foto's",cat:"RDW Foto's"},{label:"Papieren Foto's",cat:"Papieren Foto's"}];
+const DEC_IDX=IMPORT_BASE.length; // index van de BPM Taxatie-beslissing
+const DECISION={label:"BPM Taxatie?",cat:"BPM Taxatie",decision:true};
+const ROUTE_JA=[
+  {label:"Papieren uploaden",cat:"S-TAX"},
+  {label:"S-TAX: auto klaar ter taxatie",cat:"S-TAX"},
+  {label:"BPM-rapport geüpload door S-TAX",cat:"BPM rapport"},
+  {label:"RDW Importeer",cat:"Importeren"},
+  {label:"RDW Goedkeuring",cat:"RDW Goedkeuring"},
+  {label:"BPM-taxatierapport versturen",cat:"Versturen"},
+  {label:"Wachten op BIN",cat:"Wachten op BIN"},
+  {label:"BIN",cat:"BIN"},
+];
+const ROUTE_NEE=[
+  {label:"RDW Importeer",cat:"Importeren"},
+  {label:"RDW Goedkeuring",cat:"RDW Goedkeuring"},
+  {label:"BPM-rapport maken",cat:"BPM rapport"},
+  {label:"Versturen",cat:"Versturen"},
+  {label:"Wachten op BIN",cat:"Wachten op BIN"},
+  {label:"BIN",cat:"BIN"},
+];
+const TAIL=[{label:"Fotograaf",cat:"Fotograaf"},{label:"Mobilox Online",cat:"Mobilox Online"}];
+const CATS=["RDW Foto's","Papieren Foto's","BPM Taxatie","S-TAX","Importeren","RDW Goedkeuring","BPM rapport","Versturen","Wachten op BIN","BIN","Fotograaf","Mobilox Online"];
+const ACTIEVERB={"RDW Foto's":"RDW-foto's maken","Papieren Foto's":"Papieren-foto's maken","Papieren uploaden":"Papieren uploaden","S-TAX: auto klaar ter taxatie":"S-TAX: auto klaar ter taxatie melden","BPM-rapport geüpload door S-TAX":"BPM-rapport ophalen bij S-TAX","RDW Importeer":"RDW importeren","RDW Goedkeuring":"RDW-goedkeuring afwachten","BPM-taxatierapport versturen":"BPM-taxatierapport versturen","BPM-rapport maken":"BPM-rapport maken","Versturen":"BPM-rapport versturen","Wachten op BIN":"Wachten op BIN","BIN":"BIN verwerken","Fotograaf":"Fotograaf inplannen","Mobilox Online":"Advertentie online zetten (Mobilox)"};
+const PEOPLE = ["Leonie","Sjoerd","Vince","Floris"];
+const PKEY = {Leonie:"leonie",Sjoerd:"sjoerd",Vince:"vince",Floris:"floris"};
+/* RDW-foto's & documentatie (RDW-keuring), conform Mobilox. req=verplicht */
+const PHOTO_GROUPS = [
+  {group:"Voertuig", step:"RDW Foto's", stepIdx:0, items:[
+    {key:"v_linksvoor",label:"Voertuig linksvoor",req:true,instr:"Hele auto schuin van linksvoor"},
+    {key:"v_rechtsachter",label:"Voertuig rechtsachter",req:true,instr:"Hele auto schuin van rechtsachter"},
+    {key:"v_vin",label:"Ingeslagen voertuigidentificatienummer",req:true,instr:"Ingeslagen VIN, scherp leesbaar"},
+    {key:"v_constructieplaat",label:"Constructieplaat",req:true,instr:"Volledige constructieplaat, leesbaar"},
+    {key:"v_cp2",label:"Constructieplaat 2e fase fabrikant",req:false,instr:"Indien aanwezig"},
+    {key:"v_cp3",label:"Constructieplaat 3e fase fabrikant",req:false,instr:"Indien aanwezig"},
+    {key:"v_teller",label:"Tellerstand",req:true,instr:"Kilometerteller met duidelijke stand"},
+  ]},
+  {group:"Documentatie", step:"Papieren Foto's", stepIdx:1, items:[
+    {key:"d_kb1v",label:"Buitenlands kentekenbewijs deel I — voorkant",req:true,instr:""},
+    {key:"d_kb1a",label:"Buitenlands kentekenbewijs deel I — achterkant",req:true,instr:""},
+    {key:"d_kb2v",label:"Buitenlands kentekenbewijs deel II — voorkant",req:false,instr:""},
+    {key:"d_kb2a",label:"Buitenlands kentekenbewijs deel II — achterkant",req:false,instr:""},
+    {key:"d_cov_v",label:"Certificaat van Overeenstemming — voorkant",req:false,instr:""},
+    {key:"d_cov_a",label:"Certificaat van Overeenstemming — achterkant",req:false,instr:""},
+    {key:"d_apk",label:"Buitenlands APK rapport",req:false,instr:""},
+  ]},
+];
+const PHOTO_ALL = PHOTO_GROUPS.flatMap(g=>g.items);
+const PHOTO_REQ = PHOTO_ALL.filter(p=>p.req);
+const PHOTO_BY_KEY = Object.fromEntries(PHOTO_ALL.map(p=>[p.key,p]));
+const initials = n => n? n.split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase() : "?";
+
+/* ===== Komende auto's — live overgenomen uit Autoboek PRIEVA (tab "Komende Autos"), 12-08-2026 ===== */
+// status begint op 'komende'; batch = transportdatum. Bij binnenkomst -> 'lopende', klaar=0 (stap 1 start).
+const V = [
+  // --- Batch 13-08 (import, 8 auto's) ---
+  {id:"VR7BAHNSBME016540",vin:"VR7BAHNSBME016540",kenteken:"—",merk:"Citroën",model:"C4",uitv:"1.2 PureTech Feel EAT8 130pk 5d Aut.",kleur:"Zwart",brandstof:"Benzine",transm:"Automaat",reg:"20-05-2021",km:80344,inkoopdatum:"03-08-2026",lev:"RJ",importAuto:true,batch:"13-08",note:"Transport gepland — 13-08 binnen (betaald)",status:"komende"},
+  {id:"W0V7D9ED6P4050154",vin:"W0V7D9ED6P4050154",kenteken:"—",merk:"Opel",model:"Crossland",uitv:"1.2 PureTech GS 110HK 5d 6g",kleur:"Wit",brandstof:"Benzine",transm:"Handgeschakeld",reg:"31-05-2023",km:47019,inkoopdatum:"29-07-2026",lev:"RJ",importAuto:true,batch:"13-08",note:"Transport gepland — 13-08 binnen",status:"komende"},
+  {id:"VF7SXHMRVMT653838",vin:"VF7SXHMRVMT653838",kenteken:"—",merk:"Citroën",model:"C3",uitv:"1.2 PureTech Shine",kleur:"Beige",brandstof:"Benzine",transm:"Handgeschakeld",reg:"19-01-2022",km:64606,inkoopdatum:"05-08-2026",lev:"RJ",importAuto:true,batch:"13-08",note:"Transport gepland — 13-08 binnen",status:"komende"},
+  {id:"XP7YGCEL2PB170552",vin:"XP7YGCEL2PB170552",kenteken:"—",merk:"Tesla",model:"Model Y",uitv:"EL Performance AWD 534HK 5d Aut.",kleur:"Wit",brandstof:"Elektrisch",transm:"Automaat",reg:"28-06-2023",km:148772,inkoopdatum:"29-07-2026",lev:"RJ",importAuto:true,batch:"13-08",note:"Transport gepland — 13-08 binnen",status:"komende"},
+  {id:"TMAH381BAMJ092883",vin:"TMAH381BAMJ092883",kenteken:"—",merk:"Hyundai",model:"i30",uitv:"Cw 1.0 T-GDI Essential 120HK Stationwagen 6g",kleur:"Grijs",brandstof:"Benzine",transm:"Handgeschakeld",reg:"21-04-2021",km:116310,inkoopdatum:"31-07-2026",lev:"RJ",importAuto:true,batch:"13-08",note:"Transport gepland — 13-08 binnen",status:"komende"},
+  {id:"VR3USHNSKMJ692468",vin:"VR3USHNSKMJ692468",kenteken:"—",merk:"Peugeot",model:"2008",uitv:"1.2 PureTech Allure Pack 130HK 5d",kleur:"Zwart",brandstof:"Benzine",transm:"Handgeschakeld",reg:"07-06-2021",km:53057,inkoopdatum:"05-08-2026",lev:"RJ",importAuto:true,batch:"13-08",note:"Transport gepland — 13-08 binnen",status:"komende"},
+  {id:"VF7SXHMRVMT640585",vin:"VF7SXHMRVMT640585",kenteken:"—",merk:"Citroën",model:"C3",uitv:"1.2 PureTech Feel Ltd. 83HK 5d",kleur:"Grijs",brandstof:"Benzine",transm:"Handgeschakeld",reg:"18-01-2022",km:5400,inkoopdatum:"05-08-2026",lev:"RJ",importAuto:true,batch:"13-08",note:"Transport gepland — 13-08 binnen",status:"komende"},
+  {id:"VXKUPHMHDM4224341",vin:"VXKUPHMHDM4224341",kenteken:"—",merk:"Opel",model:"Corsa",uitv:"1.2 PureTech Sport 75HK 5d",kleur:"Wit",brandstof:"Benzine",transm:"Handgeschakeld",reg:"26-08-2021",km:98214,inkoopdatum:"05-08-2026",lev:"RJ",importAuto:true,batch:"13-08",note:"Transport gepland — 13-08 binnen",status:"komende"},
+  // --- Batch 14-08 (import, 2 auto's) ---
+  {id:"VXKUPHMHDM4035593",vin:"VXKUPHMHDM4035593",kenteken:"—",merk:"Opel",model:"Corsa",uitv:"1.2 PureTech Edition+ 75HK 5d",kleur:"Wit",brandstof:"Benzine",transm:"Handgeschakeld",reg:"07-06-2021",km:75530,inkoopdatum:"05-08-2026",lev:"RJ",importAuto:true,batch:"14-08",note:"Transport gepland — 14-08 binnen",status:"komende"},
+  {id:"VF7SXHMRVNT696950",vin:"VF7SXHMRVNT696950",kenteken:"—",merk:"Citroën",model:"C3",uitv:"1.2 PureTech Attraction m/Plus 83HK 5d",kleur:"Wit",brandstof:"Benzine",transm:"Handgeschakeld",reg:"31-03-2023",km:69532,inkoopdatum:"31-07-2026",lev:"RJ",importAuto:true,batch:"14-08",note:"Transport gepland — 14-08 binnen",status:"komende"},
+  // --- Overig import (nog geen transportdatum) ---
+  {id:"VXKUHZKXZP4045544",vin:"VXKUHZKXZP4045544",kenteken:"—",merk:"Opel",model:"e-Corsa",uitv:"50kWh Sport Edition",kleur:"Wit",brandstof:"Elektrisch",transm:"Automaat",reg:"01-04-2023",km:101381,inkoopdatum:"05-08-2026",lev:"COS",importAuto:true,batch:null,note:"Nog geen transport gepland",status:"komende"},
+  {id:"VR3UPHNEKP5027162",vin:"VR3UPHNEKP5027162",kenteken:"—",merk:"Peugeot",model:"208",uitv:"1.2 PureTech Vision Sport 100HK 5d",kleur:"Zwart",brandstof:"Benzine",transm:"Handgeschakeld",reg:"23-05-2023",km:31264,inkoopdatum:"11-08-2026",lev:"RJ",importAuto:true,batch:null,note:"Net ingekocht (lot 54035)",status:"komende"},
+  // --- Overig / inruil (NL, kort traject) ---
+  {id:"K-372-LN",vin:"—",kenteken:"K-372-LN",merk:"Peugeot",model:"2008",uitv:"II 1.2 PureTech",kleur:"Grijs",brandstof:"Benzine",transm:"—",reg:"20-09-2019",km:67776,inkoopdatum:"—",lev:"—",importAuto:false,batch:null,note:"Beschikbaar 11-07",status:"komende"},
+  {id:"56-GKL-8",vin:"—",kenteken:"56-GKL-8",merk:"Renault",model:"Twingo",uitv:"II 1.2",kleur:"Zwart",brandstof:"Benzine",transm:"—",reg:"11-07-2008",km:null,inkoopdatum:"—",lev:"—",importAuto:false,batch:null,note:"Status onbekend (?)",status:"komende"},
+  {id:"CLA-VUAK",vin:"—",kenteken:"—",merk:"Mercedes",model:"CLA",uitv:"250e AMG-Line",kleur:"Wit",brandstof:"PHEV",transm:"Automaat",reg:"2024",km:89000,inkoopdatum:"—",lev:"VUAK",importAuto:false,batch:null,note:"Marge-auto · beschikbaar 23-07",status:"komende"},
+  {id:"V-99-PLV",vin:"—",kenteken:"V-99-PLV",merk:"Volkswagen",model:"Caddy",uitv:"Bestel IV 1.4 TSI L1H1 BMT",kleur:"Rood",brandstof:"Benzine",transm:"—",reg:"26-10-2018",km:82500,inkoopdatum:"—",lev:"Inruil",importAuto:false,batch:null,note:"Inruil",status:"komende"},
+  {id:"1-TRH-86",vin:"—",kenteken:"1-TRH-86",merk:"Toyota",model:"Yaris",uitv:"III 1.0 VVT-i",kleur:"Zwart",brandstof:"Benzine",transm:"—",reg:"17-04-2014",km:230000,inkoopdatum:"—",lev:"Inruil",importAuto:false,batch:null,note:"Inruil",status:"komende"},
+  {id:"P-384-LT",vin:"—",kenteken:"P-384-LT",merk:"Fiat",model:"Punto",uitv:"Evo 1.2",kleur:"—",brandstof:"Benzine",transm:"—",reg:"—",km:null,inkoopdatum:"—",lev:"Inruil",importAuto:false,batch:null,note:"Inruil — kenteken volgt na transport; rookgeur (zie schaderapport)",status:"komende"},
+  {id:"TB-198-D",vin:"—",kenteken:"TB-198-D",merk:"Volkswagen",model:"Polo",uitv:"6R 1.2 Easyline",kleur:"Wit",brandstof:"Benzine",transm:"Handgeschakeld",reg:"12-04-2010",km:180000,inkoopdatum:"—",lev:"Inruil",importAuto:false,batch:null,note:"Inruil (Marcel Otten)",status:"komende"},
+  {id:"X-204-GF",vin:"—",kenteken:"X-204-GF",merk:"Opel",model:"Corsa",uitv:"F 1.2",kleur:"Wit",brandstof:"Benzine",transm:"Handgeschakeld",reg:"18-08-2020",km:60800,inkoopdatum:"—",lev:"Inruil",importAuto:false,batch:null,note:"Inruil (Emily Paul) — telefonisch verkocht",status:"komende"},
+];
+V.forEach(v=>{v.owner=null; v.klaar=0; v.route=null; v.photos={}; v.subtasks=[]; v.arrivedAt=null; v.taxAt=null;});
+let subUid=1;
+let globalTodos=[]; let gtUid=1;
+let currentUser=null; let adPhotos={}; let fotoState={car:null}; let taxState={car:null};
+let activityLog=[];
+
+/* ===== Helpers ===== */
+const km = n => (n==null?"—":n.toLocaleString("nl-NL")+" km");
+const statusLabel = {komende:"Komende",lopende:"Lopende"};
+function stepList(v){
+  if(!v.importAuto) return TAIL.slice();
+  // Taxatie (JA/NEE) is losgekoppeld: staat niet meer als stap in de rij, maar wordt apart gezet
+  // (kan al vóór de foto's). Zonder keuze tonen we alleen de foto-stappen; de rest volgt na de keuze.
+  let L=IMPORT_BASE.slice();
+  if(v.route==='JA') L=L.concat(ROUTE_JA,TAIL);
+  else if(v.route==='NEE') L=L.concat(ROUTE_NEE,TAIL);
+  return L;
+}
+function steps(v){
+  const L=stepList(v); const done=v.klaar||0;
+  return {arr:L.map((st,i)=>({label:st.label,cat:st.cat,decision:!!st.decision,state:i<done?'done':(i===done?'current':'todo'),i})),
+    currentIdx: done<L.length?done:null, done:Math.min(done,L.length), total:L.length, list:L};
+}
+function currentAction(v){
+  if(v.status!=='lopende')return null;
+  const s=steps(v);
+  if(s.currentIdx!=null){ const st=s.list[s.currentIdx]; return {actie:(ACTIEVERB[st.label]||st.label),cat:st.cat}; }
+  // foto-stappen klaar maar taxatie-route nog niet gekozen → de keuze is de volgende actie
+  if(v.importAuto && !v.route) return {actie:"BPM Taxatie kiezen: JA of NEE",decision:true,cat:"BPM Taxatie"};
+  return null;
+}
+function pav(name){const k=PKEY[name]; return `<span class="pav" style="background:var(--${k})">${initials(name)}</span>`;}
+function badge(s){return `<span class="badge b-${s}">${statusLabel[s]}</span>`;}
+function carIcon(){return `<svg width="20" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-3a1 1 0 011-1h1z"/></svg>`;}
+
+let state={view:"vandaag",q:""};
+const app=document.getElementById("app");
+
+/* ===== Server-opslag (backend). Valt terug op lokaal als de API er niet is. ===== */
+let apiOk=false, saveT=null;
+function buildState(){const vehicles={}; V.forEach(v=>{vehicles[v.id]={status:v.status,klaar:v.klaar,route:v.route,owner:v.owner,subtasks:v.subtasks,photos:v.photos,arrivedAt:v.arrivedAt||null,taxAt:v.taxAt||null};}); return {vehicles,subUid,globalTodos,gtUid,activityLog};}
+async function loadState(){
+  try{ const r=await fetch("/api/state",{cache:"no-store"}); if(!r.ok)return; const s=await r.json(); apiOk=true;
+    if(s&&s.vehicles){ V.forEach(v=>{const d=s.vehicles[v.id]; if(d){ if(d.status)v.status=d.status; if(typeof d.klaar==="number")v.klaar=d.klaar; v.route=d.route||null; v.owner=d.owner||null; v.subtasks=Array.isArray(d.subtasks)?d.subtasks:[]; v.photos=d.photos||{}; v.arrivedAt=d.arrivedAt||null; v.taxAt=d.taxAt||null; }});
+      if(typeof s.subUid==="number")subUid=Math.max(subUid,s.subUid);
+      if(Array.isArray(s.globalTodos))globalTodos=s.globalTodos;
+      if(Array.isArray(s.activityLog))activityLog=s.activityLog;
+      if(typeof s.gtUid==="number")gtUid=Math.max(gtUid,s.gtUid); }
+  }catch(_){ /* geen backend: lokaal verder */ }
+}
+function scheduleSave(){ if(!apiOk)return; clearTimeout(saveT); saveT=setTimeout(()=>{ fetch("/api/state",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(buildState())}).catch(()=>{}); },400); }
+function match(v){const q=state.q.toLowerCase(); return !q || (v.merk+" "+v.model+" "+v.uitv+" "+v.kenteken+" "+v.id).toLowerCase().includes(q);}
+
+/* ===== Ongedaan maken (undo) ===== */
+const history=[];
+function pushUndo(label,undoFn){history.push({label,undoFn}); if(history.length>50)history.shift(); updateUndoUI(); showToast(label,true); scheduleSave();}
+function undoLast(){ if(!history.length)return; const e=history.pop(); e.undoFn(); updateUndoUI(); rerender(); showToast("Ongedaan gemaakt: "+e.label,false); scheduleSave();}
+function updateUndoUI(){const b=document.getElementById("undoBtn"); if(!b)return; if(history.length){b.disabled=false; b.title="Ongedaan maken: "+history[history.length-1].label;} else {b.disabled=true; b.title="Niets om ongedaan te maken";}}
+let toastT=null;
+function showToast(msg,withUndo){
+  let t=document.getElementById("toast"); if(!t){t=document.createElement("div"); t.id="toast"; t.className="toast"; document.body.appendChild(t);}
+  t.innerHTML=`<span>${msg}</span>${withUndo?`<button class="tundo" onclick="undoLast()">Ongedaan maken</button>`:""}<button class="tx" onclick="hideToast()" title="Sluiten">×</button>`;
+  t.classList.add("show"); if(toastT)clearTimeout(toastT); toastT=setTimeout(hideToast,6000);
+}
+function hideToast(){const t=document.getElementById("toast"); if(t)t.classList.remove("show");}
+document.addEventListener("keydown",e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="z"){e.preventDefault(); undoLast();}});
+
+/* ===== Activiteitenlog: wie vinkte wat af, en hoelang stond het open ===== */
+function ageStr(ts){ if(!ts)return ''; const d=Date.now()-ts; const m=Math.floor(d/60000); if(m<1)return 'net'; if(m<60)return m+' min'; const h=Math.floor(m/60); if(h<24)return h+' u'; return Math.floor(h/24)+' d'; }
+function fmtDate(ts){ if(!ts)return '—'; const d=new Date(ts); const p=n=>String(n).padStart(2,'0'); return `${p(d.getDate())}-${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function logActivity(action,text,vehicleId){ activityLog.push({ts:Date.now(),by:(currentUser&&currentUser.name)||'?',action,text:text||'',vehicleId:vehicleId||null}); if(activityLog.length>2000)activityLog.shift(); }
+function isAdmin(){ return currentUser&&currentUser.role==='admin'; }
+
+/* ===== Vandaag ===== */
+function renderVandaag(){
+  const kom=V.filter(v=>v.status==="komende");
+  const lop=V.filter(v=>v.status==="lopende");
+  const acties=lop.map(v=>({v,a:currentAction(v)})).filter(x=>x.a);
+  const subs=[]; lop.forEach(v=>v.subtasks.filter(s=>!s.done).forEach(s=>subs.push({v,sub:s})));
+  const gopen=globalTodos.filter(t=>!t.done).map(t=>({gt:t}));
+  const openCount=acties.length+subs.length+gopen.length;
+  const verwacht=V.filter(v=>v.status==="komende"&&v.batch); // transport gepland, nog niet binnen
+  const groups={}; PEOPLE.forEach(p=>groups[p]=[]); groups["_"]=[];
+  acties.forEach(x=>{(groups[x.v.owner]||groups["_"]).push(x);});
+  subs.forEach(x=>{(groups[x.sub.owner]||groups["_"]).push(x);});
+  gopen.forEach(x=>{(groups[x.gt.owner]||groups["_"]).push(x);});
+  const rank=z=>z.gt?2:(z.sub?1:0);
+  Object.values(groups).forEach(g=>g.sort((a,b)=>{const ra=rank(a),rb=rank(b); if(ra!==rb)return ra-rb; if(ra===0)return steps(a.v).currentIdx-steps(b.v).currentIdx; return 0;}));
+
+  function todoRow(x){
+    const person=x.gt?x.gt.owner:(x.sub?x.sub.owner:x.v.owner);
+    const opts=['<option value="">— toewijzen</option>'].concat(PEOPLE.map(p=>`<option value="${p}" ${person===p?'selected':''}>${p}</option>`)).join("");
+    const ageChip=ts=>{const a=ageStr(ts); return a?` · <span class="agechip" title="Staat zo lang open">⏱ ${a} open</span>`:'';};
+    if(x.gt){const t=x.gt; const veh=t.vehicleId?V.find(v=>v.id===t.vehicleId):null;
+      const sub=veh?`${veh.merk} ${veh.model} · ${veh.kenteken!=='—'?veh.kenteken:veh.vin}`:'Algemene taak';
+      return `<div class="todo"><label class="chk" title="Afvinken"><input type="checkbox" onchange="toggleGlobalTodo(${t.id},this.checked)"><span class="box"></span></label><div class="body" ${veh?`onclick="openVeh('${veh.id}')" style="cursor:pointer"`:'style="cursor:default"'}><div class="act">${t.text} <span class="tag" style="background:var(--blue-soft);color:var(--blue)">Los</span></div><div class="veh">${sub}${ageChip(t.createdAt)}</div></div><select class="assign" onchange="assignGlobalTodo(${t.id},this.value)">${opts}</select></div>`;}
+    if(x.sub){const s=x.sub,v=x.v;
+      return `<div class="todo"><span class="tk" style="background:var(--accent)"></span><div class="body" onclick="openVeh('${v.id}')"><div class="act">${s.text} <span class="tag" style="background:var(--amber-soft);color:var(--amber)">Extra</span></div><div class="veh">${v.merk} ${v.model} · ${v.kenteken!=='—'?v.kenteken:v.vin}${ageChip(s.createdAt)}</div></div><select class="assign" onchange="assignSubtask('${v.id}',${s.id},this.value)">${opts}</select></div>`;}
+    const v=x.v,a=x.a;
+    return `<div class="todo"><span class="tk"></span><div class="body" onclick="openVeh('${v.id}')"><div class="act">${a.actie}</div><div class="veh">${v.merk} ${v.model} · ${v.kenteken!=='—'?v.kenteken:v.vin}${ageChip(v.arrivedAt)}</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div>`;}
+  function personCard(name,list){const disp=name==="_"?"Niet toegewezen":name; const av=name==="_"?`<span class="pav" style="background:var(--slate)">?</span>`:pav(name);
+    return `<div class="person-card"><div class="person-head">${av}<span class="pn">${disp}</span><span class="pc">${list.length} ta${list.length===1?'ak':'ken'}</span></div>${list.length?list.map(todoRow).join(""):`<div class="empty" style="padding:16px">Geen open taken</div>`}</div>`;}
+
+  app.innerHTML=`
+    <h1 class="page-title">Vandaag</h1>
+    <p class="page-sub">Je dagelijkse leidraad: hieronder staan alle open taken. Verder onderaan vink je auto's aan zodra ze binnen zijn.</p>
+    ${(()=>{const nr=(bpmData.notifs||[]).filter(n=>!n.seen); if(!nr.length)return ''; return `<div class="banner" style="border-color:#bfe6d1;background:linear-gradient(180deg,#eefaf3,#e3f5ea)">
+      <div class="bi" style="background:var(--green)">📄</div>
+      <div style="flex:1"><div class="bt">${nr.length} nieuw BPM-taxatierapport${nr.length===1?'':'en'} van S-TAX</div>
+        <div class="bs">${nr.slice(0,4).map(n=>{const vv=V.find(x=>x.id===n.id);return (vv?`${vv.merk} ${vv.model}`:'Auto')+' · '+fmtDate(n.ts);}).join(' — ')}</div></div>
+      <button class="btn btn-ghost btn-sm" onclick="markBpmSeen()">Gezien</button></div>`;})()}
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 4px 12px">
+      <h3 style="margin:0;font-size:16px">To-do — per persoon <span class="agechip" style="color:var(--accent);background:var(--blue-soft)">${openCount} open</span></h3>
+      ${isAdmin()?`<button class="btn btn-ghost btn-sm" onclick="go('logboek')">📜 Logboek</button>`:''}
+    </div>
+    ${(lop.length||gopen.length)? `<div class="cols">${personCard("Leonie",groups["Leonie"])}${personCard("Sjoerd",groups["Sjoerd"])}${personCard("Vince",groups["Vince"])}${personCard("Floris",groups["Floris"])}</div>${groups["_"].length?`<div style="margin-top:16px">${personCard("_",groups["_"])}</div>`:""}`
+      : `<div class="card"><div class="empty"><div class="eb">📥</div>Nog geen open taken. Vink onderaan een auto op binnen, of voeg met <b>＋ To-do</b> rechtsboven een losse taak toe.</div></div>`}
+    <div class="kpis" style="margin-top:22px">
+      <div class="kpi"><div class="bar" style="background:var(--blue)"></div><div class="lab">Komende</div><div class="val">${kom.length}</div><div class="sub">nog niet binnen</div></div>
+      <div class="kpi"><div class="bar" style="background:var(--green)"></div><div class="lab">Binnengekomen</div><div class="val">${lop.length}</div><div class="sub">aangevinkt</div></div>
+      <div class="kpi"><div class="bar" style="background:var(--accent)"></div><div class="lab">Open taken</div><div class="val">${openCount}</div><div class="sub">stap te zetten</div></div>
+      <div class="kpi"><div class="bar" style="background:var(--slate)"></div><div class="lab">Niet toegewezen</div><div class="val">${groups["_"].length}</div><div class="sub">nog niemand op</div></div>
+    </div>
+    <div class="banner">
+      <div class="bi">📋</div>
+      <div><div class="bt">Afvinken bij binnenkomst</div>
+        <div class="bs">Je weet nog niet precies welke van de verwachte auto's morgen komen — vink ze aan zodra ze er zijn. Elke vink start stap 1 (RDW-foto's) en zet de to-do in gang.</div></div>
+    </div>
+    <div class="card" style="margin-bottom:18px"><h3>Verwacht binnenkort — aanvinken zodra binnen <span class="btn btn-ghost btn-sm" onclick="go('komende')">Alle komende →</span></h3>
+      <div class="card-body" style="padding:0 4px">${verwacht.length?komTable(verwacht):`<div class="empty">Alle verwachte auto's zijn aangevinkt.</div>`}</div></div>
+  `;
+}
+/* ===== Logboek (alleen admin: Vince & Floris) ===== */
+function renderLog(){
+  if(!isAdmin()){ go('vandaag'); return; }
+  const rows=activityLog.slice().reverse();
+  const body=rows.length? rows.map(e=>{const veh=e.vehicleId?V.find(v=>v.id===e.vehicleId):null;
+    return `<tr><td class="note" style="white-space:nowrap">${fmtDate(e.ts)}</td><td><span style="display:inline-flex;align-items:center;gap:6px">${PEOPLE.includes(e.by)?pav(e.by):''}<span style="font-weight:650">${e.by}</span></span></td><td>${e.action}</td><td>${e.text||(veh?`${veh.merk} ${veh.model}`:'')}</td></tr>`;
+  }).join("") : `<tr><td colspan="4" class="empty">Nog geen activiteit gelogd.</td></tr>`;
+  app.innerHTML=`
+    <div class="back" onclick="go('vandaag')">← Terug naar Vandaag</div>
+    <h1 class="page-title">Logboek</h1><p class="page-sub">Wie heeft wat wanneer afgevinkt. Alleen zichtbaar voor admins (Vince & Floris). Nieuwste bovenaan.</p>
+    <div class="card"><div class="card-body" style="padding:0 4px"><table><thead><tr><th style="width:120px">Wanneer</th><th style="width:150px">Wie</th><th>Actie</th><th>Taak / auto</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
+  window.scrollTo(0,0);
+}
+
+/* ===== Komende ===== */
+function komTable(list){
+  if(!list.length) return `<div class="empty">Geen auto's.</div>`;
+  return `<table><thead><tr><th style="width:52px">Binnen</th><th>Voertuig</th><th>1e reg / km</th><th>Herkomst</th><th>Binnenkomst</th></tr></thead><tbody>${list.map(v=>{
+    const arrived=v.status==='lopende';
+    return `<tr class="${arrived?'row-arrived':''}">
+      <td><label class="chk" title="Aanvinken zodra binnen"><input type="checkbox" ${arrived?'checked':''} onchange="arrive('${v.id}',this.checked)"><span class="box"></span></label></td>
+      <td><div class="veh-cell" onclick="openVeh('${v.id}')"><div class="thumb">${carIcon()}</div><div><div class="nm">${v.merk} ${v.model}</div><div class="id">${v.kenteken!=='—'?v.kenteken:v.vin}</div></div></div></td>
+      <td><div>${v.reg}</div><div class="note">${km(v.km)}</div></td>
+      <td><span class="tag ${v.importAuto?'tag-imp':'tag-nl'}">${v.importAuto?'Import':'NL / inruil'}</span> <span class="tag">${v.lev}</span></td>
+      <td>${arrived?`<span class="arr-lab">✓ Binnen — stap 1 loopt</span>`:`<span class="note">${v.note}</span>`}</td>
+    </tr>`;}).join("")}</tbody></table>`;
+}
+function renderKomende(){
+  const all=V.filter(v=>match(v));
+  const b13=all.filter(v=>v.batch==="13-08"), b14=all.filter(v=>v.batch==="14-08");
+  const overigImp=all.filter(v=>!v.batch&&v.importAuto), overigNl=all.filter(v=>!v.batch&&!v.importAuto);
+  const binnen=l=>l.filter(v=>v.status==="lopende").length;
+  const grp=(title,date,list)=>!list.length?"":`
+    <div class="grp"><div class="grp-head ${date?'batch':''}">
+      <span class="gt">${title}</span><span class="gcount">${list.length}</span>${date?`<span class="gdate">${date}</span>`:""}
+      <span class="sp gdate">${binnen(list)}/${list.length} binnen</span>
+    </div><div style="padding:0 4px">${komTable(list)}</div></div>`;
+  app.innerHTML=`
+    <h1 class="page-title">Komende auto's</h1>
+    <p class="page-sub">Live overgenomen uit het Autoboek (tab “Komende Autos”). <b>Vink een auto aan zodra hij binnen is</b> — dan verhuist hij naar Lopende en gaat de to-do voor stap 1 (RDW Foto's) lopen.</p>
+    <div class="groupwrap">
+      ${grp("Transport gepland 13-08","verwacht — nog niet zeker welke",b13)}
+      ${grp("Transport gepland 14-08","verwacht",b14)}
+      ${grp("Overig import — nog geen transportdatum","",overigImp)}
+      ${grp("Overig / inruil (NL)","",overigNl)}
+    </div>`;
+}
+
+/* ===== Lopende ===== */
+function catOf(v){const s=steps(v); if(s.currentIdx==null)return null; return s.list[s.currentIdx].cat;}
+function renderLopende(){
+  const lop=V.filter(v=>v.status==="lopende"&&match(v));
+  const allLop=V.filter(v=>v.status==="lopende");
+  const perCat=CATS.map(c=>allLop.filter(v=>catOf(v)===c).length);
+  const maxc=Math.max(1,...perCat);
+  if(!allLop.length){
+    app.innerHTML=`<h1 class="page-title">Lopende auto's</h1><p class="page-sub">Auto's die binnen zijn en het traject doorlopen.</p>
+      <div class="card"><div class="empty"><div class="eb">📥</div><div style="font-weight:650;color:var(--ink);margin-bottom:4px">Nog geen auto's in traject</div>Zodra de batch van 13-08 binnenkomt, markeer je dat op <b onclick="go('komende')" style="cursor:pointer;color:var(--blue)">Komende</b> of <b onclick="go('vandaag')" style="cursor:pointer;color:var(--blue)">Vandaag</b> — dan verschijnen ze hier met stap 1 (RDW Foto's) open.</div></div>`;
+    return;
+  }
+  const rows=lop.map(v=>{const s=steps(v);const pct=s.total?Math.round(s.done/s.total*100):0;
+    const a=currentAction(v);
+    const cur=a==null?`<span class="badge b-lopende">✓ Verkoopklaar</span>`
+      :(a.decision?`<span class="phase-lab">BPM Taxatie?</span> <span class="need">keuze nodig</span>`:`<span class="phase-lab">${a.actie}</span>`);
+    const rb=v.importAuto&&v.route?`<span class="route-badge rbg-${v.route==='JA'?'ja':'nee'}">${v.route}</span>`:'';
+    return `<tr><td><div class="veh-cell" onclick="openVeh('${v.id}')"><div class="thumb">${carIcon()}</div><div><div class="nm">${v.merk} ${v.model}</div><div class="id">${v.kenteken!=='—'?v.kenteken:v.vin}</div></div></div></td>
+      <td style="min-width:220px"><div class="pbar"><div class="pfill" style="width:${pct}%"></div></div><div style="margin-top:5px">${cur} <span class="muted" style="font-size:11px">· ${s.done}/${s.total}</span></div></td>
+      <td><span class="tag ${v.importAuto?'tag-imp':'tag-nl'}">${v.importAuto?'Import':'NL'}</span> ${rb}</td>
+      <td>${v.owner?pav(v.owner):`<span class="pav" style="background:var(--slate)">?</span>`}</td></tr>`;}).join("");
+  app.innerHTML=`
+    <h1 class="page-title">Lopende auto's</h1><p class="page-sub">Binnengekomen auto's met hun stap in de import/BPM-flow.</p>
+    <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:18px;align-items:start">
+      <div class="card"><div class="card-body" style="padding:0 4px"><table><thead><tr><th>Voertuig</th><th>Voortgang</th><th>Route</th><th>Wie</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+      <div class="card"><h3>Waar staan ze?</h3><div class="card-body"><div class="funnel">
+        ${CATS.map((c,i)=>`<div class="fn"><div class="fl">${c}</div><div class="track"><div class="fill" style="width:${Math.round(perCat[i]/maxc*100)}%;${perCat[i]===0?'background:transparent':''}">${perCat[i]||''}</div></div><div class="fc">${perCat[i]}</div></div>`).join("")}
+      </div><div style="margin-top:10px;font-size:12px;color:var(--muted)">Toont waar de lopende auto's nu staan in de flow — de langste balk is het knelpunt.</div></div></div>
+    </div>`;
+}
+
+/* ===== Detail ===== */
+function openVeh(id){
+  const v=V.find(x=>x.id===id); if(!v)return; state.view="veh:"+id; setNav(v.status==='lopende'?'lopende':'komende');
+  const s=steps(v); const act=currentAction(v);
+  const specs=[["Kenteken",v.kenteken],["VIN / chassis",`<span class="mono">${v.vin}</span>`],["Merk & model",`${v.merk} ${v.model}`],["Uitvoering",v.uitv],["1e toelating",v.reg],["Km-stand",km(v.km)],["Brandstof",v.brandstof],["Transmissie",v.transm],["Leverancier",v.lev],["Datum inkoop",v.inkoopdatum]];
+  const opts=['<option value="">— niemand</option>'].concat(PEOPLE.map(p=>`<option value="${p}" ${v.owner===p?'selected':''}>${p}</option>`)).join("");
+  app.innerHTML=`
+    <div class="back" onclick="go('${v.status}')">← Terug</div>
+    <div class="det-head">
+      <div class="hero"><svg width="64" height="40" viewBox="0 0 24 24" fill="#aebfce">${carIcon().replace('width="20" height="13"','')}</svg></div>
+      <div class="det-title" style="flex:1;min-width:260px">
+        <h1>${v.merk} ${v.model}</h1><div class="sub">${v.uitv}</div>
+        <div class="chips">${badge(v.status)}<span class="chip"><b>Km</b> ${km(v.km)}</span><span class="chip"><b>1e reg</b> ${v.reg}</span><span class="chip"><b>Traject</b> ${v.importAuto?'Import (volledig)':'NL (kort)'}</span></div>
+        ${v.status==='komende'
+          ? `<div class="infobar"><div class="ai">🚚</div><div>${v.note}</div></div><div style="margin-top:10px;display:flex;align-items:center;gap:10px"><label class="chk"><input type="checkbox" onchange="arrive('${v.id}',this.checked)"><span class="box"></span></label><span style="font-weight:650;font-size:13.5px">Binnengekomen — start stap 1</span></div>`
+          : (act? `<div class="infobar"><div class="ai">▶</div><div>Nu aan de beurt: <b>${act.actie}</b></div></div>`
+                : `<div class="infobar" style="background:var(--green-soft);border-color:#bfe6d1;color:var(--green)"><div class="ai" style="background:#cbecdb;color:var(--green)">✓</div><div><b>Verkoopklaar</b> — alle stappen afgerond</div></div>`)}
+        ${v.status==='lopende'?`<div style="margin-top:12px"><button class="btn btn-ghost btn-sm" onclick="askBackToKomend('${v.id}')" title="Deze auto stond per ongeluk op binnen">↩ Terug naar Komend</button></div>`:''}
+      </div>
+    </div>
+    <div class="det-grid">
+      <div style="display:flex;flex-direction:column;gap:18px">
+        ${v.status==='lopende'&&v.importAuto?taxPanel(v):''}
+        ${v.status==='lopende'?`<div class="card"><h3>Import/BPM-traject <span class="muted" style="font-weight:500;font-size:12.5px">${s.done}/${s.total} stappen${v.route?` · route ${v.route}`:''}</span></h3><div class="card-body" style="padding:6px 16px 12px">
+          ${s.arr.map((st,idx)=>{
+            return `<div class="tstep ${st.state}"><label class="chk"><input type="checkbox" ${st.state==='done'?'checked':''} onchange="setStep('${v.id}',${idx},this.checked)"><span class="box"></span></label><div style="flex:1"><div class="h">${st.label}</div><div class="d">${st.state==='done'?'Afgerond':st.state==='current'?'Nu aan de beurt':'Nog te doen'}</div></div></div>`;
+          }).join("")}
+          ${v.importAuto&&!v.route?`<div class="muted" style="font-size:12px;padding:8px 2px 0">De vervolgstappen verschijnen zodra je hierboven Taxatie JA of NEE kiest.</div>`:''}
+        </div></div>`:''}
+        ${v.status==='lopende'&&v.importAuto?PHOTO_GROUPS.map(g=>photoCard(v,g)).join(''):''}
+        ${v.status==='lopende'?adGalleryCard(v):''}
+        <div class="card"><h3>Specificaties</h3><div class="card-body"><div class="spec-grid">${specs.map(([k,val])=>`<div class="spec"><span class="k">${k}</span><span class="v">${val||'—'}</span></div>`).join("")}</div></div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:18px">
+        ${v.status==='lopende'?`<div class="card"><h3>Verantwoordelijke</h3><div class="owner-box">${v.owner?pav(v.owner):`<span class="pav" style="background:var(--slate)">?</span>`}<div style="flex:1"><div style="font-weight:650;font-size:13.5px">${v.owner||'Niet toegewezen'}</div><div class="muted" style="font-size:12px">voor huidige fase</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div></div>`:''}
+        ${v.status==='lopende'?subtaskCard(v):''}
+        <div class="card"><h3>Herkomst</h3><div class="card-body">
+          <div class="spec"><span class="k">Bron</span><span class="v">Autoboek · Komende Autos</span></div>
+          <div class="spec"><span class="k">Leverancier</span><span class="v">${v.lev}</span></div>
+          <div class="spec" style="border-bottom:0"><span class="k">Transport / status</span><span class="v" style="max-width:160px">${v.note}</span></div>
+        </div></div>
+      </div>
+    </div>`;
+  window.scrollTo(0,0);
+}
+
+/* ===== Acties ===== */
+function arrive(id,checked){const v=V.find(x=>x.id===id); if(!v)return;
+  const ps=v.status, pk=v.klaar, pr=v.route, pa=v.arrivedAt;
+  v.status=(checked===false)?"komende":"lopende"; v.klaar=0; v.route=null;
+  if(v.status==='lopende'){ v.arrivedAt=Date.now(); logActivity('Auto binnengekomen','',v.id); }
+  else { v.arrivedAt=null; }
+  pushUndo(`${v.merk} ${v.model} ${v.status==='lopende'?'op binnen gezet':'teruggezet naar komende'}`, ()=>{v.status=ps; v.klaar=pk; v.route=pr; v.arrivedAt=pa;});
+  rerender();}
+function assign(id,val){const v=V.find(x=>x.id===id); if(!v)return;
+  const po=v.owner; v.owner=val||null;
+  pushUndo(`${v.merk} ${v.model} toegewezen aan ${v.owner||'niemand'}`, ()=>{v.owner=po;});
+  rerender();}
+function choose(id,route){const v=V.find(x=>x.id===id); if(!v)return;
+  const pr=v.route, pt=v.taxAt||null;
+  v.route=route; if(!v.taxAt)v.taxAt=Date.now();
+  // Foto-stappen NIET automatisch afvinken: klaar blijft ongemoeid, die stappen blijven open.
+  logActivity('Taxatie '+route+' gezet', `${v.merk} ${v.model}`, id);
+  pushUndo(`${v.merk} ${v.model} — Taxatie: ${route}`, ()=>{v.route=pr; v.taxAt=pt;});
+  rerender();
+  if(route==='JA') mailTaxateur(v);
+}
+function mailTaxateur(v){
+  const kent=v.kenteken!=='—'?v.kenteken:v.vin;
+  const subj=`Taxatie-aanvraag: ${v.merk} ${v.model} (${kent})`;
+  const body=`Beste S-TAX,\n\nWe hebben een auto klaarstaan voor BPM-taxatie:\n\n`+
+    `Merk/model: ${v.merk} ${v.model}\nUitvoering: ${v.uitv||'-'}\nKenteken/VIN: ${kent}\n`+
+    `1e toelating: ${v.reg||'-'}\nKm-stand: ${v.km!=null?v.km.toLocaleString('nl-NL')+' km':'-'}\n\n`+
+    `De auto staat bij Prieva en kan bekeken en getaxeerd worden. De RDW- en papieren-foto's leveren wij zo snel mogelijk aan; die zijn (zodra beschikbaar) te bekijken en te downloaden in het S-TAX-portaal van PVP.\n\nMet vriendelijke groet,\nPrieva`;
+  window.location.href='mailto:info@s-tax.nl?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(body);
+}
+function mailTaxateurId(id){ const v=V.find(x=>x.id===id); if(v)mailTaxateur(v); }
+function taxPanel(v){
+  const reps=bpmList(v.id);
+  return `<div class="card"><h3>BPM Taxatie ${v.route?`<span class="route-badge rbg-${v.route==='JA'?'ja':'nee'}">${v.route}</span>`:'<span class="need">keuze</span>'}</h3>
+    <div class="card-body">
+      <div class="note" style="margin-bottom:9px">Je kunt de auto <b>direct</b> op taxatie zetten — ook vóórdat de foto's klaar zijn. Bij <b>JA</b> stel je een mail aan S-TAX op en verschijnt de auto in hun portaal. De foto-stappen blijven gewoon openstaan.</div>
+      <div class="route-btns">
+        <button class="rb ja ${v.route==='JA'?'active-ja':''}" onclick="choose('${v.id}','JA')">JA — via S-TAX</button>
+        <button class="rb nee ${v.route==='NEE'?'active-nee':''}" onclick="choose('${v.id}','NEE')">NEE — zelf doen</button>
+      </div>
+      ${v.route==='JA'?`<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="mailTaxateurId('${v.id}')">📧 S-TAX (opnieuw) mailen</button>`:''}
+      ${reps.length?`<div style="margin-top:12px"><div style="font-weight:650;font-size:13px;margin-bottom:6px">Taxatierapport ontvangen</div>${reps.map(rr=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px"><span style="font-size:18px">📄</span><div style="flex:1;min-width:0"><div style="font-weight:650;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rr.name}</div><div class="note">${fmtDate(rr.ts)} · ${rr.by}</div></div><a class="btn btn-ghost btn-sm" href="${rr.url}" target="_blank" download>⭳ Openen</a></div>`).join('')}</div>`:''}
+    </div></div>`;
+}
+function setStep(id,i,checked){const v=V.find(x=>x.id===id); if(!v)return;
+  const pk=v.klaar; v.klaar = checked? i+1 : i;
+  const lbl=stepList(v)[i]?stepList(v)[i].label:'stap';
+  if(checked)logActivity('Stap afgevinkt',`${v.merk} ${v.model} — ${lbl}`,id);
+  pushUndo(`${v.merk} ${v.model} — ${checked?'afgevinkt':'teruggezet'}: ${lbl}`, ()=>{v.klaar=pk;});
+  rerender();}
+/* ===== Foto's per stap: Voertuig→RDW Foto's, Documentatie→Papieren Foto's ===== */
+function grpReqCount(v,g){return g.items.filter(p=>p.req&&v.photos[p.key]).length;}
+function grpReqTotal(g){return g.items.filter(p=>p.req).length;}
+let photoUp={};
+async function setPhotoData(id,key,dataUrl){const v=V.find(x=>x.id===id); if(!v)return; const prev=v.photos[key]; v.photos[key]=dataUrl; if(apiOk)photoUp[id+'|'+key]=1; rerender();
+  if(apiOk){ try{ const res=await fetch("/api/photo",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,key,dataUrl})}); if(res.ok){const j=await res.json(); if(j&&j.url)v.photos[key]=j.url;} }catch(_){} delete photoUp[id+'|'+key]; }
+  pushUndo(`${v.merk} ${v.model} — foto: ${PHOTO_BY_KEY[key].label}`, ()=>{ if(prev)v.photos[key]=prev; else delete v.photos[key]; });
+  rerender();}
+function setPhoto(id,key,input){ if(!input.files||!input.files[0])return; const r=new FileReader(); r.onload=e=>setPhotoData(id,key,e.target.result); r.readAsDataURL(input.files[0]); input.value=""; }
+/* Sleep-bak: meerdere foto's tegelijk, dan per stuk naar het juiste vakje slepen */
+let photoTray={}; let dragTray=null; let photoTrayLoading={};
+function addToTray(vid,gname,input){ const files=[...input.files]; input.value=""; if(!files.length)return; const k=vid+'|'+gname; if(!photoTray[k])photoTray[k]=[]; let pending=files.length; photoTrayLoading[k]=files.length; rerender();
+  files.forEach(f=>{ const r=new FileReader(); r.onload=e=>{ photoTray[k].push(e.target.result); if(--pending===0)delete photoTrayLoading[k]; else photoTrayLoading[k]=pending; rerender(); }; r.readAsDataURL(f); }); }
+function removeTray(vid,gname,idx){ const k=vid+'|'+gname; if(photoTray[k])photoTray[k].splice(idx,1); rerender(); }
+function clearTray(vid,gname){ const k=vid+'|'+gname; const arr=photoTray[k]; if(!arr||!arr.length)return; if(!window.confirm(arr.length+" foto"+(arr.length===1?'':"'s")+" uit de bak weghalen?"))return; photoTray[k]=[]; rerender(); }
+function clearGroupPhotos(id,gi){ const v=V.find(x=>x.id===id); if(!v)return; const g=PHOTO_GROUPS[gi]; const filled=g.items.filter(p=>v.photos[p.key]); if(!filled.length)return; if(!window.confirm("Alle "+filled.length+" foto"+(filled.length===1?'':"'s")+" van “"+g.step+"” wissen? Dit kan met Ongedaan worden teruggezet."))return; const prev={}; filled.forEach(p=>{prev[p.key]=v.photos[p.key]; delete v.photos[p.key];}); pushUndo(`${v.merk} ${v.model} — ${g.step}: alle foto's gewist`, ()=>{Object.assign(v.photos,prev);}); rerender(); }
+function trayDragStart(ev,vid,gname,idx){ dragTray={k:vid+'|'+gname,idx}; try{ev.dataTransfer.effectAllowed='move'; ev.dataTransfer.setData('text/plain','x');}catch(_){} }
+function slotDrop(ev,id,key){ ev.preventDefault(); if(!dragTray)return; const arr=photoTray[dragTray.k]; if(!arr)return; const dataUrl=arr[dragTray.idx]; const dt=dragTray; dragTray=null; if(!dataUrl)return; arr.splice(dt.idx,1); setPhotoData(id,key,dataUrl); }
+function backToKomend(id){const v=V.find(x=>x.id===id); if(!v)return; const ps=v.status,pk=v.klaar,pr=v.route,pa=v.arrivedAt;
+  v.status='komende'; v.klaar=0; v.route=null; v.arrivedAt=null;
+  pushUndo(`${v.merk} ${v.model} teruggezet naar Komend`, ()=>{v.status=ps; v.klaar=pk; v.route=pr; v.arrivedAt=pa;});
+  go('komende'); }
+function askBackToKomend(id){const v=V.find(x=>x.id===id); if(!v)return; if(window.confirm(`${v.merk} ${v.model} terugzetten naar Komend?\n\nDe voortgang (afgevinkte stappen en route) van deze auto wordt gewist. Advertentie- en RDW-foto's blijven bewaard.`))backToKomend(id); }
+function removePhoto(id,key){const v=V.find(x=>x.id===id); if(!v)return; const prev=v.photos[key]; if(!prev)return;
+  delete v.photos[key];
+  pushUndo(`${v.merk} ${v.model} — foto verwijderd: ${PHOTO_BY_KEY[key].label}`, ()=>{v.photos[key]=prev;});
+  rerender();}
+function finishPhotoStep(id,stepIdx){const v=V.find(x=>x.id===id); if(!v)return; const pk=v.klaar; v.klaar=Math.max(v.klaar||0,stepIdx+1);
+  pushUndo(`${v.merk} ${v.model} — stap afgerond`, ()=>{v.klaar=pk;}); rerender();}
+function photoCard(v,g){
+  const reqDone=grpReqCount(v,g), reqTot=grpReqTotal(g);
+  const optDone=g.items.filter(p=>!p.req&&v.photos[p.key]).length;
+  const allReq=reqDone===reqTot, stepDone=(v.klaar||0)>=g.stepIdx+1;
+  const slots=g.items.map(p=>{const img=v.photos[p.key]; const inputId=`ph-${v.id}-${p.key}`; const uploading=photoUp[v.id+'|'+p.key];
+    return `<div class="pslot">
+      <div class="ptile ${img?'has':''}" onclick="document.getElementById('${inputId}').click()" ondragover="event.preventDefault();this.classList.add('drop')" ondragleave="this.classList.remove('drop')" ondrop="this.classList.remove('drop');slotDrop(event,'${v.id}','${p.key}')" title="${img?'Vervangen of sleep hierheen':'Foto toevoegen of sleep hierheen'}">
+        ${img?`<img src="${img}" alt=""><span class="pcheck">✓</span><button class="premove" title="Verwijderen" onclick="event.stopPropagation();removePhoto('${v.id}','${p.key}')">×</button>`
+             :`<span class="pcam">📷</span><span class="padd">Toevoegen</span>`}
+        ${uploading?`<span class="puploading"><span class="spin"></span></span>`:''}
+      </div>
+      <input id="${inputId}" type="file" accept="image/*" capture="environment" style="display:none" onchange="setPhoto('${v.id}','${p.key}',this)">
+      <div class="plabel">${p.label} ${p.req?`<span class="preq">verplicht</span>`:`<span class="popt">optioneel</span>`}</div>
+      ${p.instr?`<div class="pinstr">${p.instr}</div>`:''}
+    </div>`;}).join("");
+  return `<div class="card"><h3>${g.step} <span class="muted" style="font-weight:500;font-size:12.5px">${reqDone}/${reqTot} verplicht${optDone?` · ${optDone} extra`:''}</span></h3>
+    <div class="card-body">
+      ${(()=>{const tk=v.id+'|'+g.group; const tray=photoTray[tk]||[]; const loading=photoTrayLoading[tk]; const anyFilled=g.items.some(p=>v.photos[p.key]); return `<div class="traybar"><label class="btn btn-ghost btn-sm" title="Kies of sleep meerdere foto's tegelijk"><input type="file" accept="image/*" multiple style="display:none" onchange="addToTray('${v.id}','${g.group}',this)">＋ Meerdere foto's tegelijk</label>${loading?`<span class="note" style="margin:0;display:inline-flex;align-items:center;gap:7px"><span class="spin"></span>Foto's laden… (${loading})</span>`:tray.length?`<span class="note" style="margin:0">Sleep elke foto naar het juiste vakje ↓</span><button class="btn btn-danger-o btn-sm" onclick="clearTray('${v.id}','${g.group}')">🗑 Bak legen (${tray.length})</button>`:''}<span style="flex:1"></span>${anyFilled?`<button class="btn btn-danger-o btn-sm" title="Wis alle foto's van deze stap" onclick="clearGroupPhotos('${v.id}',${g.stepIdx})">Alle foto's wissen</button>`:''}</div>${tray.length?`<div class="traygrid">${tray.map((d,i)=>`<div class="traythumb" draggable="true" ondragstart="trayDragStart(event,'${v.id}','${g.group}',${i})"><img src="${d}" alt=""><button class="premove" title="Weghalen" onclick="removeTray('${v.id}','${g.group}',${i})">×</button></div>`).join('')}</div>`:''}`;})()}
+      <div class="pgrid">${slots}</div>
+      ${allReq
+        ? (stepDone
+            ? `<div class="infobar" style="background:var(--green-soft);border-color:#bfe6d1;color:var(--green);margin-top:12px"><div class="ai" style="background:#cbecdb;color:var(--green)">✓</div><div>Alle verplichte foto's compleet — stap “${g.step}” afgerond.</div></div>`
+            : `<button class="btn btn-primary" style="margin-top:12px" onclick="finishPhotoStep('${v.id}',${g.stepIdx})">${g.step} afronden → volgende stap</button>`)
+        : `<div class="muted" style="font-size:12px;margin-top:10px">Voeg de ${reqTot} verplichte foto's toe om deze stap af te ronden.</div>`}
+      <div class="note" style="margin-top:10px">${apiOk?"Foto's worden op de server bewaard en gedeeld met het team.":"Demo: foto's worden alleen in je browser bewaard (geen server gevonden)."}</div>
+    </div></div>`;
+}
+/* ===== Extra taken per auto (sub-to-do) ===== */
+function addSubtask(id){const v=V.find(x=>x.id===id); if(!v)return; const inp=document.getElementById('subin-'+id); if(!inp)return;
+  const t=inp.value.trim(); if(!t)return; const st={id:subUid++,text:t,owner:v.owner||null,done:false,createdAt:Date.now()}; v.subtasks.push(st);
+  pushUndo(`${v.merk} ${v.model} — extra taak toegevoegd: ${t}`, ()=>{const i=v.subtasks.indexOf(st); if(i>-1)v.subtasks.splice(i,1);});
+  rerender();}
+function toggleSubtask(id,sid,checked){const v=V.find(x=>x.id===id); if(!v)return; const st=v.subtasks.find(s=>s.id===sid); if(!st)return;
+  const pv=st.done, pda=st.doneAt, pdb=st.doneBy; st.done=checked;
+  if(checked){ st.doneAt=Date.now(); st.doneBy=(currentUser&&currentUser.name)||'?'; logActivity('Extra taak afgevinkt',`${st.text} (${v.merk} ${v.model})`,id); }
+  else { st.doneAt=null; st.doneBy=null; }
+  pushUndo(`${v.merk} ${v.model} — extra taak ${checked?'afgevinkt':'heropend'}: ${st.text}`, ()=>{st.done=pv; st.doneAt=pda; st.doneBy=pdb;}); rerender();}
+function assignSubtask(id,sid,val){const v=V.find(x=>x.id===id); if(!v)return; const st=v.subtasks.find(s=>s.id===sid); if(!st)return;
+  const po=st.owner; st.owner=val||null;
+  pushUndo(`${v.merk} ${v.model} — extra taak toegewezen aan ${st.owner||'niemand'}`, ()=>{st.owner=po;}); rerender();}
+function delSubtask(id,sid){const v=V.find(x=>x.id===id); if(!v)return; const i=v.subtasks.findIndex(s=>s.id===sid); if(i<0)return; const st=v.subtasks[i];
+  v.subtasks.splice(i,1);
+  pushUndo(`${v.merk} ${v.model} — extra taak verwijderd: ${st.text}`, ()=>{v.subtasks.splice(i,0,st);}); rerender();}
+function subtaskCard(v){
+  const opt=st=>['<option value="">— niemand</option>'].concat(PEOPLE.map(p=>`<option value="${p}" ${st.owner===p?'selected':''}>${p}</option>`)).join("");
+  const rows=v.subtasks.length? v.subtasks.map(st=>`<div class="todo">
+      <label class="chk"><input type="checkbox" ${st.done?'checked':''} onchange="toggleSubtask('${v.id}',${st.id},this.checked)"><span class="box"></span></label>
+      <div class="body" style="cursor:default"><div class="act" style="${st.done?'text-decoration:line-through;color:var(--muted)':''}">${st.text}</div></div>
+      <select class="assign" onchange="assignSubtask('${v.id}',${st.id},this.value)">${opt(st)}</select>
+      <button class="premove" style="position:static;background:#eef2f6;color:var(--slate)" title="Verwijderen" onclick="delSubtask('${v.id}',${st.id})">×</button>
+    </div>`).join("") : `<div class="empty" style="padding:14px">Nog geen extra taken voor deze auto.</div>`;
+  return `<div class="card"><h3>Extra taken <span class="muted" style="font-weight:500;font-size:12.5px">deze auto</span></h3>
+    <div style="padding:2px 0">${rows}</div>
+    <div style="display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line)">
+      <input id="subin-${v.id}" placeholder="Bijv. wieldoppen bestellen, deuk uitdeuken…" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px" onkeydown="if(event.key==='Enter')addSubtask('${v.id}')">
+      <button class="btn btn-primary btn-sm" onclick="addSubtask('${v.id}')">Toevoegen</button>
+    </div></div>`;
+}
+/* ===== Algemene to-do's (los, optioneel gekoppeld aan auto) ===== */
+function openTodoModal(){
+  let ov=document.getElementById('todoModal');
+  if(!ov){ov=document.createElement('div'); ov.id='todoModal'; ov.className='modal-ov';
+    ov.addEventListener('click',e=>{if(e.target===ov)closeTodoModal();}); document.body.appendChild(ov);}
+  const popts=['<option value="">— niemand</option>'].concat(PEOPLE.map(p=>`<option value="${p}">${p}</option>`)).join("");
+  const vopts=['<option value="">— geen auto (algemeen)</option>'].concat(
+    V.map(v=>`<option value="${v.id}">${v.merk} ${v.model} · ${v.kenteken!=='—'?v.kenteken:v.vin}</option>`)).join("");
+  ov.innerHTML=`<div class="modal">
+    <h3>Nieuwe to-do <button class="mclose" onclick="closeTodoModal()" title="Sluiten">×</button></h3>
+    <div class="mb">
+      <div><label>Taak</label><input type="text" id="gt-text" placeholder="Bijv. bellen met leverancier, banden bestellen…" onkeydown="if(event.key==='Enter')addGlobalTodo()"></div>
+      <div><label>Toewijzen aan</label><select id="gt-owner">${popts}</select></div>
+      <div><label>Koppelen aan auto <span style="font-weight:500;color:var(--muted)">— optioneel</span></label><select id="gt-veh">${vopts}</select></div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-ghost" onclick="closeTodoModal()">Annuleren</button>
+      <button class="btn btn-primary" onclick="addGlobalTodo()">Toevoegen »</button>
+    </div>
+  </div>`;
+  ov.classList.add('show');
+  setTimeout(()=>{const el=document.getElementById('gt-text'); if(el)el.focus();},40);
+}
+function closeTodoModal(){const ov=document.getElementById('todoModal'); if(ov)ov.classList.remove('show');}
+function addGlobalTodo(){
+  const inp=document.getElementById('gt-text'); if(!inp)return; const t=inp.value.trim(); if(!t){inp.focus();return;}
+  const owner=document.getElementById('gt-owner').value||null;
+  const vehicleId=document.getElementById('gt-veh').value||null;
+  const td={id:gtUid++,text:t,owner,vehicleId,done:false,createdAt:Date.now()}; globalTodos.push(td);
+  pushUndo(`Algemene to-do toegevoegd: ${t}`, ()=>{const i=globalTodos.indexOf(td); if(i>-1)globalTodos.splice(i,1);});
+  closeTodoModal(); if(state.view!=='vandaag')go('vandaag'); else rerender();
+}
+function toggleGlobalTodo(id,checked){const td=globalTodos.find(x=>x.id===id); if(!td)return; const pv=td.done, pda=td.doneAt, pdb=td.doneBy; td.done=checked;
+  if(checked){ td.doneAt=Date.now(); td.doneBy=(currentUser&&currentUser.name)||'?'; logActivity('To-do afgevinkt',td.text,td.vehicleId); }
+  else { td.doneAt=null; td.doneBy=null; }
+  pushUndo(`Algemene to-do ${checked?'afgevinkt':'heropend'}: ${td.text}`, ()=>{td.done=pv; td.doneAt=pda; td.doneBy=pdb;}); rerender();}
+function assignGlobalTodo(id,val){const td=globalTodos.find(x=>x.id===id); if(!td)return; const po=td.owner; td.owner=val||null;
+  pushUndo(`Algemene to-do toegewezen aan ${td.owner||'niemand'}`, ()=>{td.owner=po;}); rerender();}
+function delGlobalTodo(id){const i=globalTodos.findIndex(x=>x.id===id); if(i<0)return; const td=globalTodos[i]; globalTodos.splice(i,1);
+  pushUndo(`Algemene to-do verwijderd: ${td.text}`, ()=>{globalTodos.splice(i,0,td);}); rerender();}
+/* ===== Advertentiefoto's ===== */
+async function loadAdphotos(){ if(!apiOk)return; try{ const r=await fetch("/api/adphotos",{cache:"no-store"}); if(r.ok){adPhotos=await r.json()||{};} }catch(_){} }
+function adList(id){ return Array.isArray(adPhotos[id])?adPhotos[id]:[]; }
+function rerenderCurrent(){ if(currentUser&&currentUser.role==='foto')renderFoto(); else if(currentUser&&currentUser.role==='taxateur')renderTax(); else rerender(); }
+/* ===== BPM-taxatierapporten (S-TAX) ===== */
+let bpmData={vehicles:{},notifs:[]};
+async function loadBpm(){ if(!apiOk)return; try{ const r=await fetch("/api/bpmreports",{cache:"no-store"}); if(r.ok){ bpmData=await r.json()||{vehicles:{},notifs:[]}; if(!bpmData.vehicles)bpmData.vehicles={}; if(!Array.isArray(bpmData.notifs))bpmData.notifs=[]; } }catch(_){} }
+function bpmList(id){ return (bpmData.vehicles&&Array.isArray(bpmData.vehicles[id]))?bpmData.vehicles[id]:[]; }
+async function loadTaxState(){ if(!apiOk)return; try{ const r=await fetch("/api/taxstate",{cache:"no-store"}); if(r.ok){ const s=await r.json(); if(s&&s.vehicles){ V.forEach(v=>{ const d=s.vehicles[v.id]; if(d){ if(d.status)v.status=d.status; v.route=d.route||null; v.photos=d.photos||{}; } }); } } }catch(_){} }
+async function uploadBpm(id,input){ const f=input.files&&input.files[0]; input.value=''; if(!f)return;
+  showToast("BPM-rapport uploaden…",false);
+  const r=new FileReader();
+  r.onload=async e=>{ if(apiOk){ try{ const rp=await fetch("/api/bpmreport",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,dataUrl:e.target.result,name:f.name})}); if(rp.ok){ await loadBpm(); showToast("BPM-rapport geüpload ✓",false); rerenderCurrent(); return; } }catch(_){} showToast("Upload mislukt — probeer opnieuw",false); } else { showToast("Geen server gevonden",false); } };
+  r.readAsDataURL(f);
+}
+async function markBpmSeen(){ if(apiOk){ try{ await fetch("/api/bpmnotif-seen",{method:"POST"}); }catch(_){} } (bpmData.notifs||[]).forEach(n=>n.seen=true); rerender(); }
+/* ===== Taxateur-weergave (rol taxateur, login S-tax) ===== */
+function renderTax(){ if(taxState.car)renderTaxCar(); else renderTaxList(); syncHistory(); }
+function taxCars(){ return V.filter(v=>v.status==='lopende'&&v.route==='JA'); }
+function renderTaxList(){
+  const list=taxCars();
+  const rows=list.length? list.map(v=>{ const nfoto=Object.keys(v.photos||{}).length; const nrep=bpmList(v.id).length;
+    return `<div class="fotocar" onclick="openTaxCar('${v.id}')"><div class="thumb">${carIcon()}</div>
+      <div style="flex:1;min-width:0"><div class="nm">${v.merk} ${v.model}</div><div class="id">${v.kenteken!=='—'?v.kenteken:v.vin}</div></div>
+      <div class="fotocount ${nfoto?'has':''}">${nfoto?nfoto+" foto"+(nfoto===1?'':"'s"):'nog geen foto'}</div>
+      ${nrep?`<span class="fotocount has">✓ rapport</span>`:''}
+      <span style="color:var(--muted);font-size:20px">›</span></div>`;
+  }).join("") : `<div class="empty"><div class="eb">🔍</div>Er staan nu geen auto's op taxatie.</div>`;
+  app.innerHTML=`<h1 class="page-title">Te taxeren</h1><p class="page-sub">Auto's die Prieva heeft aangemeld voor BPM-taxatie. Bekijk en download de foto's en upload het taxatierapport.</p>
+    <div class="card"><div style="padding:4px">${rows}</div></div>`;
+}
+function openTaxCar(id){ taxState.car=id; renderTax(); window.scrollTo(0,0); }
+function taxBack(){ taxState.car=null; renderTax(); window.scrollTo(0,0); }
+function renderTaxCar(){ const v=V.find(x=>x.id===taxState.car); if(!v){taxState.car=null;return renderTaxList();}
+  const reps=bpmList(v.id);
+  app.innerHTML=`<div class="back" onclick="taxBack()">← Alle auto's</div>
+    <div class="det-head"><div class="hero"><svg width="64" height="40" viewBox="0 0 24 24" fill="#aebfce">${carIcon().replace('width="20" height="13"','')}</svg></div>
+      <div class="det-title" style="flex:1;min-width:260px"><h1>${v.merk} ${v.model}</h1><div class="sub">${v.uitv||''}</div>
+        <div class="chips"><span class="chip"><b>Kenteken</b> ${v.kenteken}</span><span class="chip"><b>VIN</b> <span class="mono">${v.vin}</span></span><span class="chip"><b>Km</b> ${km(v.km)}</span><span class="chip"><b>1e reg</b> ${v.reg}</span></div></div></div>
+    ${PHOTO_GROUPS.map(g=>taxPhotoCard(v,g)).join('')}
+    <div class="card"><h3>BPM-taxatierapport <span class="muted" style="font-weight:500;font-size:12.5px">${reps.length} geüpload</span></h3>
+      <div class="card-body">
+        ${reps.length?`<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">${reps.map(rr=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px"><span style="font-size:18px">📄</span><div style="flex:1;min-width:0"><div style="font-weight:650;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rr.name}</div><div class="note">${fmtDate(rr.ts)} · ${rr.by}</div></div><a class="btn btn-ghost btn-sm" href="${rr.url}" target="_blank" download>⭳ Openen</a></div>`).join('')}</div>`:''}
+        <label class="btn btn-primary" style="cursor:pointer"><input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadBpm('${v.id}',this)">＋ Rapport uploaden (PDF)</label>
+        <div class="note" style="margin-top:8px">Het Prieva-team krijgt automatisch een melding zodra je het rapport hebt geüpload.</div>
+      </div></div>`;
+  window.scrollTo(0,0);
+}
+function taxPhotoCard(v,g){
+  const items=g.items.filter(p=>v.photos[p.key]);
+  const grid=items.length? `<div class="adgrid">${items.map(p=>{const url=v.photos[p.key]; return `<div class="adtile"><img src="${url}" alt="${p.label}"><a class="addl" href="${url}" target="_blank" download title="Downloaden">⭳</a></div>`;}).join('')}</div>` : `<div class="note">Nog niet aangeleverd door Prieva.</div>`;
+  return `<div class="card"><h3>${g.step} <span class="muted" style="font-weight:500;font-size:12.5px">${items.length} foto${items.length===1?'':"'s"}</span></h3>
+    <div class="card-body">${grid}${items.length?`<div class="adtools"><button class="btn btn-ghost btn-sm" onclick="downloadTaxGroup('${v.id}','${g.group}')">⭳ Download alle (${items.length})</button></div>`:''}</div></div>`;
+}
+async function downloadTaxGroup(id,group){ const v=V.find(x=>x.id===id); if(!v)return; const g=PHOTO_GROUPS.find(x=>x.group===group); if(!g)return; const items=g.items.filter(p=>v.photos[p.key]); if(!items.length)return;
+  const base=(`${v.merk}-${v.model}-${v.kenteken!=='—'?v.kenteken:v.vin}-${g.step}`).replace(/[^A-Za-z0-9._-]+/g,'-');
+  if(!window.JSZip){ items.forEach((p,i)=>{const a=document.createElement('a');a.href=v.photos[p.key];a.download=base+'-'+(i+1);a.click();}); return; }
+  showToast("ZIP maken…",false); const zip=new JSZip(); const folder=zip.folder(base);
+  for(let i=0;i<items.length;i++){ try{ const u=v.photos[items[i].key]; const r=await fetch(u); const b=await r.blob(); const ext=(u.split('.').pop()||'jpg').split('?')[0]; folder.file(items[i].key+'.'+ext,b); }catch(_){}}
+  const blob=await zip.generateAsync({type:'blob'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=base+'.zip'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+}
+function isImg(f){ return /^image\//.test(f.type) || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name||''); }
+let adUp={};
+async function uploadAdFiles(id,fileList){ const files=[...fileList].filter(isImg); if(!files.length)return;
+  if(adUp[id]){ showToast("Er wordt al geüpload voor deze auto — even wachten…",false); return; }
+  adUp[id]={done:0,total:files.length}; rerenderCurrent();
+  showToast("Uploaden… ("+files.length+" foto"+(files.length===1?'':'’s')+")",false);
+  for(const f of files){ await new Promise(res=>{ const r=new FileReader();
+    r.onload=async e=>{ const dataUrl=e.target.result;
+      if(apiOk){ try{ const rp=await fetch("/api/adphoto",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,dataUrl})}); if(rp.ok){const j=await rp.json(); if(j.url){ if(!adPhotos[id])adPhotos[id]=[]; adPhotos[id].push(j.url);} } }catch(_){}}
+      else { if(!adPhotos[id])adPhotos[id]=[]; adPhotos[id].push(dataUrl); }
+      if(adUp[id]){ adUp[id].done++; const pe=document.getElementById('adprog-'+id); if(pe){const b=pe.querySelector('b'); if(b)b.textContent=adUp[id].done+'/'+adUp[id].total;} }
+      res(); };
+    r.readAsDataURL(f); }); }
+  delete adUp[id];
+  showToast(files.length+" foto"+(files.length===1?'':'’s')+" toegevoegd ✓",false);
+  rerenderCurrent();
+}
+function addAdPhoto(id,input){ uploadAdFiles(id,input.files); input.value=""; }
+/* Selectie + bulk verwijderen advertentiefoto's */
+let adSel={};
+function adSelSet(id){ if(!adSel[id])adSel[id]=new Set(); return adSel[id]; }
+function toggleAdSel(id,url,checked){ const s=adSelSet(id); if(checked)s.add(url); else s.delete(url); rerenderCurrent(); }
+function adSelAll(id){ const s=adSelSet(id); adList(id).forEach(u=>s.add(u)); rerenderCurrent(); }
+function adSelNone(id){ adSel[id]=new Set(); rerenderCurrent(); }
+async function saveAd(id){ if(apiOk){ try{ await fetch("/api/adphotos-set",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,urls:adList(id)})}); }catch(_){}} }
+async function delAdSelected(id){ const s=adSelSet(id); if(!s.size)return; if(!window.confirm(s.size+" geselecteerde foto"+(s.size===1?'':"'s")+" verwijderen?"))return; adPhotos[id]=adList(id).filter(u=>!s.has(u)); adSel[id]=new Set(); await saveAd(id); showToast("Geselecteerde foto's verwijderd",false); rerenderCurrent(); }
+async function delAllAd(id){ const arr=adList(id); if(!arr.length)return; if(!window.confirm("Alle "+arr.length+" advertentiefoto"+(arr.length===1?'':"'s")+" van deze auto verwijderen?\n\nDit kan niet ongedaan worden gemaakt."))return; adPhotos[id]=[]; adSel[id]=new Set(); await saveAd(id); showToast("Alle advertentiefoto's verwijderd",false); rerenderCurrent(); }
+function entriesFromDrop(dt){ return new Promise(resolve=>{ const items=dt.items; if(!items||!items.length||!(items[0].webkitGetAsEntry)){ return resolve([...(dt.files||[])]); }
+  const files=[]; let pending=0, done=false;
+  const check=()=>{ if(done&&pending===0)resolve(files); };
+  const read=entry=>{ if(!entry)return; if(entry.isFile){ pending++; entry.file(f=>{ files.push(f); pending--; check(); }, ()=>{ pending--; check(); }); }
+    else if(entry.isDirectory){ const rd=entry.createReader(); const batch=()=>{ pending++; rd.readEntries(ents=>{ pending--; if(ents.length){ ents.forEach(read); batch(); } check(); }, ()=>{ pending--; check(); }); }; batch(); } };
+  for(const it of items){ const en=it.webkitGetAsEntry&&it.webkitGetAsEntry(); if(en)read(en); else { const f=it.getAsFile&&it.getAsFile(); if(f)files.push(f); } }
+  done=true; check();
+});}
+async function dropAd(id,ev){ ev.preventDefault(); const files=await entriesFromDrop(ev.dataTransfer); uploadAdFiles(id,files); }
+async function downloadAllAd(id){ const arr=adList(id); if(!arr.length)return; const v=V.find(x=>x.id===id);
+  const base=(v?`${v.merk}-${v.model}-${v.kenteken!=='—'?v.kenteken:v.vin}`:id).replace(/[^A-Za-z0-9._-]+/g,'-');
+  if(!window.JSZip){ arr.forEach((u,i)=>{ const a=document.createElement('a'); a.href=u; a.download=base+'-'+(i+1); a.click(); }); return; }
+  showToast("ZIP maken… ("+arr.length+" foto’s)",false);
+  const zip=new JSZip(); const folder=zip.folder(base);
+  for(let i=0;i<arr.length;i++){ try{ const r=await fetch(arr[i]); const b=await r.blob(); const ext=(arr[i].split('.').pop()||'jpg').split('?')[0]; folder.file('foto_'+String(i+1).padStart(2,'0')+'.'+ext,b); }catch(_){}}
+  const blob=await zip.generateAsync({type:'blob'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=base+'-advertentiefotos.zip'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+}
+async function delAdPhoto(id,url){ const arr=adList(id).filter(u=>u!==url); adPhotos[id]=arr; adSelSet(id).delete(url);
+  if(apiOk){ try{ await fetch("/api/adphotos-set",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,urls:arr})}); }catch(_){}}
+  rerenderCurrent(); }
+function adGallery(id){ const arr=adList(id); const sel=adSelSet(id); const up=adUp[id]; const selCount=[...sel].filter(u=>arr.includes(u)).length;
+  const tiles=arr.map((url,idx)=>{const on=sel.has(url); return `<div class="adtile${on?' sel':''}"><img src="${url}" alt="foto ${idx+1}"><label class="adcheck" title="Selecteren" onclick="event.stopPropagation()"><input type="checkbox" ${on?'checked':''} onchange="toggleAdSel('${id}','${url}',this.checked)"><span class="adcbox"></span></label><a class="addl" href="${url}" target="_blank" download title="Downloaden">⭳</a><button class="premove" title="Verwijderen" onclick="delAdPhoto('${id}','${url}')">×</button></div>`;}).join("");
+  const addTile=`<label class="adtile adadd"><input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="addAdPhoto('${id}',this)"><span class="pcam">📷</span><span class="padd">Foto's</span></label>`;
+  const progress = up? `<div class="aduploading" id="adprog-${id}"><span class="spin"></span><span>Bezig met uploaden… <b>${up.done}/${up.total}</b> — even wachten, niet nogmaals uploaden.</span></div>` : '';
+  const selBar = arr.length? `<div class="adselbar">
+        <button class="btn btn-ghost btn-sm" onclick="adSelAll('${id}')">Selecteer alles (${arr.length})</button>
+        ${selCount?`<button class="btn btn-ghost btn-sm" onclick="adSelNone('${id}')">Selectie wissen</button>`:''}
+        ${selCount?`<button class="btn btn-danger btn-sm" onclick="delAdSelected('${id}')">🗑 Verwijder selectie (${selCount})</button>`:''}
+        <span style="flex:1"></span>
+        <button class="btn btn-danger-o btn-sm" title="Verwijder alle foto's van deze auto" onclick="delAllAd('${id}')">Alles verwijderen (${arr.length})</button>
+      </div>` : '';
+  return `<div class="addrop" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="this.classList.remove('drag');dropAd('${id}',event)">
+      ${progress}${selBar}
+      <div class="adgrid">${tiles}${addTile}</div>
+      <div class="adtools">
+        <label class="btn btn-ghost btn-sm" title="Kies een hele map; alle foto's erin worden geüpload"><input type="file" webkitdirectory directory multiple style="display:none" onchange="addAdPhoto('${id}',this)">📁 Hele map uploaden</label>
+        ${arr.length?`<button class="btn btn-primary btn-sm" onclick="downloadAllAd('${id}')">⭳ Download alle (${arr.length})</button>`:''}
+        <span class="note" style="margin:0">of sleep foto's/map hierheen</span>
+      </div></div>`;
+}
+function adGalleryCard(v){ const n=adList(v.id).length;
+  return `<div class="card"><h3>Advertentiefoto's <span class="muted" style="font-weight:500;font-size:12.5px">${n} foto${n===1?'':'’s'}</span></h3>
+    <div class="card-body">${adGallery(v.id)}
+      ${n?`<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="copyAdLinks('${v.id}')">Kopieer links voor advertentie</button>`:''}
+      <div class="note" style="margin-top:8px">De fotograaf zet hier de advertentiefoto's; de advertentieagent gebruikt ze voor de Mobilox-advertentie.</div></div></div>`;
+}
+function copyAdLinks(id){ const links=adList(id).map(u=>location.origin+u).join("\n"); if(navigator.clipboard)navigator.clipboard.writeText(links).catch(()=>{}); showToast("Links gekopieerd ("+adList(id).length+" foto’s)",false); }
+
+/* ===== Fotograaf-weergave ===== */
+function renderFoto(){ if(fotoState.car)renderFotoCar(); else renderFotoList(); syncHistory(); }
+function renderFotoList(){
+  const lop=V.filter(v=>v.status==="lopende");
+  const rows=lop.length? lop.map(v=>{ const n=adList(v.id).length;
+    return `<div class="fotocar" onclick="openFotoCar('${v.id}')"><div class="thumb">${carIcon()}</div>
+      <div style="flex:1;min-width:0"><div class="nm">${v.merk} ${v.model}</div><div class="id">${v.kenteken!=='—'?v.kenteken:v.vin}</div></div>
+      <div class="fotocount ${n?'has':''}">${n?`${n} foto${n===1?'':'’s'}`:'nog geen'}</div><span style="color:var(--muted);font-size:20px">›</span></div>`;
+  }).join("") : `<div class="empty"><div class="eb">📷</div>Er staan nog geen auto's binnen om te fotograferen.</div>`;
+  app.innerHTML=`<h1 class="page-title">Te fotograferen</h1><p class="page-sub">Kies een auto en voeg de advertentiefoto's toe. Ze worden direct bewaard.</p>
+    <div class="card"><div style="padding:4px">${rows}</div></div>`;
+}
+function openFotoCar(id){ fotoState.car=id; renderFoto(); window.scrollTo(0,0); }
+function fotoBack(){ fotoState.car=null; renderFoto(); window.scrollTo(0,0); }
+function renderFotoCar(){ const v=V.find(x=>x.id===fotoState.car); if(!v){fotoState.car=null;return renderFotoList();}
+  const n=adList(v.id).length;
+  app.innerHTML=`<div class="back" onclick="fotoBack()">← Alle auto's</div>
+    <div class="det-head"><div class="hero"><svg width="64" height="40" viewBox="0 0 24 24" fill="#aebfce">${carIcon().replace('width="20" height="13"','')}</svg></div>
+      <div class="det-title" style="flex:1;min-width:260px"><h1>${v.merk} ${v.model}</h1><div class="sub">${v.uitv||''}</div>
+        <div class="chips"><span class="chip"><b>Kenteken</b> ${v.kenteken}</span><span class="chip"><b>VIN</b> <span class="mono">${v.vin}</span></span><span class="chip"><b>Km</b> ${km(v.km)}</span></div></div></div>
+    <div class="card"><h3>Advertentiefoto's <span class="muted" style="font-weight:500;font-size:12.5px">${n} foto${n===1?'':'’s'}</span></h3>
+      <div class="card-body">${adGallery(v.id)}<div class="note" style="margin-top:10px">Maak of kies de foto's voor deze auto. Ze worden direct op de server bewaard.</div></div></div>`;
+  window.scrollTo(0,0);
+}
+
+/* ===== Login & rollen ===== */
+function renderLogin(err){
+  app.innerHTML=`<div class="loginwrap"><div class="logincard">
+    <div class="loginhead"><svg width="34" height="38" viewBox="0 0 60 68" aria-label="Prieva"><path d="M30 2.5 L53.9 16.3 V43.7 L30 57.5 L6.1 43.7 V16.3 Z" fill="#16232b"/><path d="M30 14.5 L43.2 22.1 V37.3 L30 44.9 L16.8 37.3 V22.1 Z" fill="#0d9ebf"/><circle cx="30" cy="29.7" r="4.3" fill="#ffffff"/></svg>
+      <div class="lt">PRIEVA<small>VEHICLE PLATFORM</small></div></div>
+    <div class="loginbody">
+      <label>Gebruikersnaam</label><input id="lg-user" type="text" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
+      <label>Wachtwoord</label><input id="lg-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      ${err?`<div class="loginerr">${err}</div>`:''}
+      <button class="btn btn-primary" style="width:100%;margin-top:16px;justify-content:center" onclick="doLogin()">Inloggen »</button>
+    </div></div></div>`;
+  setTimeout(()=>{const el=document.getElementById('lg-user'); if(el)el.focus();},40);
+}
+async function doLogin(){ const uu=document.getElementById('lg-user'), pp=document.getElementById('lg-pass'); if(!uu||!pp)return;
+  const u=uu.value.trim(), p=pp.value; if(!u||!p){renderLogin('Vul gebruikersnaam en wachtwoord in.');return;}
+  try{ const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})});
+    if(r.ok){ const j=await r.json(); currentUser={name:j.name,role:j.role}; apiOk=true; startFor(); }
+    else { renderLogin('Onjuiste gebruikersnaam of wachtwoord.'); }
+  }catch(_){ renderLogin('Kan de server niet bereiken.'); }
+}
+async function logout(){ try{ await fetch("/api/logout",{method:"POST"}); }catch(_){} currentUser=null; location.reload(); }
+async function loadStatusFoto(){ if(!apiOk)return; try{ const r=await fetch("/api/status",{cache:"no-store"}); if(r.ok){ const s=await r.json(); if(s&&s.vehicles){ V.forEach(v=>{ const d=s.vehicles[v.id]; if(d&&d.status)v.status=d.status; }); } } }catch(_){} }
+function startFor(){
+  const foto=currentUser.role==='foto';
+  const tax=currentUser.role==='taxateur';
+  const restricted=foto||tax;
+  const el=id=>document.getElementById(id);
+  if(el('nav'))el('nav').style.display=restricted?'none':'';
+  const sc=document.querySelector('.search'); if(sc)sc.style.display=restricted?'none':'';
+  if(el('addTodoBtn'))el('addTodoBtn').style.display=restricted?'none':'';
+  if(el('undoBtn'))el('undoBtn').style.display=restricted?'none':'';
+  if(el('logoutBtn'))el('logoutBtn').style.display='';
+  if(el('logboekBtn'))el('logboekBtn').style.display=(currentUser.role==='admin')?'':'none';
+  const av=document.querySelector('.avatar'); if(av)av.textContent=(currentUser.name||'?').slice(0,2).toUpperCase();
+  const db=document.querySelector('.demo-bar');
+  if(db&&foto)db.textContent=(currentUser.name||'Fotograaf')+' · voeg per auto de advertentiefoto’s toe';
+  if(db&&tax)db.textContent=(currentUser.name||'S-TAX')+' · auto’s op taxatie · bekijk foto’s en upload het BPM-rapport';
+  if(foto){ state.view='foto'; loadAdphotos().then(loadStatusFoto).then(renderFoto); }
+  else if(tax){ state.view='tax'; loadTaxState().then(loadBpm).then(renderTax); }
+  else { Promise.all([loadState(),loadAdphotos(),loadBpm()]).then(()=>go('vandaag')); }
+}
+async function boot(){
+  try{ const r=await fetch("/api/me",{cache:"no-store"});
+    if(r.ok){ currentUser=await r.json(); apiOk=true; startFor(); return; }
+    if(r.status===401){ apiOk=true; renderLogin(); return; }
+  }catch(_){ /* geen backend bereikbaar → demo/standalone */ }
+  currentUser={name:'Demo',role:'team'}; apiOk=false; startFor();
+}
+function rerender(){
+  if(state.view==="vandaag")renderVandaag();
+  else if(state.view==="komende")renderKomende();
+  else if(state.view==="lopende")renderLopende();
+  else if(state.view==="logboek")renderLog();
+  else if(state.view.startsWith("veh:"))openVeh(state.view.split(":")[1]);
+  updateUndoUI(); syncHistory();
+}
+function setNav(view){document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===view));}
+function go(view){state.view=view; if(["vandaag","komende","lopende","logboek"].includes(view))setNav(view); rerender(); window.scrollTo(0,0);}
+document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>go(b.dataset.view));
+document.getElementById("search").addEventListener("input",e=>{state.q=e.target.value; if(state.view.startsWith("veh:"))go("komende"); else rerender(); document.getElementById("search").focus();});
+/* ===== In-app navigatie: browser terug/vooruit blijft binnen PVP ===== */
+let lastRouteKey=null, popping=false;
+function routeKey(){ if(currentUser&&currentUser.role==='foto')return 'foto:'+(fotoState.car||''); if(currentUser&&currentUser.role==='taxateur')return 'tax:'+(taxState.car||''); return state.view; }
+function syncHistory(){ if(popping)return; const k=routeKey(); if(k===lastRouteKey)return; const first=lastRouteKey===null; lastRouteKey=k; try{ window.history[first?'replaceState':'pushState']({k},''); }catch(_){} }
+function applyRoute(k){
+  if(currentUser&&currentUser.role==='foto'){ fotoState.car=(k&&k.indexOf('foto:')===0)?(k.slice(5)||null):null; renderFoto(); }
+  else if(currentUser&&currentUser.role==='taxateur'){ taxState.car=(k&&k.indexOf('tax:')===0)?(k.slice(4)||null):null; renderTax(); }
+  else if(!k||["vandaag","komende","lopende","logboek"].includes(k)){ state.view=k||'vandaag'; setNav(state.view); rerender(); window.scrollTo(0,0); }
+  else if(k.indexOf('veh:')===0){ state.view=k; openVeh(k.split(':')[1]); }
+  else { state.view='vandaag'; rerender(); }
+  lastRouteKey=routeKey();
+}
+window.addEventListener('popstate',e=>{ popping=true; try{ applyRoute(e.state&&e.state.k); }finally{ popping=false; } });
+boot();
+</script>
+</body>
+</html>
