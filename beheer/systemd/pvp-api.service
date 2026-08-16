@@ -1,0 +1,13 @@
+[Unit]
+Description=PVP API
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/pvp-api
+ExecStart=/usr/bin/node /opt/pvp-api/server.js
+Restart=always
+Environment=NODE_ENV=production
+EnvironmentFile=/var/pvp/pg.env
+
+[Install]
+WantedBy=multi-user.target

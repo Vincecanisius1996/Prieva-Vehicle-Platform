@@ -1,0 +1,23 @@
+# Afhankelijkheden
+node_modules/
+
+# Geheimen — horen NOOIT in de repo (zie CLAUDE.md)
+pg.env
+secret
+*.env
+.htpasswd
+
+# Data en uploads: staan in PostgreSQL en /var/pvp/uploads, niet hier
+*.json.bak-*
+state.json
+adphotos.json
+reports.json
+users.json
+uploads/
+
+# Back-ups en rommel
+*.bak
+*.bak-*
+*.sql.gz
+*~
+.DS_Store

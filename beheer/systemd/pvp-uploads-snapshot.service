@@ -1,0 +1,6 @@
+[Unit]
+Description=PVP: momentopname van /var/pvp/uploads
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pvp-uploads-snapshot.sh

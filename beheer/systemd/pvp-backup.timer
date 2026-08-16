@@ -1,0 +1,11 @@
+[Unit]
+Description=PVP nachtelijke database-back-up
+
+[Timer]
+# 02:15 UTC — ruim na crp-backup (01:30) zodat de twee elkaar niet overlappen.
+OnCalendar=*-*-* 02:15:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

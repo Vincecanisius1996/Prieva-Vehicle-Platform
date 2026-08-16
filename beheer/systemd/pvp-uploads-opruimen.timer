@@ -1,0 +1,11 @@
+[Unit]
+Description=PVP: wees-bestanden in uploads naar de prullenbak
+
+[Timer]
+# 02:20 UTC — na pvp-backup (02:15), vóór de momentopname (02:30), zodat afval niet mee wordt gekopieerd.
+OnCalendar=*-*-* 02:20:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

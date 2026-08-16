@@ -1,0 +1,10 @@
+[Unit]
+Description=PVP: momentopname van /var/pvp/uploads
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

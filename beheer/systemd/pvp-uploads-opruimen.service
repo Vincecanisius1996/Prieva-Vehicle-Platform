@@ -1,0 +1,6 @@
+[Unit]
+Description=PVP: wees-bestanden in uploads naar de prullenbak
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pvp-uploads-opruimen.sh
