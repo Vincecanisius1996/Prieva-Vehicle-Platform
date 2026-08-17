@@ -103,7 +103,19 @@ function crc32(buf) {
 /* ---------- de eigenlijke bewerking ---------- */
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 // Excel-serienummer; epoch 1899-12-30 vanwege de schrikkeljaarfout van 1900.
-const serie = iso => { const [d, m, j] = iso.split('-').map(Number); return Math.round((Date.UTC(j, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000); };
+// Geeft null bij alles wat geen herkenbare datum is. Zonder die controle belandt er NaN in de cel —
+// PVP gebruikt namelijk een kastlijntje voor "onbekend", en dat is geen datum.
+const serie = iso => {
+  const m = /^(\d{1,2})-(\d{1,2})-(\d{4})$/.exec(String(iso || '').trim());
+  if (!m) return null;
+  const [d, mnd, j] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (mnd < 1 || mnd > 12 || d < 1 || d > 31) return null;
+  const dt = new Date(Date.UTC(j, mnd - 1, d));
+  // Terugrekenen: 31-02 zou anders stilletjes 2 maart worden. Liever geen datum dan een verkeerde.
+  if (dt.getUTCDate() !== d || dt.getUTCMonth() !== mnd - 1 || dt.getUTCFullYear() !== j) return null;
+  const n = Math.round((dt - Date.UTC(1899, 11, 30)) / 86400000);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
 // Merknotatie in het Autoboek: eerste letter hoofdletter, de rest klein (afspraak 17-08-2026).
 // Per woord, zodat "land rover" -> "Land Rover" en niet "Land rover".
@@ -176,10 +188,10 @@ function voegToe(pad, uitPad, auto) {
   const rij = maakRij(doelNr, [
     '', '', auto.transport, '', auto.vin, auto.kenteken, merkNotatie(auto.merk), auto.type,
     auto.kleur, auto.leverancier, auto.uitvoering, auto.brandstof, auto.transmissie,
-    auto.reg ? { v: serie(auto.reg) } : '',
+    serie(auto.reg) ? { v: serie(auto.reg) } : '',
     auto.km != null ? { v: auto.km } : '',
-    auto.inkoopdatum ? { v: serie(auto.inkoopdatum) } : '',
-    auto.verkoopdatum ? { v: serie(auto.verkoopdatum) } : '',
+    serie(auto.inkoopdatum) ? { v: serie(auto.inkoopdatum) } : '',
+    serie(auto.verkoopdatum) ? { v: serie(auto.verkoopdatum) } : '',
     auto.inkoopprijs != null ? { v: auto.inkoopprijs } : '',
   ], stijl);
 
@@ -208,4 +220,4 @@ if (require.main === module) {
   });
   console.log('regel toegevoegd op rij', nr);
 }
-module.exports = { voegToe, leesZip, uitpakken };
+module.exports = { voegToe, leesZip, uitpakken, serie, merkNotatie };

@@ -22,22 +22,34 @@ const aan = () => !!(process.env.AUTOBOEK_FILE_ID || '').trim();
 
 // De auto zoals de database hem heeft -> de velden die xlsx-append verwacht.
 // Kolom A (F), B (TO-DO), D (Fact. Nr.) en Q (Datum verkoop) blijven leeg: handwerk van kantoor.
+// PVP gebruikt een kastlijntje als "onbekend". Dat is een schermteken, geen waarde: het hoort niet in
+// het Autoboek, en bij een datumkolom zou het zelfs een onzinnige uitkomst geven. Hier eruit filteren.
+const schoon = x => {
+  const s = (x === null || x === undefined) ? '' : String(x).trim();
+  return (s === '' || s === '—' || s === '-' || s === '?') ? '' : s;
+};
+const getal = x => {
+  if (x === null || x === undefined || String(x).trim() === '') return null;
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+};
+
 function uitVoertuig(v) {
   return {
-    transport: v.batch || '',
-    vin: v.vin && v.vin !== '—' ? v.vin : '',
-    kenteken: v.kenteken && v.kenteken !== '—' ? v.kenteken : '',
-    merk: v.merk || '',
-    type: v.model || '',
-    kleur: v.kleur || '',
-    leverancier: v.lev || '',
-    uitvoering: v.uitv || '',
-    brandstof: v.brandstof || '',
-    transmissie: v.transm || '',
-    reg: v.reg || '',
-    km: (v.km === null || v.km === undefined || v.km === '') ? null : Number(v.km),
-    inkoopdatum: v.inkoopdatum || '',
-    inkoopprijs: (v.inkoopprijs === null || v.inkoopprijs === undefined || v.inkoopprijs === '') ? null : Number(v.inkoopprijs),
+    transport: schoon(v.batch),
+    vin: schoon(v.vin),
+    kenteken: schoon(v.kenteken),
+    merk: schoon(v.merk),
+    type: schoon(v.model),
+    kleur: schoon(v.kleur),
+    leverancier: schoon(v.lev),
+    uitvoering: schoon(v.uitv),
+    brandstof: schoon(v.brandstof),
+    transmissie: schoon(v.transm),
+    reg: schoon(v.reg),
+    km: getal(v.km),
+    inkoopdatum: schoon(v.inkoopdatum),
+    inkoopprijs: getal(v.inkoopprijs),
   };
 }
 
