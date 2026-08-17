@@ -185,6 +185,40 @@ Veiligheidskleppen, in dezelfde geest als de back-upscripts:
 Power BI leest het bestand uit Google Drive, dus een nieuwe revisie is gewoon de volgende
 vernieuwing — mits naam, locatie en kolomindeling gelijk blijven. Dat blijven ze.
 
+> **Harde eis van de opdrachtgever (17-08-2026): de kolomstructuur mag nooit veranderen**, anders
+> loopt de Power BI-rapportage vast. Het ontwerp is daar volledig op gebouwd: alleen toevoegen, geen
+> kolom erbij, geen kop gewijzigd, geen bestaande cel aangeraakt.
+
+### Bewezen op een kopie (17-08-2026)
+
+Een werkend proefscript in puur Node (`zlib` + zip-container met de hand, geen npm) heeft één regel
+toegevoegd aan een kopie van het Autoboek. Daarna streng nagerekend:
+
+| Controle | Resultaat |
+|---|---|
+| Zip heel | OK |
+| Onderdelen in het bestand | 44 → 44, zelfde volgorde |
+| Gewijzigd | **alleen** `xl/worksheets/sheet1.xml`; de andere 43 byte-voor-byte identiek |
+| Rijen op *Komende Autos* | 837 → 838; nieuw: rij 16; verdwenen: geen |
+| Bestaande rijen | allemaal ongewijzigd, teken voor teken |
+| Kolombreedtes, filters, tekening, opmaak buiten de rijen | ongewijzigd |
+| Koprij | identiek — dezelfde 18 kolommen in dezelfde volgorde |
+| Breedte van alle zes tabbladen | 18 / 55 / 55 / 3 / 42 / 7, alle zes gelijk |
+| Overige tabbladen | Lopende 65, Verkochte 297, BTW 4, Blad5 57, Bandenlijst 10 — onveranderd |
+
+Het script weigert te schrijven als er geen vrije rij direct onder de gegevens is; dan stopt het in
+plaats van te gokken.
+
+**Wat dit nog niet bewijst:** het terugleggen gebeurde met een eigen lezer en met Python, niet met
+Excel of Power BI — die draaien niet op de droplet. Daarom eerst een proef op een **kopie van het
+Autoboek in Drive**: daar de regel in laten schrijven, die kopie in Excel openen en de rapportage er
+één keer op laten draaien. Pas daarna het echte bestand.
+
+Kleinigheden: het bestand wordt ~15 KB groter omdat Node dat ene blad iets minder strak comprimeert
+dan Excel, en nieuwe tekstcellen komen als `inlineStr` in plaats van in `sharedStrings.xml`. Beide
+zijn geldig; mocht Power BI erover struikelen, dan is de uitwijk de teksten wél in `sharedStrings.xml`
+te zetten.
+
 ### Toegang die hiervoor geregeld moet worden
 
 Een **service account** in Google Cloud, met schrijfrecht op alleen dit bestand (of op de map
