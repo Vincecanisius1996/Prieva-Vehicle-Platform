@@ -989,11 +989,14 @@ async function autoDocsKiezen(files){
     }catch(_){ showToast(`Kon "${f.name}" niet lezen — overgeslagen`,false); }
   }
   toonDocs();
+  // Meteen uitlezen, zonder dat er nog op een knop gedrukt moet worden. Wie twaalf stukken aanlevert,
+  // verwacht dat PVP zijn werk doet — een knop die je eerst moet vinden hoort daar niet tussen.
+  if(kanUitlezen&&nieuweDocs.length)autoUitlezen();
 }
 function toonDocs(){
   const el=document.getElementById('na-doclist'); if(!el)return;
   el.innerHTML=nieuweDocs.map((d,i)=>`<div class="docrow"><span>${d.name.toLowerCase().endsWith('.pdf')?'📄':'🖼'}</span><span class="dn">${d.name}</span><button class="dx" onclick="autoDocWeg(${i})" title="Weghalen">×</button></div>`).join("")
-    + (nieuweDocs.length&&kanUitlezen?`<button class="btn btn-primary" style="margin-top:4px;justify-content:center" onclick="autoUitlezen()">Gegevens uit de stukken halen »</button>`:"");
+    + (nieuweDocs.length&&kanUitlezen?`<button class="btn btn-ghost" style="margin-top:4px;justify-content:center" onclick="autoUitlezen()">Stukken opnieuw lezen</button>`:"");
 }
 function autoDocWeg(i){nieuweDocs.splice(i,1); toonDocs();}
 
@@ -1009,10 +1012,13 @@ const UITLEES_NAMEN={vin:"VIN",kenteken:"Kenteken",merk:"Merk",model:"Model",uit
   factuurnr:"Factuurnummer",inkoopprijs:"Inkoopprijs",note:"Notitie",lev:"Leverancier",batch:"Transportdatum"};
 // Deze twee komen nooit uit de stukken (bewezen op tien echte auto's) — die vraag je gewoon.
 const ALTIJD_ZELF=["lev","batch"];
+let uitleesBezig=false;
 async function autoUitlezen(){
   if(!nieuweDocs.length){showToast("Voeg eerst documenten toe",false);return;}
+  if(uitleesBezig)return;                       // twee keer tegelijk kost dubbel en levert niets extra's
   const vak=document.getElementById('na-uitlees'); if(!vak)return;
-  vak.innerHTML=`<div class="muted" style="font-size:12.5px">Stukken lezen…</div>`;
+  uitleesBezig=true;
+  vak.innerHTML=`<div class="muted" style="font-size:12.5px">Stukken lezen… (dit duurt 5 tot 20 seconden)</div>`;
   try{
     const r=await fetch("/api/uitlezen",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({docs:nieuweDocs.map(d=>({name:d.name,dataUrl:d.dataUrl}))})});
@@ -1023,6 +1029,7 @@ async function autoUitlezen(){
       const el=document.getElementById(id); if(!el)continue;
       const w=j.velden?j.velden[veld]:null;
       if(w===null||w===undefined||w===""){ if(!el.value)leeg.push(veld); continue; }
+      if(el.value&&el.value!==String(w)){ continue; }   // wat jij zelf hebt ingevuld blijft staan
       el.value=String(w); gevuld.push(veld);
     }
     if(j.velden&&typeof j.velden.importAuto==='boolean'){
@@ -1037,8 +1044,10 @@ async function autoUitlezen(){
         ${j.onzeker&&j.onzeker.length?`<div style="color:#b26a00;margin-top:5px"><b>Nakijken:</b> ${j.onzeker.map(v=>UITLEES_NAMEN[v]||v).join(', ')} — de stukken spreken elkaar tegen</div>`:''}
         ${leeg.length?`<div style="color:#c0392b;margin-top:5px"><b>Niet gevonden:</b> ${leeg.map(v=>UITLEES_NAMEN[v]||v).join(', ')} — vul zelf aan of voeg een document toe</div>`:''}
         ${j.overgeslagen&&j.overgeslagen.length?`<div class="muted" style="margin-top:5px">Overgeslagen: ${j.overgeslagen.join(', ')}</div>`:''}
+        ${j.verbruik?`<div class="muted" style="margin-top:5px;font-size:11.5px">${j.verbruik.in.toLocaleString('nl-NL')} tokens gelezen · circa ${(j.verbruik.in*3/1e6+j.verbruik.uit*15/1e6).toFixed(2).replace('.',',')} dollar</div>`:''}
       </div>`;
   }catch(_){ vak.innerHTML=`<div class="fout">Geen verbinding met de server.</div>`; }
+  finally{ uitleesBezig=false; }
 }
 /* Staat deze auto in het Autoboek? Een mislukte schrijfactie mag niet stil verdwijnen — dan ontstaat
    precies het gat tussen PVP en het Autoboek dat we aan het dichten zijn. */
