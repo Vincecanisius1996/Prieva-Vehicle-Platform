@@ -284,6 +284,11 @@ kwaliteit als 0–1 (browserconventie), `toBuffer` als 0–100 — dat verschil 
   dat slot zou een mislukte `GET /api/state` (backend-herstart, nginx-hik) ertoe leiden dat de
   eerstvolgende klik de beginwaarden van `V` over de database heen zet: alle lopende auto's terug naar
   komende, keuringsfoto's en subtaken weg. Haal die controle er dus niet uit.
+- **Het Autoboek: kolomstructuur nooit wijzigen.** `Autoboek PRIEVA.xlsx` (Drive, map `Autoboek`,
+  bestands-ID `1MnSN9PJjzJTEp4aLwhyjKeH-h4-wb3if`) voedt een Power BI-rapportage. Verandert er een
+  kolom, een kop of de volgorde, dan loopt die vast. Het moet ook een **.xlsx blijven** — omzetten
+  naar een Google Sheet is daarom uitgesloten. Schrijven mag alleen **toevoegend**, alleen op het
+  tabblad *Komende Autos*. Zie `PVP-autoboek-koppeling-voorstel.md`.
 - **Geen npm-afhankelijkheden in de backend** toevoegen tenzij expliciet afgesproken. `pg` is de enige
   toegestane uitzondering (een DB-driver kan niet puur-Node).
 - **Eén verbetering per keer**, en test rol-flows voordat je live zet.
