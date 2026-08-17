@@ -38,8 +38,15 @@ const LOPEND = [
   if (!lr.ok) { console.error('inloggen mislukt:', lr.status); process.exit(1); }
   const cookie = (lr.headers.get('set-cookie') || '').split(';')[0];
 
+  // GROEP=komend | lopend | alles. Standaard alleen de komende auto's: de drie uit Lopende Autos
+  // zijn al binnen, en die als "komende" in productie zetten zou collega's een auto laten verwachten
+  // die er allang staat.
+  const groep = (process.env.GROEP || 'komend').toLowerCase();
+  const lijst = groep === 'alles' ? [...KOMEND, ...LOPEND] : groep === 'lopend' ? LOPEND : KOMEND;
+  console.log(`groep: ${groep} (${lijst.length} auto's)\n`);
+
   let ok = 0, over = 0, fout = 0;
-  for (const v of [...KOMEND, ...LOPEND]) {
+  for (const v of lijst) {
     const body = { ...v, transm: trans(v.transm) };
     delete body.status;
     const r = await fetch(BASIS + '/api/vehicle', { method:'POST', headers:{'Content-Type':'application/json', cookie}, body: JSON.stringify(body) });
