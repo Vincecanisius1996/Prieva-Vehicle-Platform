@@ -45,6 +45,7 @@ Draait live op **https://pvp.prieva.nl**. Meerdere gebruikers, met rollen en log
 - In de repo staan historische `index_N.html`-kopieën en een bestand `server.js update`; die zijn
   van vóór deze opschoning en niet meer in gebruik. Bron van waarheid is `index.html`.
 - **Niet in de repo, met opzet:** `/var/pvp/pg.env`, `/var/pvp/restic.env`, `/var/pvp/secret`,
+  `/var/pvp/autoboek.env`, `/var/pvp/autoboek-sleutel.json`,
   `/var/pvp/uploads`, de JSON-back-ups en alles wat `.gitignore` uitsluit.
 
 ## Rollen (server dwingt af)
@@ -288,7 +289,11 @@ kwaliteit als 0–1 (browserconventie), `toBuffer` als 0–100 — dat verschil 
   bestands-ID `1MnSN9PJjzJTEp4aLwhyjKeH-h4-wb3if`) voedt een Power BI-rapportage. Verandert er een
   kolom, een kop of de volgorde, dan loopt die vast. Het moet ook een **.xlsx blijven** — omzetten
   naar een Google Sheet is daarom uitgesloten. Schrijven mag alleen **toevoegend**, alleen op het
-  tabblad *Komende Autos*. Zie `PVP-autoboek-koppeling-voorstel.md`.
+  tabblad *Komende Autos*. De koppeling zit in `autoboek/` (draait mee in `/opt/pvp-api/autoboek/`);
+  instellingen in `/var/pvp/autoboek.env` (chmod 600, **niet committen**), sleutel in
+  `/var/pvp/autoboek-sleutel.json`. `AUTOBOEK_FILE_ID` leeg = koppeling uit. Staat sinds 17-08-2026 op
+  de **kopie**; overgaan op het echte boek is die ene regel wijzigen plus `systemctl restart pvp-api`.
+  Zie `autoboek/LEESMIJ.md` en `PVP-autoboek-koppeling-voorstel.md`.
 - **Geen npm-afhankelijkheden in de backend** toevoegen tenzij expliciet afgesproken. `pg` is de enige
   toegestane uitzondering (een DB-driver kan niet puur-Node).
 - **Eén verbetering per keer**, en test rol-flows voordat je live zet.
