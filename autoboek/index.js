@@ -75,6 +75,11 @@ function staatErAl(boek, v) {
  */
 async function schrijfAuto(v) {
   if (!aan()) throw new Error('koppeling staat uit (AUTOBOEK_FILE_ID ontbreekt)');
+  // Zonder VIN of kenteken is de regel in het Autoboek nergens aan te herkennen — en de controle op
+  // dubbele regels werkt juist daarop, dus een tweede poging zou hem opnieuw toevoegen.
+  if (!schoon(v.vin) && !schoon(v.kenteken)) {
+    throw new Error('deze auto heeft geen VIN en geen kenteken — vul er één in, anders is de regel in het Autoboek niet terug te vinden');
+  }
   const ID = process.env.AUTOBOEK_FILE_ID.trim();
   const tok = await drive.token(SCOPE);
 
