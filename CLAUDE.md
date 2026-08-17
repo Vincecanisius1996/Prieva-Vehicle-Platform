@@ -19,6 +19,8 @@ Draait live op **https://pvp.prieva.nl**. Meerdere gebruikers, met rollen en log
 - **Opslag: PostgreSQL 16, database `pvp`, rol `pvp_app`** (sinds 15-08-2026, Fase 1 afgerond).
   Tabellen: `vehicles` (catalogus + status + `photos`/`subtasks`/`ad_photos` als jsonb),
   `global_todos`, `activity_log`, `bpm_reports`, `bpm_notifs`, `users`, `meta` (tellers `subUid`/`gtUid`).
+  De kolom `vehicles.sort_order` (nu 0–19, met de hand gezet bij de migratie) bepaalt de volgorde die
+  `/api/vehicles`, `/api/state` en `/api/status` teruggeven — en dus de volgorde op het scherm.
   Schema staat in `/opt/pvp-api/schema.sql` (idempotent).
   - Verbinding: `/var/pvp/pg.env` (chmod 600, `PVP_PG=postgresql://…`), ingeladen via
     `EnvironmentFile=` in de systemd-unit. **Nooit committen.**
@@ -71,15 +73,26 @@ kan de frontend zelf serveren en luistert op de poort uit `PVP_PORT`, zodat de l
 ongestoord doordraait:
 ```
 set -a; . /var/pvp/pg.env; set +a
-export PVP_PG=${PVP_PG/\/pvp/\/pvp_test}
+export PVP_PG="${PVP_PG%/pvp}/pvp_test"            # let op: alleen de databasenaam achteraan vervangen
 psql "$PVP_PG" -f /opt/pvp-api/schema.sql          # schema (idempotent)
 node setpw.js testteam team "testpw" "Test team"   # testaccount in pvp_test
 PVP_DATA=/tmp/pvptest PVP_FRONTEND=<pad> PVP_PORT=3001 node server.js
 # dan: http://127.0.0.1:3001/
 ```
+Hier stond eerder `${PVP_PG/\/pvp/\/pvp_test}`. Dat is fout: die vervangt de **eerste** `/pvp` in de
+DSN, en dat is de `//pvp_app` van de gebruikersnaam — je krijgt dan `pvp_test_app` en een
+`pg_hba`-foutmelding die niets met je wijziging te maken heeft.
+
 Testdatabase leegmaken kan met `TRUNCATE vehicles, global_todos, activity_log, bpm_reports, bpm_notifs, meta;`.
-Test end-to-end met een headless browser als die beschikbaar is. Controleer bij frontend-wijzigingen
-minimaal: geen JS-fouten in de console, en de rol-flows (team, admin, foto, taxateur).
+Er staat **geen browser** op de droplet. Wat wél werkt (gebruikt bij Fase 2, 17-08-2026): `jsdom` in de
+scratchpad installeren en de echte `index.html` daarin laden tegen de testserver. Twee valkuilen:
+`fetch` en `scrollTo` moeten via `beforeParse` gezet worden — de scripts draaien al tijdens het opbouwen
+van de DOM, dus zet je ze erna, dan valt `boot()` terug op de demo-modus en test je niets. En `const`/
+`let` op het hoogste niveau staan niet op `window`; lees ze uit met `window.eval('V')`.
+Zet in de testdatabase een catalogus die **afwijkt** van de terugvallijst in `index.html`, anders
+bewijst een geslaagde test niets.
+Controleer bij frontend-wijzigingen minimaal: geen JS-fouten in de console, en de rol-flows (team,
+admin, foto, taxateur).
 
 ## Deployen
 Als Claude Code **op de server** draait: bewerk de bestanden direct en herstart:
@@ -258,8 +271,19 @@ kwaliteit als 0–1 (browserconventie), `toBuffer` als 0–100 — dat verschil 
   opnieuw draaien overschrijft de database met oude data. Het script weigert dat zonder `--overschrijf`.
 - **`window.history` i.p.v. `history`:** in `index.html` bestaat een lokale `const history = []`
   (de undo-stack) die de globale `history` overschaduwt. Gebruik voor routing altijd `window.history`.
-- **Voertuiglijst is nog een vaste snapshot** (`const V = [...]` in index.html, overgenomen uit het
-  Autoboek op 12-08-2026). Er is nog géén automatische koppeling met het Autoboek (dat is Fase 3).
+- **De catalogus komt uit de database** (sinds 17-08-2026, Fase 2): `loadVehicles()` in `index.html`
+  haalt hem op uit `GET /api/vehicles` en vervangt `V` **in place** (`V` is `const` en wordt op ~39
+  plekken bij naam gebruikt — nooit herwijzen). Auto's toevoegen of wijzigen doe je dus in de tabel
+  `vehicles`, niet in `index.html`. De lijst `const V = [...]` staat er nog als **terugvallijst** voor
+  als de API wegvalt of de app zonder backend draait; die is bevroren op 12-08-2026 en loopt dus
+  achter. Er is nog géén automatische koppeling met het Autoboek (dat is Fase 3).
+- **`loadVehicles()` moet vóór `loadState()`/`loadTaxState()`/`loadStatusFoto()` draaien** — die
+  mappen hun gegevens op bestaande rijen in `V`. Daarom staat `await loadVehicles()` bovenaan
+  `startFor()`, boven de rolsplitsing.
+- **`stateOk` bewaakt het opslaan.** `scheduleSave()` schrijft pas als `loadState()` gelukt is. Zonder
+  dat slot zou een mislukte `GET /api/state` (backend-herstart, nginx-hik) ertoe leiden dat de
+  eerstvolgende klik de beginwaarden van `V` over de database heen zet: alle lopende auto's terug naar
+  komende, keuringsfoto's en subtaken weg. Haal die controle er dus niet uit.
 - **Geen npm-afhankelijkheden in de backend** toevoegen tenzij expliciet afgesproken. `pg` is de enige
   toegestane uitzondering (een DB-driver kan niet puur-Node).
 - **Eén verbetering per keer**, en test rol-flows voordat je live zet.
@@ -270,8 +294,8 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
 
 ## Roadmap (kort)
 - ~~Fase 1: JSON-opslag vervangen door een eigen PostgreSQL-database (los van CRP).~~ **Klaar 15-08-2026.**
-- Fase 2 (klein, nog te doen): `index.html` de lijst `V` uit `GET /api/vehicles` laten laden, met de
-  hardcoded lijst als fallback. Daarna is de catalogus alleen nog in de database te beheren.
+- ~~Fase 2: `index.html` de lijst `V` uit `GET /api/vehicles` laten laden, met de hardcoded lijst als
+  fallback.~~ **Klaar 17-08-2026.** De catalogus is nu alleen nog in de database te beheren.
 - Fase 3: automatische instroom van "Komende auto's" uit het Autoboek (Google Sheet) — de sync hoeft
   dan alleen nog rijen te upserten in `vehicles`.
 - ~~Back-up van `/var/pvp/uploads`.~~ **Klaar 15-08-2026** (stap A: nachtelijke momentopnamen).

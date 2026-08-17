@@ -344,7 +344,11 @@ const PHOTO_REQ = PHOTO_ALL.filter(p=>p.req);
 const PHOTO_BY_KEY = Object.fromEntries(PHOTO_ALL.map(p=>[p.key,p]));
 const initials = n => n? n.split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase() : "?";
 
-/* ===== Komende auto's — live overgenomen uit Autoboek PRIEVA (tab "Komende Autos"), 12-08-2026 ===== */
+/* ===== Catalogus — TERUGVALLIJST, niet de bron =====
+   De echte catalogus komt uit de database via GET /api/vehicles (zie loadVehicles() hieronder).
+   Deze lijst is bevroren op 12-08-2026 (Autoboek PRIEVA, tab "Komende Autos") en wordt alleen nog
+   gebruikt als die aanroep mislukt of als de app zonder backend draait (demo-modus in boot()).
+   Auto's toevoegen of wijzigen doe je dus in de database, niet hier. */
 // status begint op 'komende'; batch = transportdatum. Bij binnenkomst -> 'lopende', klaar=0 (stap 1 start).
 const V = [
   // --- Batch 13-08 (import, 8 auto's) ---
@@ -372,7 +376,10 @@ const V = [
   {id:"TB-198-D",vin:"—",kenteken:"TB-198-D",merk:"Volkswagen",model:"Polo",uitv:"6R 1.2 Easyline",kleur:"Wit",brandstof:"Benzine",transm:"Handgeschakeld",reg:"12-04-2010",km:180000,inkoopdatum:"—",lev:"Inruil",importAuto:false,batch:null,note:"Inruil (Marcel Otten)",status:"komende"},
   {id:"X-204-GF",vin:"—",kenteken:"X-204-GF",merk:"Opel",model:"Corsa",uitv:"F 1.2",kleur:"Wit",brandstof:"Benzine",transm:"Handgeschakeld",reg:"18-08-2020",km:60800,inkoopdatum:"—",lev:"Inruil",importAuto:false,batch:null,note:"Inruil (Emily Paul) — telefonisch verkocht",status:"komende"},
 ];
-V.forEach(v=>{v.owner=null; v.klaar=0; v.route=null; v.photos={}; v.subtasks=[]; v.arrivedAt=null; v.taxAt=null;});
+// De velden die NIET uit de catalogus komen maar tijdens het traject ontstaan. Eén definitie, want
+// dit is nodig voor zowel de terugvallijst hierboven als de rijen die loadVehicles() ophaalt.
+function initVeh(v){ v.owner=null; v.klaar=0; v.route=null; v.photos={}; v.subtasks=[]; v.arrivedAt=null; v.taxAt=null; }
+V.forEach(initVeh);
 let subUid=1;
 let globalTodos=[]; let gtUid=1;
 let currentUser=null; let adPhotos={}; let fotoState={car:null}; let taxState={car:null};
@@ -412,6 +419,10 @@ const app=document.getElementById("app");
 
 /* ===== Server-opslag (backend). Valt terug op lokaal als de API er niet is. ===== */
 let apiOk=false, saveT=null;
+// stateOk = "de voortgang is echt ingelezen". Zolang dat niet gelukt is, mag er NIETS terug naar de
+// server: V staat dan nog op de beginwaarden (alles 'komende', geen foto's, geen subtaken) en één
+// klik zou dat over de database heen schrijven.
+let stateOk=false;
 function buildState(){const vehicles={}; V.forEach(v=>{vehicles[v.id]={status:v.status,klaar:v.klaar,route:v.route,owner:v.owner,subtasks:v.subtasks,photos:v.photos,arrivedAt:v.arrivedAt||null,taxAt:v.taxAt||null};}); return {vehicles,subUid,globalTodos,gtUid,activityLog};}
 async function loadState(){
   try{ const r=await fetch("/api/state",{cache:"no-store"}); if(!r.ok)return; const s=await r.json(); apiOk=true;
@@ -420,9 +431,21 @@ async function loadState(){
       if(Array.isArray(s.globalTodos))globalTodos=s.globalTodos;
       if(Array.isArray(s.activityLog))activityLog=s.activityLog;
       if(typeof s.gtUid==="number")gtUid=Math.max(gtUid,s.gtUid); }
+    stateOk=true;   // pas hier: alles is zonder fout ingelezen, vanaf nu mag er opgeslagen worden
   }catch(_){ /* geen backend: lokaal verder */ }
 }
-function scheduleSave(){ if(!apiOk)return; clearTimeout(saveT); saveT=setTimeout(()=>{ fetch("/api/state",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(buildState())}).catch(()=>{}); },400); }
+/* Catalogus uit de database. Mislukt dit op welke manier dan ook, dan blijft de terugvallijst V
+   staan — een lege lijst zou een lege app opleveren, en dat is erger dan een verouderde lijst. */
+async function loadVehicles(){ if(!apiOk)return;
+  try{ const r=await fetch("/api/vehicles",{cache:"no-store"}); if(!r.ok)return;
+    const rows=await r.json();
+    if(!Array.isArray(rows)||!rows.length)return;
+    if(!rows.every(x=>x&&typeof x.id==="string"&&x.id))return;
+    // In place vervangen, niet herwijzen: V is const en wordt overal bij naam gebruikt.
+    V.length=0; rows.forEach(r2=>{ V.push(r2); initVeh(r2); });
+  }catch(_){ /* geen backend of onleesbaar antwoord: terugvallijst blijft staan */ }
+}
+function scheduleSave(){ if(!apiOk||!stateOk)return; clearTimeout(saveT); saveT=setTimeout(()=>{ fetch("/api/state",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(buildState())}).catch(()=>{}); },400); }
 function match(v){const q=state.q.toLowerCase(); return !q || (v.merk+" "+v.model+" "+v.uitv+" "+v.kenteken+" "+v.id).toLowerCase().includes(q);}
 
 /* ===== Ongedaan maken (undo) ===== */
@@ -1046,7 +1069,11 @@ async function doLogin(){ const uu=document.getElementById('lg-user'), pp=docume
 }
 async function logout(){ try{ await fetch("/api/logout",{method:"POST"}); }catch(_){} currentUser=null; location.reload(); }
 async function loadStatusFoto(){ if(!apiOk)return; try{ const r=await fetch("/api/status",{cache:"no-store"}); if(r.ok){ const s=await r.json(); if(s&&s.vehicles){ V.forEach(v=>{ const d=s.vehicles[v.id]; if(d&&d.status)v.status=d.status; }); } } }catch(_){} }
-function startFor(){
+async function startFor(){
+  // Eerst de catalogus, dan pas de rest: loadState/loadTaxState/loadStatusFoto mappen hun gegevens op
+  // bestaande rijen in V, dus een auto die er nog niet in staat zou zijn voortgang verliezen.
+  // Boven de rolsplitsing, want alle drie de rollen gebruiken V.
+  await loadVehicles();
   const foto=currentUser.role==='foto';
   const tax=currentUser.role==='taxateur';
   const restricted=foto||tax;
