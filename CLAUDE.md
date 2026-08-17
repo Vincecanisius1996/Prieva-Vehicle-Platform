@@ -311,8 +311,10 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
 - ~~Fase 1: JSON-opslag vervangen door een eigen PostgreSQL-database (los van CRP).~~ **Klaar 15-08-2026.**
 - ~~Fase 2: `index.html` de lijst `V` uit `GET /api/vehicles` laten laden, met de hardcoded lijst als
   fallback.~~ **Klaar 17-08-2026.** De catalogus is nu alleen nog in de database te beheren.
-- Fase 3: automatische instroom van "Komende auto's" uit het Autoboek (Google Sheet) — de sync hoeft
-  dan alleen nog rijen te upserten in `vehicles`.
+- ~~Fase 3: automatische instroom van "Komende auto's" uit het Autoboek.~~ **Klaar 17-08-2026, maar
+  andersom dan hier stond.** Bij het uitzoeken bleek de wens omgekeerd: PVP is het invoerpunt geworden
+  en schrijft de regel weg naar het Autoboek, in plaats van hem eruit te lezen. Inclusief het
+  automatisch uitlezen van de inkoopstukken (`uitlezen/`). Zie `PVP-autoboek-koppeling-voorstel.md`.
 - ~~Back-up van `/var/pvp/uploads`.~~ **Klaar 15-08-2026** (stap A: nachtelijke momentopnamen).
 - ~~Foto's verkleinen bij het uploaden.~~ **Klaar 16-08-2026.**
 - ~~Een kopie van de back-ups buiten de droplet (stap B).~~ **Klaar 17-08-2026:** `restic` naar
@@ -342,6 +344,13 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
   alleen-toevoegen. Drie richtingen en de afweging staan in `PVP-autoboek-koppeling-voorstel.md`.
 - Bekend gat: **PVP schrijft alleen bij het aanmaken naar het Autoboek.** Latere wijzigingen aan een
   auto komen daar niet in terecht.
-- Bekend, buiten Fase 1 gelaten: nginx serveert `/uploads/` rechtstreeks met `alias`, dus de
-  auth-controle in `serveUpload()` wordt in productie overgeslagen — wie een URL kent, kan het bestand
-  zonder inloggen ophalen.
+- **Zwaarder geworden op 17-08-2026: `/uploads/` staat open.** nginx serveert die map rechtstreeks met
+  `alias`, dus de auth-controle in `serveUpload()` wordt overgeslagen. Nagemeten: een fotoURL geeft via
+  nginx `200` zonder cookie, terwijl de backend op dezelfde URL `401` geeft. De bestandsnamen bevatten
+  12 willekeurige tekens en zijn dus niet te raden, maar een gelekte URL (mail, appje,
+  browsergeschiedenis) is genoeg. Sinds vandaag liggen daar ook **koopovereenkomsten met
+  persoonsgegevens van particuliere verkopers**, en dat maakt dit van een schoonheidsfout een
+  AVG-punt. Op te lossen met `auth_request` naar de backend, of door `/uploads/` via `serveUpload()`
+  te laten lopen in plaats van via `alias`.
+- **Geen enkele auto is in PVP te wijzigen.** Toevoegen kan, verwijderen kan, maar een verkeerd veld
+  corrigeren niet — daarvoor moet je nu de database in. Dat wringt sinds PVP het invoerpunt is.
