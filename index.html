@@ -24,148 +24,159 @@
   :root{
     /* PRIEVA huisstijl: blauwverloop #0D9EBF → #056A7F, zwart woordmerk, Montserrat */
     --brand:#0d9ebf; --brand-2:#056a7f;
-    --navy:#12333d; --navy-2:#0b2830; --ink:#16232b; --muted:#67808c;
-    --line:#e2e9ed; --bg:#f3f8fa; --card:#ffffff; --accent:#0d9ebf; --radius:12px;
-    --green:#1f8a5b; --green-soft:#e4f4ec; --blue:#056a7f; --blue-soft:#e1f1f5;
-    --amber:#b9791a; --amber-soft:#fbf0dc; --red:#c0392b; --red-soft:#fdecec;
+    --navy:#12333d; --navy-2:#0b2830; --ink:#16232b; --muted:#617a86;
+    --line:#e2e9ed; --bg:#f3f8fa; --card:#ffffff; --accent:#0d9ebf; --brand-text:#0081a2; --radius:12px;
+    --green:#1c8758; --green-soft:#e4f4ec; --blue:#056a7f; --blue-soft:#e1f1f5;
+    --amber:#a86809; --amber-soft:#fbf0dc; --red:#c0392b; --red-soft:#fdecec;
     --slate:#5b6b7b; --slate-soft:#eef2f6;
     --shadow:0 1px 2px rgba(9,50,63,.06),0 8px 24px rgba(9,50,63,.08);
     --leonie:#7c3aed; --sjoerd:#0f9488; --vince:#475569; --floris:#2563eb;
   }
   *{box-sizing:border-box}
-  body{margin:0;font-family:"Montserrat",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
-  .demo-bar{background:var(--blue-soft);color:var(--brand-2);text-align:center;font-size:12.5px;padding:6px 12px;font-weight:600;border-bottom:1px solid #cfe6ec}
+  body{margin:0;line-height:1.5;font-family:"Montserrat",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .demo-bar{background:var(--blue-soft);color:var(--brand-2);text-align:center;font-size:12px;padding:6px 12px;font-weight:600;border-bottom:1px solid #cfe6ec}
   header.top{background:linear-gradient(120deg,var(--brand-2),var(--brand));color:#fff;padding:0 22px;display:flex;align-items:center;gap:22px;height:62px;position:sticky;top:0;z-index:40;box-shadow:0 2px 14px rgba(5,106,127,.3)}
   .brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:18px;letter-spacing:1.5px}
   .logo{width:30px;height:34px;filter:drop-shadow(0 2px 5px rgba(0,0,0,.22))}
-  .brand small{display:block;font-size:10px;font-weight:600;color:#d3edf3;letter-spacing:1.4px;margin-top:1px}
+  .brand small{display:block;font-size:11px;font-weight:600;color:#d3edf3;letter-spacing:1.4px;margin-top:1px}
   nav.main{display:flex;gap:4px;margin-left:6px}
-  nav.main button{background:transparent;border:0;color:#e3f4f8;font-size:12.5px;font-weight:700;padding:8px 14px;border-radius:8px;cursor:pointer;transition:.15s;text-transform:uppercase;letter-spacing:.6px}
+  nav.main button{background:transparent;border:0;color:#e3f4f8;font-size:12px;font-weight:700;padding:8px 14px;border-radius:10px;cursor:pointer;transition:.15s;text-transform:uppercase;letter-spacing:.6px}
   nav.main button:hover{background:rgba(255,255,255,.09);color:#fff}
   nav.main button.active{background:rgba(255,255,255,.16);color:#fff}
   .top-right{margin-left:auto;display:flex;align-items:center;gap:14px}
   .search{position:relative}
-  .search input{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.18);border-radius:8px;color:#fff;padding:8px 12px 8px 32px;font-size:13.5px;width:200px;outline:none}
+  .search input{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.18);border-radius:10px;color:#fff;padding:8px 12px 8px 32px;font-size:13px;width:200px;outline:none}
   .search input::placeholder{color:#a9c4dc}
   .search svg{position:absolute;left:10px;top:9px;opacity:.7}
   .avatar{width:34px;height:34px;border-radius:50%;background:#2c5a80;display:grid;place-items:center;font-weight:700;font-size:13px;border:1px solid rgba(255,255,255,.2)}
   main{max-width:1160px;margin:0 auto;padding:24px 22px 70px}
   .page-title{font-size:21px;font-weight:800;margin:0 0 3px;letter-spacing:.4px;text-transform:uppercase}
-  .page-sub{color:var(--muted);font-size:14px;margin:0 0 20px}
+  .page-sub{color:var(--muted);font-size:14px;margin:0 0 20px;max-width:78ch}
   .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
   .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);position:relative;overflow:hidden}
   .kpi .lab{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
-  .kpi .val{font-size:26px;font-weight:750;margin-top:5px;letter-spacing:-.5px}
+  .kpi .val{font-size:26px;font-weight:700;margin-top:5px;letter-spacing:-.5px}
   .kpi .sub{font-size:12px;color:var(--muted);margin-top:1px}
   .kpi .bar{position:absolute;left:0;top:0;bottom:0;width:4px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
-  .card h3{margin:0;padding:14px 18px;font-size:15px;border-bottom:1px solid var(--line);font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .card h3{margin:0;padding:14px 18px;font-size:16px;border-bottom:1px solid var(--line);font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:10px}
   .card-body{padding:14px 18px}
 
   .banner{display:flex;align-items:center;gap:16px;padding:16px 18px;border-radius:var(--radius);margin-bottom:20px;border:1px solid #c5dcef;background:linear-gradient(180deg,#f2f8fd,#e9f2fb)}
-  .banner .bi{width:42px;height:42px;border-radius:11px;background:var(--blue);color:#fff;display:grid;place-items:center;font-size:20px;flex:none;box-shadow:0 3px 10px rgba(43,108,176,.35)}
-  .banner .bt{font-weight:700;font-size:15px} .banner .bs{font-size:13px;color:var(--muted);margin-top:2px}
-  .btn{border:0;border-radius:9px;padding:9px 15px;font-size:13.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:.15s}
+  .banner .bi{width:42px;height:42px;border-radius:10px;background:var(--blue);color:#fff;display:grid;place-items:center;font-size:21px;flex:none;box-shadow:0 3px 10px rgba(43,108,176,.35)}
+  .banner .bt{font-weight:700;font-size:16px} .banner .bs{font-size:13px;color:var(--muted);margin-top:2px}
+  .ico{vertical-align:-3px;flex:none}
+  :focus-visible{outline:2px solid var(--brand-text);outline-offset:2px;border-radius:6px}
+  .btn:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,label:focus-visible{outline:2px solid var(--brand-text);outline-offset:2px}
+  .btn{border:0;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:.15s}
   .btn-primary{background:linear-gradient(120deg,var(--brand),var(--brand-2));color:#fff;box-shadow:0 2px 8px rgba(13,158,191,.35)} .btn-primary:hover{filter:brightness(1.06)}
   .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--navy)} .btn-ghost:hover{background:#f2f6fa}
-  .btn-sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
+  .btn-sm{padding:6px 11px;font-size:12px;border-radius:10px}
+  /* Vingerbediening: de fotograaf werkt op een telefoon. 44px is de gangbare ondergrens; met een
+     muis blijft alles zoals het was. */
+  @media (pointer:coarse){
+    .btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:7px}
+    .btn-sm{min-height:40px}
+    .premove,.pdl,.addl,.dx,.mclose{min-width:34px;min-height:34px}
+    .chk{min-width:44px;min-height:44px}
+  }
   .banner .sp{margin-left:auto;display:flex;gap:8px}
 
   .groupwrap{display:flex;flex-direction:column;gap:18px}
   .grp{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
   .grp-head{display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid var(--line)}
-  .grp-head .gt{font-weight:750;font-size:15px}
+  .grp-head .gt{font-weight:700;font-size:16px}
   .grp-head .gcount{font-size:12px;background:var(--slate-soft);color:var(--slate);padding:2px 9px;border-radius:999px;font-weight:700}
-  .grp-head .gdate{font-size:12.5px;color:var(--muted);font-weight:600}
+  .grp-head .gdate{font-size:12px;color:var(--muted);font-weight:600}
   .grp-head .sp{margin-left:auto}
   .grp-head.batch{background:linear-gradient(180deg,#eef6ff,#e6f0fa)}
   .grp-head.batch .gt{color:var(--navy)}
 
   table{width:100%;border-collapse:collapse}
-  thead th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;padding:10px 14px;border-bottom:1px solid var(--line);background:#fafbfc;white-space:nowrap}
-  tbody td{padding:10px 14px;border-bottom:1px solid var(--line);font-size:13.5px;vertical-align:middle}
+  thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;padding:10px 14px;border-bottom:1px solid var(--line);background:#fafbfc;white-space:nowrap}
+  tbody td{padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle}
   tbody tr{transition:background .12s} tbody tr:hover{background:#f7fafd} tbody tr:last-child td{border-bottom:0}
   .veh-cell{display:flex;align-items:center;gap:11px;cursor:pointer}
   .thumb{width:44px;height:33px;border-radius:6px;flex:none;display:grid;place-items:center;background:linear-gradient(135deg,#eef3f8,#dde6ef);border:1px solid var(--line);color:#8aa0b4}
-  .veh-cell .nm{font-weight:650;font-size:13.5px} .veh-cell .id{font-size:11.5px;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+  .veh-cell .nm{font-weight:600;font-size:13px} .veh-cell .id{font-size:11px;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
   .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
   .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:var(--slate-soft);color:var(--slate)}
   .tag-imp{background:var(--blue-soft);color:var(--blue)} .tag-nl{background:var(--slate-soft);color:var(--slate)}
-  .note{font-size:11.5px;color:var(--muted)}
+  .note{font-size:11px;color:var(--muted)}
   .agechip{display:inline-block;font-size:11px;font-weight:700;color:var(--amber);background:var(--amber-soft);padding:1px 7px;border-radius:999px}
-  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
   .b-komende{background:var(--blue-soft);color:var(--blue)} .b-lopende{background:var(--green-soft);color:var(--green)}
   .segbar{display:flex;gap:3px;align-items:center}
-  .seg{width:14px;height:8px;border-radius:2px;background:var(--slate-soft)}
+  .seg{width:14px;height:8px;border-radius:6px;background:var(--slate-soft)}
   .seg.done{background:var(--green)} .seg.current{background:var(--blue)} .seg.todo{background:#cdd8e2} .seg.nvt{background:#eef2f6}
-  .phase-lab{font-size:12.5px;font-weight:600}
+  .phase-lab{font-size:12px;font-weight:600}
   .funnel{display:flex;flex-direction:column;gap:8px}
   .fn{display:flex;align-items:center;gap:12px}
-  .fn .fl{width:150px;font-size:12.5px;color:var(--ink);font-weight:600;flex:none}
+  .fn .fl{width:150px;font-size:12px;color:var(--ink);font-weight:600;flex:none}
   .fn .track{flex:1;height:22px;background:var(--slate-soft);border-radius:6px;overflow:hidden}
-  .fn .fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--navy-2));border-radius:6px;display:flex;align-items:center;justify-content:flex-end;color:#fff;font-size:11.5px;font-weight:700;padding-right:7px;min-width:22px}
+  .fn .fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--navy-2));border-radius:6px;display:flex;align-items:center;justify-content:flex-end;color:#fff;font-size:11px;font-weight:700;padding-right:7px;min-width:22px}
   .fn .fc{width:26px;text-align:right;font-weight:700;font-size:13px;flex:none}
   .cols{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
   .person-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
   .person-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
   .pav{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:12px;color:#fff}
-  .person-head .pn{font-weight:700;font-size:14.5px} .person-head .pc{margin-left:auto;font-size:12px;color:var(--muted);font-weight:600}
+  .person-head .pn{font-weight:700;font-size:14px} .person-head .pc{margin-left:auto;font-size:12px;color:var(--muted);font-weight:600}
   .todo{display:flex;align-items:center;gap:11px;padding:11px 16px;border-bottom:1px solid var(--line)}
   .todo:last-child{border-bottom:0} .todo:hover{background:#f7fafd}
   .todo .tk{width:8px;height:8px;border-radius:50%;flex:none;background:var(--blue)}
-  .todo .body{min-width:0;flex:1;cursor:pointer} .todo .act{font-weight:650;font-size:13.5px}
+  .todo .body{min-width:0;flex:1;cursor:pointer} .todo .act{font-weight:600;font-size:13px}
   .todo .veh{font-size:12px;color:var(--muted)}
-  select.assign{border:1px solid var(--line);border-radius:7px;padding:4px 6px;font-size:12px;background:#fff;color:var(--ink);cursor:pointer}
+  select.assign{border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:12px;background:#fff;color:var(--ink);cursor:pointer}
   .chk{display:inline-flex;cursor:pointer;position:relative;align-items:center}
   .chk input{position:absolute;opacity:0;width:0;height:0}
-  .chk .box{width:24px;height:24px;border-radius:7px;border:2px solid #cdd8e2;background:#fff;display:grid;place-items:center;transition:.15s}
-  .chk .box:after{content:"✓";color:#fff;font-size:15px;font-weight:800;opacity:0;transform:scale(.5);transition:.15s;line-height:1}
+  .chk .box{width:24px;height:24px;border-radius:6px;border:2px solid #cdd8e2;background:#fff;display:grid;place-items:center;transition:.15s}
+  .chk .box:after{content:"✓";color:#fff;font-size:16px;font-weight:800;opacity:0;transform:scale(.5);transition:.15s;line-height:1}
   .chk input:checked + .box{background:var(--green);border-color:var(--green)}
   .chk input:checked + .box:after{opacity:1;transform:scale(1)}
   .chk:hover .box{border-color:var(--green)}
   tr.row-arrived{background:#f3fbf6} tr.row-arrived:hover{background:#eaf7f0}
   .arr-lab{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--green)}
-  .pbar{height:8px;border-radius:5px;background:var(--slate-soft);overflow:hidden}
-  .pfill{height:100%;background:linear-gradient(90deg,var(--green),#2fae74);border-radius:5px}
+  .pbar{height:8px;border-radius:6px;background:var(--slate-soft);overflow:hidden}
+  .pfill{height:100%;background:linear-gradient(90deg,var(--green),#2fae74);border-radius:6px}
   .need{font-size:11px;font-weight:700;color:var(--amber);background:var(--amber-soft);padding:1px 7px;border-radius:999px}
   .route-badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
   .rbg-ja{background:var(--green-soft);color:var(--green)} .rbg-nee{background:var(--blue-soft);color:var(--blue)}
   .tstep{display:flex;gap:12px;align-items:flex-start;padding:10px 2px;border-bottom:1px solid var(--line)}
   .tstep:last-child{border-bottom:0}
-  .tstep .h{font-weight:650;font-size:13.5px}
+  .tstep .h{font-weight:600;font-size:13px}
   .tstep.todo .h{color:var(--muted);font-weight:600}
   .tstep.current .h{color:var(--navy)}
   .tstep .d{font-size:12px;color:var(--muted)}
   .tnum{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;flex:none;font-size:12px;font-weight:800;border:2px solid #eddcb8;background:var(--amber-soft);color:var(--amber)}
   .tnum.done{background:var(--green);border-color:var(--green);color:#fff}
   .route-btns{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
-  .rb{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 13px;font-weight:700;font-size:12.5px;cursor:pointer;transition:.12s}
+  .rb{border:1px solid var(--line);background:#fff;border-radius:10px;padding:6px 13px;font-weight:700;font-size:12px;cursor:pointer;transition:.12s}
   .rb.ja{border-color:#bfe6d1;color:var(--green)} .rb.ja:hover{background:var(--green-soft)}
   .rb.nee{border-color:#cfe0f1;color:var(--blue)} .rb.nee:hover{background:var(--blue-soft)}
   .rb.active-ja{background:var(--green);color:#fff;border-color:var(--green)}
   .rb.active-nee{background:var(--blue);color:#fff;border-color:var(--blue)}
-  .undo-btn{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.18);color:#fff;font-size:13px;font-weight:600;padding:7px 12px;border-radius:8px;cursor:pointer;transition:.15s;white-space:nowrap}
+  .undo-btn{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.18);color:#fff;font-size:13px;font-weight:600;padding:7px 12px;border-radius:10px;cursor:pointer;transition:.15s;white-space:nowrap}
   .undo-btn:hover:not(:disabled){background:rgba(255,255,255,.24)}
   .undo-btn:disabled{opacity:.4;cursor:default}
-  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--navy);color:#fff;padding:11px 14px 11px 16px;border-radius:11px;box-shadow:0 8px 30px rgba(15,47,76,.4);display:flex;align-items:center;gap:14px;font-size:13.5px;font-weight:600;opacity:0;pointer-events:none;transition:.2s;z-index:100;max-width:92vw}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--navy);color:#fff;padding:11px 14px 11px 16px;border-radius:10px;box-shadow:0 8px 30px rgba(15,47,76,.4);display:flex;align-items:center;gap:14px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:.2s;z-index:100;max-width:92vw}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
-  .toast .tundo{background:var(--accent);border:0;color:#fff;font-weight:700;font-size:12.5px;padding:6px 11px;border-radius:8px;cursor:pointer;white-space:nowrap}
+  .toast .tundo{background:var(--accent);border:0;color:#fff;font-weight:700;font-size:12px;padding:6px 11px;border-radius:10px;cursor:pointer;white-space:nowrap}
   .toast .tx{background:transparent;border:0;color:#c4d6e6;font-size:18px;cursor:pointer;line-height:1;padding:0 2px}
   .empty{padding:38px;text-align:center;color:var(--muted)}
-  .empty .eb{font-size:30px;margin-bottom:8px;opacity:.5}
-  .back{display:inline-flex;align-items:center;gap:6px;color:var(--blue);font-weight:600;font-size:13.5px;cursor:pointer;margin-bottom:14px}
+  .empty .eb{font-size:26px;margin-bottom:8px;opacity:.5}
+  .back{display:inline-flex;align-items:center;gap:6px;color:var(--blue);font-weight:600;font-size:13px;cursor:pointer;margin-bottom:14px}
   .det-head{display:flex;gap:20px;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap}
   .hero{width:250px;height:170px;border-radius:14px;flex:none;display:grid;place-items:center;background:linear-gradient(135deg,#e8eef4,#d3deea);border:1px solid var(--line);color:#8aa0b4}
-  .det-title h1{margin:0 0 4px;font-size:24px;letter-spacing:-.3px}
+  .det-title h1{margin:0 0 4px;font-size:26px;letter-spacing:-.3px}
   .det-title .sub{color:var(--muted);font-size:14px;margin-bottom:12px}
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-  .chip{background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:600}
+  .chip{background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px 11px;font-size:12px;font-weight:600}
   .chip b{color:var(--muted);font-weight:600}
   .det-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:18px;align-items:start}
   .spec-grid{display:grid;grid-template-columns:1fr 1fr;gap:0}
   .spec{padding:10px 4px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
-  .spec .k{color:var(--muted);font-size:13px} .spec .v{font-weight:650;font-size:13.5px;text-align:right}
+  .spec .k{color:var(--muted);font-size:13px} .spec .v{font-weight:600;font-size:13px;text-align:right}
   .plist{padding:2px 0}
   .pstep{display:flex;gap:12px;align-items:flex-start}
   .pstep .rail{display:flex;flex-direction:column;align-items:center;align-self:stretch}
@@ -176,39 +187,39 @@
   .pstep .ln{width:2px;flex:1;background:var(--line);margin:2px 0}
   .pstep.done .ln{background:var(--green)}
   .pstep .ct{padding-bottom:14px;flex:1}
-  .pstep .h{font-weight:650;font-size:13.5px} .pstep.nvt .h{color:var(--muted);font-weight:500}
+  .pstep .h{font-weight:600;font-size:13px} .pstep.nvt .h{color:var(--muted);font-weight:500}
   .pstep .d{font-size:12px;color:var(--muted)}
   .owner-box{display:flex;align-items:center;gap:10px;padding:12px 16px}
-  .infobar{display:flex;align-items:center;gap:12px;padding:11px 15px;border-radius:10px;font-size:13.5px;margin-top:4px;background:var(--blue-soft);border:1px solid #c5dcef;color:#215883}
-  .infobar .ai{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;flex:none;font-weight:800;background:#cfe1f2;color:var(--blue)}
+  .infobar{display:flex;align-items:center;gap:12px;padding:11px 15px;border-radius:10px;font-size:13px;margin-top:4px;background:var(--blue-soft);border:1px solid #c5dcef;color:#215883}
+  .infobar .ai{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;flex:none;font-weight:800;background:#cfe1f2;color:var(--blue)}
   .muted{color:var(--muted)}
   .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:12px}
   .ptile{position:relative;width:100%;aspect-ratio:4/3;border:2px dashed #cdd8e2;border-radius:10px;display:grid;place-items:center;cursor:pointer;background:#f7fafd;overflow:hidden;transition:.15s}
   .ptile:hover{border-color:var(--blue);background:#eef5fb}
   .ptile.has{border-style:solid;border-color:var(--green);background:#fff}
   .ptile img{width:100%;height:100%;object-fit:cover}
-  .ptile .pcam{font-size:22px;opacity:.55}
-  .ptile .padd{position:absolute;bottom:6px;font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+  .ptile .pcam{font-size:21px;opacity:.55}
+  .ptile .padd{position:absolute;bottom:6px;font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.3px}
   .ptile .pcheck{position:absolute;top:5px;left:5px;width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:800;box-shadow:0 1px 4px rgba(16,40,64,.3)}
   .ptile .pdl{position:absolute;bottom:5px;right:5px;width:22px;height:22px;border-radius:50%;background:rgba(22,35,43,.72);color:#fff;font-size:12px;line-height:1;display:grid;place-items:center;text-decoration:none}
   .ptile .pdl:hover{background:rgba(22,35,43,.92)}
-  .ptile .premove{position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:rgba(192,57,43,.94);color:#fff;border:0;font-size:15px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
-  .plabel{font-size:12px;font-weight:650;margin-top:6px;line-height:1.25}
-  .preq{font-size:10px;font-weight:700;color:var(--amber);background:var(--amber-soft);padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.2px}
-  .popt{font-size:10px;font-weight:700;color:var(--slate);background:var(--slate-soft);padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.2px}
-  .pgroup-h{font-size:11.5px;font-weight:750;color:var(--slate);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 9px;display:flex;align-items:center;gap:9px}
+  .ptile .premove{position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;background:rgba(192,57,43,.94);color:#fff;border:0;font-size:16px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
+  .plabel{font-size:12px;font-weight:600;margin-top:6px;line-height:1.25}
+  .preq{font-size:11px;font-weight:700;color:var(--amber);background:var(--amber-soft);padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.2px}
+  .popt{font-size:11px;font-weight:700;color:var(--slate);background:var(--slate-soft);padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.2px}
+  .pgroup-h{font-size:11px;font-weight:700;color:var(--slate);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 9px;display:flex;align-items:center;gap:9px}
   .pgroup-h .gc{font-size:11px;background:var(--slate-soft);color:var(--slate);padding:1px 8px;border-radius:999px;font-weight:700}
   .pinstr{font-size:11px;color:var(--muted);line-height:1.3;margin-top:2px}
-  .add-btn{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);color:#fff;font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:8px;cursor:pointer;white-space:nowrap;transition:.15s}
+  .add-btn{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);color:#fff;font-size:12px;font-weight:700;padding:7px 13px;border-radius:10px;cursor:pointer;white-space:nowrap;transition:.15s}
   .add-btn:hover{background:rgba(255,255,255,.26)}
   .modal-ov{position:fixed;inset:0;background:rgba(15,47,76,.45);display:none;align-items:center;justify-content:center;z-index:200;padding:20px}
   .modal-ov.show{display:flex}
   .modal{background:#fff;border-radius:14px;box-shadow:0 20px 60px rgba(15,47,76,.4);width:100%;max-width:430px;overflow:hidden;animation:pop .15s ease}
   @keyframes pop{from{transform:translateY(8px);opacity:.6}to{transform:translateY(0);opacity:1}}
-  .modal h3{margin:0;padding:15px 18px;font-size:16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;font-weight:750}
+  .modal h3{margin:0;padding:15px 18px;font-size:16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;font-weight:700}
   .modal .mb{padding:16px 18px;display:flex;flex-direction:column;gap:13px}
-  .modal label{font-size:12.5px;font-weight:650;color:var(--slate);display:block;margin-bottom:5px}
-  .modal input[type=text],.modal select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:13.5px;background:#fff;color:var(--ink);outline:none}
+  .modal label{font-size:12px;font-weight:600;color:var(--slate);display:block;margin-bottom:5px}
+  .modal input[type=text],.modal select{width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:13px;background:#fff;color:var(--ink);outline:none}
   .modal input[type=text]:focus,.modal select:focus{border-color:var(--blue)}
   .modal .mf{display:flex;gap:8px;justify-content:flex-end;padding:14px 18px;border-top:1px solid var(--line);background:#fafbfc}
   /* Bredere variant voor "Auto toevoegen": dat formulier heeft te veel velden voor één kolom. */
@@ -216,42 +227,37 @@
   .modal.wide .mb{max-height:min(66vh,620px);overflow-y:auto}
   .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
   .fgrid .full{grid-column:1/-1}
-  .fsec{font-size:11.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:5px;margin-top:2px}
-  .drop{border:1.5px dashed var(--line);border-radius:11px;padding:14px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer;background:#fafbfc}
+  .fsec{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:5px;margin-top:2px}
+  .drop{border:1.5px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer;background:#fafbfc}
   .drop:hover,.drop.over{border-color:var(--blue);color:var(--blue);background:#f2fafc}
   .doclist{display:flex;flex-direction:column;gap:5px;margin-top:9px}
-  .docrow{display:flex;align-items:center;gap:8px;font-size:12.5px;background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+  .docrow{display:flex;align-items:center;gap:8px;font-size:12px;background:#f6f8fa;border:1px solid var(--line);border-radius:10px;padding:6px 9px}
   .docrow .dn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .docrow .dx{border:0;background:none;cursor:pointer;color:var(--muted);font-size:15px;line-height:1;padding:0 2px}
+  .docrow .dx{border:0;background:none;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:0 2px}
   .docrow .dx:hover{color:#c0392b}
-  .fout{color:#c0392b;font-size:12.5px;font-weight:600}
-  /* Verwijderen is de enige onomkeerbare handeling in PVP; die hoort er ook zo uit te zien. */
-  .btn.gevaar{color:#c0392b;border-color:#f0c8c2}
-  .btn.gevaar:hover{background:#fdecea;border-color:#e2a79f}
-  .btn-rood{background:#c0392b;color:#fff;border-color:#c0392b}
-  .btn-rood:hover{background:#a93226;border-color:#a93226}
-  .waarschuwing{background:#fdecea;border:1px solid #f5c6c0;border-radius:9px;padding:10px 12px;font-size:12.5px;color:#7b241c}
-  .mclose{background:transparent;border:0;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;padding:0 2px}
+  .fout{color:#c0392b;font-size:12px;font-weight:600}
+  .waarschuwing{background:#fdecea;border:1px solid #f5c6c0;border-radius:10px;padding:10px 12px;font-size:12px;color:#7b241c}
+  .mclose{background:transparent;border:0;font-size:21px;cursor:pointer;color:var(--muted);line-height:1;padding:0 2px}
   /* login */
   .loginwrap{position:fixed;inset:0;z-index:300;background:linear-gradient(135deg,var(--brand-2),var(--brand));display:flex;align-items:center;justify-content:center;padding:22px}
   .logincard{background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(5,40,48,.4);width:100%;max-width:380px;overflow:hidden}
   .loginhead{display:flex;align-items:center;gap:11px;padding:22px 24px 6px}
-  .loginhead .lt{font-weight:800;font-size:20px;letter-spacing:1.5px;color:var(--ink);line-height:1.1}
-  .loginhead .lt small{display:block;font-size:9.5px;font-weight:600;color:var(--muted);letter-spacing:1.4px;margin-top:2px}
+  .loginhead .lt{font-weight:800;font-size:21px;letter-spacing:1.5px;color:var(--ink);line-height:1.1}
+  .loginhead .lt small{display:block;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:1.4px;margin-top:2px}
   .loginbody{padding:14px 24px 24px;display:flex;flex-direction:column}
-  .loginbody label{font-size:12px;font-weight:650;color:var(--slate);margin:12px 0 5px}
-  .loginbody input{border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:14px;outline:none;font-family:inherit}
+  .loginbody label{font-size:12px;font-weight:600;color:var(--slate);margin:12px 0 5px}
+  .loginbody input{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;outline:none;font-family:inherit}
   .loginbody input:focus{border-color:var(--brand)}
-  .loginerr{background:var(--red-soft);color:var(--red);font-size:12.5px;font-weight:600;padding:8px 11px;border-radius:8px;margin-top:12px}
+  .loginerr{background:var(--red-soft);color:var(--red);font-size:12px;font-weight:600;padding:8px 11px;border-radius:10px;margin-top:12px}
   /* advertentiefoto galerij */
   .adgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:11px}
   .adtile{position:relative;aspect-ratio:4/3;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#f2f6f8}
   .adtile img{width:100%;height:100%;object-fit:cover;display:block}
-  .adtile .premove{position:absolute;top:5px;right:5px;width:23px;height:23px;border-radius:50%;background:rgba(192,57,43,.94);color:#fff;border:0;font-size:15px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
+  .adtile .premove{position:absolute;top:5px;right:5px;width:23px;height:23px;border-radius:50%;background:rgba(192,57,43,.94);color:#fff;border:0;font-size:16px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
   .adtile .addl{position:absolute;bottom:5px;right:5px;width:23px;height:23px;border-radius:50%;background:rgba(22,35,43,.72);color:#fff;font-size:12px;line-height:1;display:grid;place-items:center;text-decoration:none}
   .adadd{border:2px dashed #cdd8e2;background:#f7fafd;display:grid;place-items:center;cursor:pointer;gap:2px;grid-auto-flow:row}
   .adadd:hover{border-color:var(--brand);background:#eef7fa}
-  .adadd .pcam{font-size:22px;opacity:.55} .adadd .padd{position:static;font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+  .adadd .pcam{font-size:21px;opacity:.55} .adadd .padd{position:static;font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.3px}
   /* selectie + laden bij foto-uploads */
   .adtile.sel{outline:3px solid var(--brand);outline-offset:-3px}
   .adcheck{position:absolute;top:5px;left:5px;cursor:pointer;z-index:2}
@@ -262,8 +268,10 @@
   .adcheck input:checked + .adcbox:after{opacity:1}
   .aduploading{display:flex;align-items:center;gap:10px;background:var(--blue-soft);border:1px solid #c5dcef;color:#215883;border-radius:10px;padding:9px 13px;font-size:13px;font-weight:600;margin-bottom:11px}
   .adselbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:11px}
-  .btn-danger{background:var(--red);color:#fff}
-  .btn-danger-o{background:#fff;border:1px solid var(--red);color:var(--red)}
+  /* Eén manier om "onomkeerbaar" uit te drukken: gevuld voor de daadwerkelijke actie, omlijnd voor
+     de aanleiding ernaartoe. Er stonden hiervoor drie varianten naast elkaar. */
+  .btn-danger{background:var(--red);color:#fff;border:1px solid var(--red)} .btn-danger:hover{background:#a93226;border-color:#a93226}
+  .btn-danger-o{background:#fff;border:1px solid var(--red);color:var(--red)} .btn-danger-o:hover{background:var(--red-soft)}
   .spin{width:16px;height:16px;border-radius:50%;border:2.5px solid #bcd6e6;border-top-color:var(--brand);display:inline-block;animation:spin .7s linear infinite;flex:none}
   @keyframes spin{to{transform:rotate(360deg)}}
   .ptile .puploading{position:absolute;inset:0;background:rgba(255,255,255,.66);display:grid;place-items:center;z-index:2}
@@ -271,19 +279,19 @@
   .fotocar{display:flex;align-items:center;gap:13px;padding:13px 14px;border-bottom:1px solid var(--line);cursor:pointer;transition:.12s}
   .fotocar:last-child{border-bottom:0} .fotocar:hover{background:#f2f8fa}
   .fotocar .thumb{width:52px;height:39px}
-  .fotocar .nm{font-weight:650;font-size:14.5px} .fotocar .id{font-size:12px;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+  .fotocar .nm{font-weight:600;font-size:14px} .fotocar .id{font-size:12px;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
   .fotocount{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--slate-soft);color:var(--slate)}
   .fotocount.has{background:var(--green-soft);color:var(--green)}
   /* sleep-bak (RDW-foto's in één keer) */
   .traybar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
   .traygrid{display:flex;gap:8px;flex-wrap:wrap;padding:10px;background:#f2f8fa;border:1px dashed #bcd6de;border-radius:10px;margin-bottom:12px}
-  .traythumb{position:relative;width:64px;height:48px;border-radius:7px;overflow:hidden;border:1px solid var(--line);cursor:grab;background:#fff}
+  .traythumb{position:relative;width:64px;height:48px;border-radius:6px;overflow:hidden;border:1px solid var(--line);cursor:grab;background:#fff}
   .traythumb:active{cursor:grabbing}
   .traythumb img{width:100%;height:100%;object-fit:cover;pointer-events:none}
   .traythumb .premove{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(192,57,43,.94);color:#fff;border:0;font-size:12px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
   .ptile.drop{border-color:var(--brand)!important;border-style:solid!important;background:#e6f6fa}
   /* advertentiefoto: sleepzone + knoppen */
-  .addrop{border-radius:12px;transition:.12s}
+  .addrop{border-radius:14px;transition:.12s}
   .addrop.drag{outline:2px dashed var(--brand);outline-offset:3px;background:#eef8fb}
   .adtools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
   @media(max-width:900px){.kpis{grid-template-columns:1fr 1fr}.cols,.det-grid{grid-template-columns:1fr}nav.main{display:none}.hero{width:100%}.add-btn span.lbl{display:none}}
@@ -297,16 +305,16 @@
     <button data-view="vandaag" class="active">Vandaag</button>
     <button data-view="komende">Komende</button>
     <button data-view="lopende">Lopende</button>
-    <button data-view="logboek" id="logboekBtn" style="display:none">📜 Logboek</button>
+    <button data-view="logboek" id="logboekBtn" style="display:none"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h12a2 2 0 012 2v14H7a2 2 0 01-2-2z"/><path d="M5 16h12"/><path d="M9 8h6"/></svg> Logboek</button>
   </nav>
   <div class="top-right">
     <div class="search">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a9c4dc" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
       <input id="search" placeholder="Zoek kenteken, VIN, merk…" autocomplete="off">
     </div>
-    <button id="addCarBtn" class="add-btn" onclick="openAutoModal()" title="Nieuw ingekochte auto toevoegen">＋ Auto</button>
-    <button id="addTodoBtn" class="add-btn" onclick="openTodoModal()" title="Nieuwe to-do toevoegen">＋ To-do</button>
-    <button id="undoBtn" class="undo-btn" onclick="undoLast()" disabled>↩ Ongedaan</button>
+    <button id="addCarBtn" class="add-btn" onclick="openAutoModal()" title="Nieuw ingekochte auto toevoegen"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Auto</button>
+    <button id="addTodoBtn" class="add-btn" onclick="openTodoModal()" title="Nieuwe to-do toevoegen"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> To-do</button>
+    <button id="undoBtn" class="undo-btn" onclick="undoLast()" disabled><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-4"/></svg> Ongedaan</button>
     <div class="avatar">VC</div>
     <button id="logoutBtn" class="undo-btn" onclick="logout()" title="Uitloggen" style="display:none">Uitloggen</button>
   </div>
@@ -439,6 +447,30 @@ function currentAction(v){
 }
 function pav(name){const k=PKEY[name]; return `<span class="pav" style="background:var(--${k})">${initials(name)}</span>`;}
 function badge(s){return `<span class="badge b-${s}">${statusLabel[s]}</span>`;}
+/* ===== Pictogrammen =====
+   Eén setje lijniconen in plaats van emoji. Emoji zien er per besturingssysteem anders uit — op
+   Windows is 🗑 een andere tekening dan op een Mac — en ze zijn niet mee te kleuren met de tekst.
+   Deze erven currentColor en schalen mee met de lettergrootte. */
+const ICONEN = {
+  plus:     '<path d="M12 5v14M5 12h14"/>',
+  undo:     '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-4"/>',
+  download: '<path d="M12 4v11"/><path d="M8 12l4 4 4-4"/><path d="M5 19h14"/>',
+  trash:    '<path d="M4 7h16"/><path d="M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2"/><path d="M6 7l1 12a1 1 0 001 1h8a1 1 0 001-1l1-12"/>',
+  doc:      '<path d="M14 3H7a1 1 0 00-1 1v16a1 1 0 001 1h10a1 1 0 001-1V7z"/><path d="M14 3v4h4"/>',
+  image:    '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M5 17l4.5-4.5L14 17l2.5-2.5L19 17"/>',
+  camera:   '<path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13" r="3.5"/>',
+  logboek:  '<path d="M5 4h12a2 2 0 012 2v14H7a2 2 0 01-2-2z"/><path d="M5 16h12"/><path d="M9 8h6"/>',
+  inbox:    '<path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M5 5h14l1 8v5a1 1 0 01-1 1H5a1 1 0 01-1-1v-5z"/>',
+  taken:    '<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 3h6v3H9z"/><path d="M9 11h6M9 15h4"/>',
+  truck:    '<path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
+  mail:     '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+  zoek:     '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+  map:      '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',
+};
+function ico(naam, maat){
+  const d = ICONEN[naam] || ''; const m = maat || 16;
+  return `<svg class="ico" width="${m}" height="${m}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+}
 function carIcon(){return `<svg width="20" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-3a1 1 0 011-1h1z"/></svg>`;}
 
 let state={view:"vandaag",q:""};
@@ -530,16 +562,16 @@ function renderVandaag(){
     <h1 class="page-title">Vandaag</h1>
     <p class="page-sub">Je dagelijkse leidraad: hieronder staan alle open taken. Verder onderaan vink je auto's aan zodra ze binnen zijn.</p>
     ${(()=>{const nr=(bpmData.notifs||[]).filter(n=>!n.seen); if(!nr.length)return ''; return `<div class="banner" style="border-color:#bfe6d1;background:linear-gradient(180deg,#eefaf3,#e3f5ea)">
-      <div class="bi" style="background:var(--green)">📄</div>
+      <div class="bi" style="background:var(--green)">${ico("doc",18)}</div>
       <div style="flex:1"><div class="bt">${nr.length} nieuw BPM-taxatierapport${nr.length===1?'':'en'} van S-TAX</div>
         <div class="bs">${nr.slice(0,4).map(n=>{const vv=V.find(x=>x.id===n.id);return (vv?`${vv.merk} ${vv.model}`:'Auto')+' · '+fmtDate(n.ts);}).join(' — ')}</div></div>
       <button class="btn btn-ghost btn-sm" onclick="markBpmSeen()">Gezien</button></div>`;})()}
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 4px 12px">
       <h3 style="margin:0;font-size:16px">To-do — per persoon <span class="agechip" style="color:var(--accent);background:var(--blue-soft)">${openCount} open</span></h3>
-      ${isAdmin()?`<button class="btn btn-ghost btn-sm" onclick="go('logboek')">📜 Logboek</button>`:''}
+      ${isAdmin()?`<button class="btn btn-ghost btn-sm" onclick="go('logboek')">${ico("logboek")} Logboek</button>`:''}
     </div>
     ${(lop.length||gopen.length)? `<div class="cols">${personCard("Leonie",groups["Leonie"])}${personCard("Sjoerd",groups["Sjoerd"])}${personCard("Vince",groups["Vince"])}${personCard("Floris",groups["Floris"])}</div>${groups["_"].length?`<div style="margin-top:16px">${personCard("_",groups["_"])}</div>`:""}`
-      : `<div class="card"><div class="empty"><div class="eb">📥</div>Nog geen open taken. Vink onderaan een auto op binnen, of voeg met <b>＋ To-do</b> rechtsboven een losse taak toe.</div></div>`}
+      : `<div class="card"><div class="empty"><div class="eb">${ico("inbox",26)}</div>Nog geen open taken. Vink onderaan een auto op binnen, of voeg met <b>${ico("plus")} To-do</b> rechtsboven een losse taak toe.</div></div>`}
     <div class="kpis" style="margin-top:22px">
       <div class="kpi"><div class="bar" style="background:var(--blue)"></div><div class="lab">Komende</div><div class="val">${kom.length}</div><div class="sub">nog niet binnen</div></div>
       <div class="kpi"><div class="bar" style="background:var(--green)"></div><div class="lab">Binnengekomen</div><div class="val">${lop.length}</div><div class="sub">aangevinkt</div></div>
@@ -547,7 +579,7 @@ function renderVandaag(){
       <div class="kpi"><div class="bar" style="background:var(--slate)"></div><div class="lab">Niet toegewezen</div><div class="val">${groups["_"].length}</div><div class="sub">nog niemand op</div></div>
     </div>
     <div class="banner">
-      <div class="bi">📋</div>
+      <div class="bi">${ico("taken",21)}</div>
       <div><div class="bt">Afvinken bij binnenkomst</div>
         <div class="bs">Je weet nog niet precies welke van de verwachte auto's morgen komen — vink ze aan zodra ze er zijn. Elke vink start stap 1 (RDW-foto's) en zet de to-do in gang.</div></div>
     </div>
@@ -560,7 +592,7 @@ function renderLog(){
   if(!isAdmin()){ go('vandaag'); return; }
   const rows=activityLog.slice().reverse();
   const body=rows.length? rows.map(e=>{const veh=e.vehicleId?V.find(v=>v.id===e.vehicleId):null;
-    return `<tr><td class="note" style="white-space:nowrap">${fmtDate(e.ts)}</td><td><span style="display:inline-flex;align-items:center;gap:6px">${PEOPLE.includes(e.by)?pav(e.by):''}<span style="font-weight:650">${e.by}</span></span></td><td>${e.action}</td><td>${e.text||(veh?`${veh.merk} ${veh.model}`:'')}</td></tr>`;
+    return `<tr><td class="note" style="white-space:nowrap">${fmtDate(e.ts)}</td><td><span style="display:inline-flex;align-items:center;gap:6px">${PEOPLE.includes(e.by)?pav(e.by):''}<span style="font-weight:600">${e.by}</span></span></td><td>${e.action}</td><td>${e.text||(veh?`${veh.merk} ${veh.model}`:'')}</td></tr>`;
   }).join("") : `<tr><td colspan="4" class="empty">Nog geen activiteit gelogd.</td></tr>`;
   app.innerHTML=`
     <div class="back" onclick="go('vandaag')">← Terug naar Vandaag</div>
@@ -591,19 +623,29 @@ function renderKomende(){
     return d(a)-d(b)||String(a).localeCompare(String(b));
   });
   const overigImp=all.filter(v=>!v.batch&&v.importAuto), overigNl=all.filter(v=>!v.batch&&!v.importAuto);
+  // Een auto die binnen is, hoort hier niet meer te staan: hij staat vanaf dat moment bij Lopende.
+  // Bleef hij staan, dan groeide deze lijst eindeloos door met afgevinkte regels.
+  const openstaand=l=>l.filter(v=>v.status==="komende");
   const binnen=l=>l.filter(v=>v.status==="lopende").length;
-  const grp=(title,date,list)=>!list.length?"":`
-    <div class="grp"><div class="grp-head ${date?'batch':''}">
-      <span class="gt">${title}</span><span class="gcount">${list.length}</span>${date?`<span class="gdate">${date}</span>`:""}
-      <span class="sp gdate">${binnen(list)}/${list.length} binnen</span>
-    </div><div style="padding:0 4px">${komTable(list)}</div></div>`;
+  const grp=(title,date,groep)=>{
+    const lijst=openstaand(groep); if(!lijst.length)return "";
+    const al=binnen(groep);
+    return `<div class="grp"><div class="grp-head ${date?'batch':''}">
+      <span class="gt">${title}</span><span class="gcount">${lijst.length}</span>${date?`<span class="gdate">${date}</span>`:""}
+      <span class="sp gdate">${al?`${al} al binnen`:'nog niemand binnen'}</span>
+    </div><div style="padding:0 4px">${komTable(lijst)}</div></div>`;
+  };
+  const groepen=[
+    ...partijen.map(p=>grp(`Transport gepland ${p}`,"verwacht",all.filter(v=>v.batch===p))),
+    grp("Overig import — nog geen transportdatum","",overigImp),
+    grp("Overig / inruil (NL)","",overigNl),
+  ].join("");
+  const nogOpen=openstaand(all).length;
   app.innerHTML=`
     <h1 class="page-title">Komende auto's</h1>
-    <p class="page-sub">Nieuw ingekocht? Voeg hem toe met <b>＋ Auto</b> rechtsboven. <b>Vink een auto aan zodra hij binnen is</b> — dan verhuist hij naar Lopende en gaat de to-do voor stap 1 (RDW Foto's) lopen.</p>
+    <p class="page-sub">Nieuw ingekocht? Voeg hem toe met <b>${ico("plus")} Auto</b> rechtsboven. <b>Vink een auto aan zodra hij binnen is</b> — hij verdwijnt dan uit deze lijst en verhuist naar Lopende, waar de to-do voor stap 1 (RDW Foto's) gaat lopen.</p>
     <div class="groupwrap">
-      ${partijen.map(p=>grp(`Transport gepland ${p}`,"verwacht",all.filter(v=>v.batch===p))).join("")}
-      ${grp("Overig import — nog geen transportdatum","",overigImp)}
-      ${grp("Overig / inruil (NL)","",overigNl)}
+      ${groepen || `<div class="empty">${state.q?`Geen komende auto's die op “${state.q}” passen.`:`Geen komende auto's meer — alles is binnen. Nieuw ingekocht? Gebruik <b>${ico("plus")} Auto</b> rechtsboven.`}</div>`}
     </div>`;
 }
 
@@ -616,7 +658,7 @@ function renderLopende(){
   const maxc=Math.max(1,...perCat);
   if(!allLop.length){
     app.innerHTML=`<h1 class="page-title">Lopende auto's</h1><p class="page-sub">Auto's die binnen zijn en het traject doorlopen.</p>
-      <div class="card"><div class="empty"><div class="eb">📥</div><div style="font-weight:650;color:var(--ink);margin-bottom:4px">Nog geen auto's in traject</div>Zodra de batch van 13-08 binnenkomt, markeer je dat op <b onclick="go('komende')" style="cursor:pointer;color:var(--blue)">Komende</b> of <b onclick="go('vandaag')" style="cursor:pointer;color:var(--blue)">Vandaag</b> — dan verschijnen ze hier met stap 1 (RDW Foto's) open.</div></div>`;
+      <div class="card"><div class="empty"><div class="eb">${ico("inbox",26)}</div><div style="font-weight:600;color:var(--ink);margin-bottom:4px">Nog geen auto's in traject</div>Zodra de batch van 13-08 binnenkomt, markeer je dat op <b onclick="go('komende')" style="cursor:pointer;color:var(--blue)">Komende</b> of <b onclick="go('vandaag')" style="cursor:pointer;color:var(--blue)">Vandaag</b> — dan verschijnen ze hier met stap 1 (RDW Foto's) open.</div></div>`;
     return;
   }
   const rows=lop.map(v=>{const s=steps(v);const pct=s.total?Math.round(s.done/s.total*100):0;
@@ -653,7 +695,7 @@ function openVeh(id){
         <h1>${v.merk} ${v.model}</h1><div class="sub">${v.uitv}</div>
         <div class="chips">${badge(v.status)}<span class="chip"><b>Km</b> ${km(v.km)}</span><span class="chip"><b>1e reg</b> ${v.reg}</span><span class="chip"><b>Traject</b> ${v.importAuto?'Import (volledig)':'NL (kort)'}</span></div>
         ${v.status==='komende'
-          ? `<div class="infobar"><div class="ai">🚚</div><div>${v.note}</div></div><div style="margin-top:10px;display:flex;align-items:center;gap:10px"><label class="chk"><input type="checkbox" onchange="arrive('${v.id}',this.checked)"><span class="box"></span></label><span style="font-weight:650;font-size:13.5px">Binnengekomen — start stap 1</span></div>`
+          ? `<div class="infobar"><div class="ai">${ico("truck",18)}</div><div>${v.note}</div></div><div style="margin-top:10px;display:flex;align-items:center;gap:10px"><label class="chk"><input type="checkbox" onchange="arrive('${v.id}',this.checked)"><span class="box"></span></label><span style="font-weight:600;font-size:13px">Binnengekomen — start stap 1</span></div>`
           : (act? `<div class="infobar"><div class="ai">▶</div><div>Nu aan de beurt: <b>${act.actie}</b></div></div>`
                 : `<div class="infobar" style="background:var(--green-soft);border-color:#bfe6d1;color:var(--green)"><div class="ai" style="background:#cbecdb;color:var(--green)">✓</div><div><b>Verkoopklaar</b> — alle stappen afgerond</div></div>`)}
         ${v.status==='lopende'?`<div style="margin-top:12px"><button class="btn btn-ghost btn-sm" onclick="askBackToKomend('${v.id}')" title="Deze auto stond per ongeluk op binnen">↩ Terug naar Komend</button></div>`:''}
@@ -662,7 +704,7 @@ function openVeh(id){
     <div class="det-grid">
       <div style="display:flex;flex-direction:column;gap:18px">
         ${v.status==='lopende'&&v.importAuto?taxPanel(v):''}
-        ${v.status==='lopende'?`<div class="card"><h3>Import/BPM-traject <span class="muted" style="font-weight:500;font-size:12.5px">${s.done}/${s.total} stappen${v.route?` · route ${v.route}`:''}</span></h3><div class="card-body" style="padding:6px 16px 12px">
+        ${v.status==='lopende'?`<div class="card"><h3>Import/BPM-traject <span class="muted" style="font-weight:500;font-size:12px">${s.done}/${s.total} stappen${v.route?` · route ${v.route}`:''}</span></h3><div class="card-body" style="padding:6px 16px 12px">
           ${s.arr.map((st,idx)=>{
             return `<div class="tstep ${st.state}"><label class="chk"><input type="checkbox" ${st.state==='done'?'checked':''} onchange="setStep('${v.id}',${idx},this.checked)"><span class="box"></span></label><div style="flex:1"><div class="h">${st.label}</div><div class="d">${st.state==='done'?'Afgerond':st.state==='current'?'Nu aan de beurt':'Nog te doen'}</div></div></div>`;
           }).join("")}
@@ -673,7 +715,7 @@ function openVeh(id){
         <div class="card"><h3>Specificaties</h3><div class="card-body"><div class="spec-grid">${specs.map(([k,val])=>`<div class="spec"><span class="k">${k}</span><span class="v">${val||'—'}</span></div>`).join("")}</div></div></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:18px">
-        ${v.status==='lopende'?`<div class="card"><h3>Verantwoordelijke</h3><div class="owner-box">${v.owner?pav(v.owner):`<span class="pav" style="background:var(--slate)">?</span>`}<div style="flex:1"><div style="font-weight:650;font-size:13.5px">${v.owner||'Niet toegewezen'}</div><div class="muted" style="font-size:12px">voor huidige fase</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div></div>`:''}
+        ${v.status==='lopende'?`<div class="card"><h3>Verantwoordelijke</h3><div class="owner-box">${v.owner?pav(v.owner):`<span class="pav" style="background:var(--slate)">?</span>`}<div style="flex:1"><div style="font-weight:600;font-size:13px">${v.owner||'Niet toegewezen'}</div><div class="muted" style="font-size:12px">voor huidige fase</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div></div>`:''}
         ${v.status==='lopende'?subtaskCard(v):''}
         <div class="card"><h3>Herkomst</h3><div class="card-body">
           <div class="spec"><span class="k">Leverancier</span><span class="v">${v.lev||'—'}</span></div>
@@ -684,7 +726,7 @@ function openVeh(id){
       </div>
     </div>
     ${isAdmin()?`<div style="display:flex;justify-content:flex-end;margin-top:22px;padding-top:14px;border-top:1px solid var(--line)">
-      <button class="btn btn-ghost btn-sm gevaar" onclick="vraagVerwijderen('${v.id}')" title="Deze auto uit PVP halen">🗑 Auto verwijderen</button>
+      <button class="btn btn-danger-o btn-sm" onclick="vraagVerwijderen('${v.id}')" title="Deze auto uit PVP halen">${ico("trash")} Auto verwijderen</button>
     </div>`:''}`;
   window.scrollTo(0,0);
 }
@@ -729,8 +771,8 @@ function taxPanel(v){
         <button class="rb ja ${v.route==='JA'?'active-ja':''}" onclick="choose('${v.id}','JA')">JA — via S-TAX</button>
         <button class="rb nee ${v.route==='NEE'?'active-nee':''}" onclick="choose('${v.id}','NEE')">NEE — zelf doen</button>
       </div>
-      ${v.route==='JA'?`<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="mailTaxateurId('${v.id}')">📧 S-TAX (opnieuw) mailen</button>`:''}
-      ${reps.length?`<div style="margin-top:12px"><div style="font-weight:650;font-size:13px;margin-bottom:6px">Taxatierapport ontvangen</div>${reps.map(rr=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px"><span style="font-size:18px">📄</span><div style="flex:1;min-width:0"><div style="font-weight:650;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rr.name}</div><div class="note">${fmtDate(rr.ts)} · ${rr.by}</div></div><a class="btn btn-ghost btn-sm" href="${rr.url}" target="_blank" download>⭳ Openen</a><button class="btn btn-sm btn-danger-o" title="Verwijderen" onclick="delBpm('${v.id}','${rr.url}')">×</button></div>`).join('')}</div>`:''}
+      ${v.route==='JA'?`<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="mailTaxateurId('${v.id}')">${ico("mail")} S-TAX (opnieuw) mailen</button>`:''}
+      ${reps.length?`<div style="margin-top:12px"><div style="font-weight:600;font-size:13px;margin-bottom:6px">Taxatierapport ontvangen</div>${reps.map(rr=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px"><span class="docico">${ico("doc",18)}</span><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rr.name}</div><div class="note">${fmtDate(rr.ts)} · ${rr.by}</div></div><a class="btn btn-ghost btn-sm" href="${rr.url}" target="_blank" download>${ico("download")} Openen</a><button class="btn btn-danger-o btn-sm" title="Verwijderen" onclick="delBpm('${v.id}','${rr.url}')">×</button></div>`).join('')}</div>`:''}
     </div></div>`;
 }
 function setStep(id,i,checked){const v=V.find(x=>x.id===id); if(!v)return;
@@ -850,7 +892,7 @@ function vraagVerwijderen(id, tochWeg, waarschuwing){
     </div>
     <div class="mf">
       <button class="btn btn-ghost" onclick="sluitVerwijderen()">Annuleren</button>
-      <button class="btn btn-rood" id="del-ok" onclick="verwijderAuto('${v.id}',${tochWeg===true})">Definitief verwijderen</button>
+      <button class="btn btn-danger" id="del-ok" onclick="verwijderAuto('${v.id}',${tochWeg===true})">Definitief verwijderen</button>
     </div>
   </div>`;
   ov.classList.add('show');
@@ -892,17 +934,17 @@ function photoCard(v,g){
   const slots=g.items.map(p=>{const img=v.photos[p.key]; const inputId=`ph-${v.id}-${p.key}`; const uploading=photoUp[v.id+'|'+p.key];
     return `<div class="pslot">
       <div class="ptile ${img?'has':''}" onclick="document.getElementById('${inputId}').click()" ondragover="event.preventDefault();this.classList.add('drop')" ondragleave="this.classList.remove('drop')" ondrop="this.classList.remove('drop');slotDrop(event,'${v.id}','${p.key}')" title="${img?'Vervangen of sleep hierheen':'Foto toevoegen of sleep hierheen'}">
-        ${img?`<img src="${img}" alt=""><span class="pcheck">✓</span><a class="pdl" href="${img}" download="${fotoNaam(v,p,img)}" target="_blank" rel="noopener" title="Deze foto downloaden" onclick="event.stopPropagation()">⭳</a><button class="premove" title="Verwijderen" onclick="event.stopPropagation();removePhoto('${v.id}','${p.key}')">×</button>`
-             :`<span class="pcam">📷</span><span class="padd">Toevoegen</span>`}
+        ${img?`<img src="${img}" alt=""><span class="pcheck">✓</span><a class="pdl" href="${img}" download="${fotoNaam(v,p,img)}" target="_blank" rel="noopener" title="Deze foto downloaden" onclick="event.stopPropagation()">${ico("download",14)}</a><button class="premove" title="Verwijderen" onclick="event.stopPropagation();removePhoto('${v.id}','${p.key}')">×</button>`
+             :`<span class="pcam">${ico("camera",26)}</span><span class="padd">Toevoegen</span>`}
         ${uploading?`<span class="puploading"><span class="spin"></span></span>`:''}
       </div>
       <input id="${inputId}" type="file" accept="image/*" capture="environment" style="display:none" onchange="setPhoto('${v.id}','${p.key}',this)">
       <div class="plabel">${p.label} ${p.req?`<span class="preq">verplicht</span>`:`<span class="popt">optioneel</span>`}</div>
       ${p.instr?`<div class="pinstr">${p.instr}</div>`:''}
     </div>`;}).join("");
-  return `<div class="card"><h3>${g.step} <span class="muted" style="font-weight:500;font-size:12.5px">${reqDone}/${reqTot} verplicht${optDone?` · ${optDone} extra`:''}</span></h3>
+  return `<div class="card"><h3>${g.step} <span class="muted" style="font-weight:500;font-size:12px">${reqDone}/${reqTot} verplicht${optDone?` · ${optDone} extra`:''}</span></h3>
     <div class="card-body">
-      ${(()=>{const tk=v.id+'|'+g.group; const tray=photoTray[tk]||[]; const loading=photoTrayLoading[tk]; const anyFilled=g.items.some(p=>v.photos[p.key]); return `<div class="traybar"><label class="btn btn-ghost btn-sm" title="Kies of sleep meerdere foto's tegelijk"><input type="file" accept="image/*" multiple style="display:none" onchange="addToTray('${v.id}','${g.group}',this)">＋ Meerdere foto's tegelijk</label>${loading?`<span class="note" style="margin:0;display:inline-flex;align-items:center;gap:7px"><span class="spin"></span>Foto's laden… (${loading})</span>`:tray.length?`<span class="note" style="margin:0">Sleep elke foto naar het juiste vakje ↓</span><button class="btn btn-danger-o btn-sm" onclick="clearTray('${v.id}','${g.group}')">🗑 Bak legen (${tray.length})</button>`:''}<span style="flex:1"></span>${anyFilled?`<button class="btn btn-ghost btn-sm" title="Alle foto's van deze stap als zip downloaden" onclick="downloadFotoGroep('${v.id}','${g.group}')">⭳ Download alle (${g.items.filter(p=>v.photos[p.key]).length})</button>`:''}${anyFilled?`<button class="btn btn-danger-o btn-sm" title="Wis alle foto's van deze stap" onclick="clearGroupPhotos('${v.id}',${g.stepIdx})">Alle foto's wissen</button>`:''}</div>${tray.length?`<div class="traygrid">${tray.map((d,i)=>`<div class="traythumb" draggable="true" ondragstart="trayDragStart(event,'${v.id}','${g.group}',${i})"><img src="${d}" alt=""><button class="premove" title="Weghalen" onclick="removeTray('${v.id}','${g.group}',${i})">×</button></div>`).join('')}</div>`:''}`;})()}
+      ${(()=>{const tk=v.id+'|'+g.group; const tray=photoTray[tk]||[]; const loading=photoTrayLoading[tk]; const anyFilled=g.items.some(p=>v.photos[p.key]); return `<div class="traybar"><label class="btn btn-ghost btn-sm" title="Kies of sleep meerdere foto's tegelijk"><input type="file" accept="image/*" multiple style="display:none" onchange="addToTray('${v.id}','${g.group}',this)">${ico("plus")} Meerdere foto's tegelijk</label>${loading?`<span class="note" style="margin:0;display:inline-flex;align-items:center;gap:7px"><span class="spin"></span>Foto's laden… (${loading})</span>`:tray.length?`<span class="note" style="margin:0">Sleep elke foto naar het juiste vakje ↓</span><button class="btn btn-danger-o btn-sm" onclick="clearTray('${v.id}','${g.group}')">${ico("trash")} Bak legen (${tray.length})</button>`:''}<span style="flex:1"></span>${anyFilled?`<button class="btn btn-ghost btn-sm" title="Alle foto's van deze stap als zip downloaden" onclick="downloadFotoGroep('${v.id}','${g.group}')">${ico("download")} Download alle (${g.items.filter(p=>v.photos[p.key]).length})</button>`:''}${anyFilled?`<button class="btn btn-danger-o btn-sm" title="Wis alle foto's van deze stap" onclick="clearGroupPhotos('${v.id}',${g.stepIdx})">Alle foto's wissen</button>`:''}</div>${tray.length?`<div class="traygrid">${tray.map((d,i)=>`<div class="traythumb" draggable="true" ondragstart="trayDragStart(event,'${v.id}','${g.group}',${i})"><img src="${d}" alt=""><button class="premove" title="Weghalen" onclick="removeTray('${v.id}','${g.group}',${i})">×</button></div>`).join('')}</div>`:''}`;})()}
       <div class="pgrid">${slots}</div>
       ${allReq
         ? (stepDone
@@ -936,10 +978,10 @@ function subtaskCard(v){
       <select class="assign" onchange="assignSubtask('${v.id}',${st.id},this.value)">${opt(st)}</select>
       <button class="premove" style="position:static;background:#eef2f6;color:var(--slate)" title="Verwijderen" onclick="delSubtask('${v.id}',${st.id})">×</button>
     </div>`).join("") : `<div class="empty" style="padding:14px">Nog geen extra taken voor deze auto.</div>`;
-  return `<div class="card"><h3>Extra taken <span class="muted" style="font-weight:500;font-size:12.5px">deze auto</span></h3>
+  return `<div class="card"><h3>Extra taken <span class="muted" style="font-weight:500;font-size:12px">deze auto</span></h3>
     <div style="padding:2px 0">${rows}</div>
     <div style="display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line)">
-      <input id="subin-${v.id}" placeholder="Bijv. wieldoppen bestellen, deuk uitdeuken…" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px" onkeydown="if(event.key==='Enter')addSubtask('${v.id}')">
+      <input id="subin-${v.id}" placeholder="Bijv. wieldoppen bestellen, deuk uitdeuken…" style="flex:1;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px" onkeydown="if(event.key==='Enter')addSubtask('${v.id}')">
       <button class="btn btn-primary btn-sm" onclick="addSubtask('${v.id}')">Toevoegen</button>
     </div></div>`;
 }
@@ -999,7 +1041,7 @@ function openAutoModal(){
       <div class="full">
         <div class="drop" id="na-drop" onclick="document.getElementById('na-files').click()">
           Koopovereenkomst, proforma, screenshots — klik of sleep hierheen.<br>
-          <span style="font-size:11.5px">Ze worden bij de auto bewaard. Automatisch uitlezen komt later; vul de velden nu zelf in.</span>
+          <span style="font-size:11px">Ze worden bij de auto bewaard. Automatisch uitlezen komt later; vul de velden nu zelf in.</span>
         </div>
         <input type="file" id="na-files" multiple accept="application/pdf,image/*" style="display:none" onchange="autoDocsKiezen(this.files); this.value='';">
         <div class="doclist" id="na-doclist"></div>
@@ -1068,7 +1110,7 @@ async function autoDocsKiezen(files){
 }
 function toonDocs(){
   const el=document.getElementById('na-doclist'); if(!el)return;
-  el.innerHTML=nieuweDocs.map((d,i)=>`<div class="docrow"><span>${d.name.toLowerCase().endsWith('.pdf')?'📄':'🖼'}</span><span class="dn">${d.name}</span><button class="dx" onclick="autoDocWeg(${i})" title="Weghalen">×</button></div>`).join("")
+  el.innerHTML=nieuweDocs.map((d,i)=>`<div class="docrow"><span>${d.name.toLowerCase().endsWith('.pdf')?ico('doc',15):ico('image',15)}</span><span class="dn">${d.name}</span><button class="dx" onclick="autoDocWeg(${i})" title="Weghalen">×</button></div>`).join("")
     + (nieuweDocs.length&&kanUitlezen?`<button class="btn btn-ghost" style="margin-top:4px;justify-content:center" onclick="autoUitlezen()">Stukken opnieuw lezen</button>`:"");
 }
 function autoDocWeg(i){nieuweDocs.splice(i,1); toonDocs();}
@@ -1091,7 +1133,7 @@ async function autoUitlezen(){
   if(uitleesBezig)return;                       // twee keer tegelijk kost dubbel en levert niets extra's
   const vak=document.getElementById('na-uitlees'); if(!vak)return;
   uitleesBezig=true;
-  vak.innerHTML=`<div class="muted" style="font-size:12.5px">Stukken lezen… (dit duurt 5 tot 20 seconden)</div>`;
+  vak.innerHTML=`<div class="muted" style="font-size:12px">Stukken lezen… (dit duurt 5 tot 20 seconden)</div>`;
   try{
     const r=await fetch("/api/uitlezen",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({docs:nieuweDocs.map(d=>({name:d.name,dataUrl:d.dataUrl}))})});
@@ -1111,13 +1153,13 @@ async function autoUitlezen(){
     leeg.push(...ALTIJD_ZELF);
     const bron=v=>(j.bronnen&&j.bronnen[v])?` <span class="muted" style="font-weight:400">(${j.bronnen[v]})</span>`:'';
     vak.innerHTML=`
-      <div style="font-size:12.5px;line-height:1.7">
-        <div style="color:#1a7f37;font-weight:650">✓ ${gevuld.length} veld(en) ingevuld uit ${j.gebruikt.length} stuk(ken)</div>
+      <div style="font-size:12px;line-height:1.7">
+        <div style="color:#1a7f37;font-weight:600">✓ ${gevuld.length} veld(en) ingevuld uit ${j.gebruikt.length} stuk(ken)</div>
         ${gevuld.length?`<div class="muted">${gevuld.map(v=>`${UITLEES_NAMEN[v]||v}${bron(v)}`).join(' · ')}</div>`:''}
         ${j.onzeker&&j.onzeker.length?`<div style="color:#b26a00;margin-top:5px"><b>Nakijken:</b> ${j.onzeker.map(v=>UITLEES_NAMEN[v]||v).join(', ')} — de stukken spreken elkaar tegen</div>`:''}
         ${leeg.length?`<div style="color:#c0392b;margin-top:5px"><b>Niet gevonden:</b> ${leeg.map(v=>UITLEES_NAMEN[v]||v).join(', ')} — vul zelf aan of voeg een document toe</div>`:''}
         ${j.overgeslagen&&j.overgeslagen.length?`<div class="muted" style="margin-top:5px">Overgeslagen: ${j.overgeslagen.join(', ')}</div>`:''}
-        ${j.verbruik?`<div class="muted" style="margin-top:5px;font-size:11.5px">${j.verbruik.in.toLocaleString('nl-NL')} tokens gelezen · circa ${(j.verbruik.in*3/1e6+j.verbruik.uit*15/1e6).toFixed(2).replace('.',',')} dollar</div>`:''}
+        ${j.verbruik?`<div class="muted" style="margin-top:5px;font-size:11px">${j.verbruik.in.toLocaleString('nl-NL')} tokens gelezen · circa ${(j.verbruik.in*3/1e6+j.verbruik.uit*15/1e6).toFixed(2).replace('.',',')} dollar</div>`:''}
       </div>`;
   }catch(_){ vak.innerHTML=`<div class="fout">Geen verbinding met de server.</div>`; }
   finally{ uitleesBezig=false; }
@@ -1153,7 +1195,7 @@ function docCard(v){
   if(!lijst.length)return "";
   return `<div class="card"><h3>Inkoopdocumenten</h3><div class="card-body">
     <div class="doclist" style="margin:0">${lijst.map(d=>`<a class="docrow" href="${d.url}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">
-      <span>${String(d.name||'').toLowerCase().endsWith('.pdf')?'📄':'🖼'}</span><span class="dn">${d.name||'document'}</span><span style="color:var(--muted);font-size:11.5px">openen ↗</span></a>`).join("")}</div>
+      <span>${String(d.name||'').toLowerCase().endsWith('.pdf')?ico('doc',15):ico('image',15)}</span><span class="dn">${d.name||'document'}</span><span style="color:var(--muted);font-size:11px">openen ↗</span></a>`).join("")}</div>
   </div></div>`;
 }
 async function opslaanAuto(){
@@ -1239,8 +1281,8 @@ function renderTaxList(){
       <div style="flex:1;min-width:0"><div class="nm">${v.merk} ${v.model}</div><div class="id">${v.kenteken!=='—'?v.kenteken:v.vin}</div></div>
       <div class="fotocount ${nfoto?'has':''}">${nfoto?nfoto+" foto"+(nfoto===1?'':"'s"):'nog geen foto'}</div>
       ${nrep?`<span class="fotocount has">✓ rapport</span>`:''}
-      <span style="color:var(--muted);font-size:20px">›</span></div>`;
-  }).join("") : `<div class="empty"><div class="eb">🔍</div>Er staan nu geen auto's op taxatie.</div>`;
+      <span style="color:var(--muted);font-size:21px">›</span></div>`;
+  }).join("") : `<div class="empty"><div class="eb">${ico("zoek",26)}</div>Er staan nu geen auto's op taxatie.</div>`;
   app.innerHTML=`<h1 class="page-title">Te taxeren</h1><p class="page-sub">Auto's die Prieva heeft aangemeld voor BPM-taxatie. Bekijk en download de foto's en upload het taxatierapport.</p>
     <div class="card"><div style="padding:4px">${rows}</div></div>`;
 }
@@ -1253,9 +1295,9 @@ function renderTaxCar(){ const v=V.find(x=>x.id===taxState.car); if(!v){taxState
       <div class="det-title" style="flex:1;min-width:260px"><h1>${v.merk} ${v.model}</h1><div class="sub">${v.uitv||''}</div>
         <div class="chips"><span class="chip"><b>Kenteken</b> ${v.kenteken}</span><span class="chip"><b>VIN</b> <span class="mono">${v.vin}</span></span><span class="chip"><b>Km</b> ${km(v.km)}</span><span class="chip"><b>1e reg</b> ${v.reg}</span></div></div></div>
     ${PHOTO_GROUPS.map(g=>taxPhotoCard(v,g)).join('')}
-    <div class="card"><h3>BPM-taxatierapport <span class="muted" style="font-weight:500;font-size:12.5px">${reps.length} geüpload</span></h3>
+    <div class="card"><h3>BPM-taxatierapport <span class="muted" style="font-weight:500;font-size:12px">${reps.length} geüpload</span></h3>
       <div class="card-body">
-        ${reps.length?`<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">${reps.map(rr=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px"><span style="font-size:18px">📄</span><div style="flex:1;min-width:0"><div style="font-weight:650;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rr.name}</div><div class="note">${fmtDate(rr.ts)} · ${rr.by}</div></div><a class="btn btn-ghost btn-sm" href="${rr.url}" target="_blank" download>⭳ Openen</a><button class="btn btn-sm btn-danger-o" title="Verwijderen" onclick="delBpm('${v.id}','${rr.url}')">×</button></div>`).join('')}</div>`:''}
+        ${reps.length?`<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">${reps.map(rr=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px"><span class="docico">${ico("doc",18)}</span><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rr.name}</div><div class="note">${fmtDate(rr.ts)} · ${rr.by}</div></div><a class="btn btn-ghost btn-sm" href="${rr.url}" target="_blank" download>${ico("download")} Openen</a><button class="btn btn-danger-o btn-sm" title="Verwijderen" onclick="delBpm('${v.id}','${rr.url}')">×</button></div>`).join('')}</div>`:''}
         <label class="btn btn-primary" style="cursor:pointer"><input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadBpm('${v.id}',this)">＋ Rapport uploaden (PDF)</label>
         <div class="note" style="margin-top:8px">Het Prieva-team krijgt automatisch een melding zodra je het rapport hebt geüpload.</div>
       </div></div>`;
@@ -1263,9 +1305,9 @@ function renderTaxCar(){ const v=V.find(x=>x.id===taxState.car); if(!v){taxState
 }
 function taxPhotoCard(v,g){
   const items=g.items.filter(p=>v.photos[p.key]);
-  const grid=items.length? `<div class="adgrid">${items.map(p=>{const url=v.photos[p.key]; return `<div class="adtile"><img src="${url}" alt="${p.label}"><a class="addl" href="${url}" target="_blank" rel="noopener" download="${fotoNaam(v,p,url)}" title="Downloaden">⭳</a></div>`;}).join('')}</div>` : `<div class="note">Nog niet aangeleverd door Prieva.</div>`;
-  return `<div class="card"><h3>${g.step} <span class="muted" style="font-weight:500;font-size:12.5px">${items.length} foto${items.length===1?'':"'s"}</span></h3>
-    <div class="card-body">${grid}${items.length?`<div class="adtools"><button class="btn btn-ghost btn-sm" onclick="downloadFotoGroep('${v.id}','${g.group}')">⭳ Download alle (${items.length})</button></div>`:''}</div></div>`;
+  const grid=items.length? `<div class="adgrid">${items.map(p=>{const url=v.photos[p.key]; return `<div class="adtile"><img src="${url}" alt="${p.label}"><a class="addl" href="${url}" target="_blank" rel="noopener" download="${fotoNaam(v,p,url)}" title="Downloaden">${ico("download",14)}</a></div>`;}).join('')}</div>` : `<div class="note">Nog niet aangeleverd door Prieva.</div>`;
+  return `<div class="card"><h3>${g.step} <span class="muted" style="font-weight:500;font-size:12px">${items.length} foto${items.length===1?'':"'s"}</span></h3>
+    <div class="card-body">${grid}${items.length?`<div class="adtools"><button class="btn btn-ghost btn-sm" onclick="downloadFotoGroep('${v.id}','${g.group}')">${ico("download")} Download alle (${items.length})</button></div>`:''}</div></div>`;
 }
 // Bestandsnaam waar je buiten PVP nog iets aan hebt: merk, kenteken of VIN, wat het voorstelt, en de
 // juiste extensie. Zonder die extensie opent het bestand op Windows niet met een dubbelklik.
@@ -1332,13 +1374,13 @@ async function delAdPhoto(id,url){ const arr=adList(id).filter(u=>u!==url); adPh
   if(apiOk){ try{ await fetch("/api/adphotos-set",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,urls:arr})}); }catch(_){}}
   rerenderCurrent(); }
 function adGallery(id){ const arr=adList(id); const sel=adSelSet(id); const up=adUp[id]; const selCount=[...sel].filter(u=>arr.includes(u)).length;
-  const tiles=arr.map((url,idx)=>{const on=sel.has(url); return `<div class="adtile${on?' sel':''}"><img src="${url}" alt="foto ${idx+1}"><label class="adcheck" title="Selecteren" onclick="event.stopPropagation()"><input type="checkbox" ${on?'checked':''} onchange="toggleAdSel('${id}','${url}',this.checked)"><span class="adcbox"></span></label><a class="addl" href="${url}" target="_blank" download title="Downloaden">⭳</a><button class="premove" title="Verwijderen" onclick="delAdPhoto('${id}','${url}')">×</button></div>`;}).join("");
-  const addTile=`<label class="adtile adadd"><input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="addAdPhoto('${id}',this)"><span class="pcam">📷</span><span class="padd">Foto's</span></label>`;
+  const tiles=arr.map((url,idx)=>{const on=sel.has(url); return `<div class="adtile${on?' sel':''}"><img src="${url}" alt="foto ${idx+1}"><label class="adcheck" title="Selecteren" onclick="event.stopPropagation()"><input type="checkbox" ${on?'checked':''} onchange="toggleAdSel('${id}','${url}',this.checked)"><span class="adcbox"></span></label><a class="addl" href="${url}" target="_blank" download title="Downloaden">${ico("download",14)}</a><button class="premove" title="Verwijderen" onclick="delAdPhoto('${id}','${url}')">×</button></div>`;}).join("");
+  const addTile=`<label class="adtile adadd"><input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="addAdPhoto('${id}',this)"><span class="pcam">${ico("camera",26)}</span><span class="padd">Foto's</span></label>`;
   const progress = up? `<div class="aduploading" id="adprog-${id}"><span class="spin"></span><span>Bezig met uploaden… <b>${up.done}/${up.total}</b> — even wachten, niet nogmaals uploaden.</span></div>` : '';
   const selBar = arr.length? `<div class="adselbar">
         <button class="btn btn-ghost btn-sm" onclick="adSelAll('${id}')">Selecteer alles (${arr.length})</button>
         ${selCount?`<button class="btn btn-ghost btn-sm" onclick="adSelNone('${id}')">Selectie wissen</button>`:''}
-        ${selCount?`<button class="btn btn-danger btn-sm" onclick="delAdSelected('${id}')">🗑 Verwijder selectie (${selCount})</button>`:''}
+        ${selCount?`<button class="btn btn-danger btn-sm" onclick="delAdSelected('${id}')">${ico("trash")} Verwijder selectie (${selCount})</button>`:''}
         <span style="flex:1"></span>
         <button class="btn btn-danger-o btn-sm" title="Verwijder alle foto's van deze auto" onclick="delAllAd('${id}')">Alles verwijderen (${arr.length})</button>
       </div>` : '';
@@ -1346,13 +1388,13 @@ function adGallery(id){ const arr=adList(id); const sel=adSelSet(id); const up=a
       ${progress}${selBar}
       <div class="adgrid">${tiles}${addTile}</div>
       <div class="adtools">
-        <label class="btn btn-ghost btn-sm" title="Kies een hele map; alle foto's erin worden geüpload"><input type="file" webkitdirectory directory multiple style="display:none" onchange="addAdPhoto('${id}',this)">📁 Hele map uploaden</label>
-        ${arr.length?`<button class="btn btn-primary btn-sm" onclick="downloadAllAd('${id}')">⭳ Download alle (${arr.length})</button>`:''}
+        <label class="btn btn-ghost btn-sm" title="Kies een hele map; alle foto's erin worden geüpload"><input type="file" webkitdirectory directory multiple style="display:none" onchange="addAdPhoto('${id}',this)">${ico("map")} Hele map uploaden</label>
+        ${arr.length?`<button class="btn btn-primary btn-sm" onclick="downloadAllAd('${id}')">${ico("download")} Download alle (${arr.length})</button>`:''}
         <span class="note" style="margin:0">of sleep foto's/map hierheen</span>
       </div></div>`;
 }
 function adGalleryCard(v){ const n=adList(v.id).length;
-  return `<div class="card"><h3>Advertentiefoto's <span class="muted" style="font-weight:500;font-size:12.5px">${n} foto${n===1?'':'’s'}</span></h3>
+  return `<div class="card"><h3>Advertentiefoto's <span class="muted" style="font-weight:500;font-size:12px">${n} foto${n===1?'':'’s'}</span></h3>
     <div class="card-body">${adGallery(v.id)}
       ${n?`<button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="copyAdLinks('${v.id}')">Kopieer links voor advertentie</button>`:''}
       <div class="note" style="margin-top:8px">De fotograaf zet hier de advertentiefoto's; de advertentieagent gebruikt ze voor de Mobilox-advertentie.</div></div></div>`;
@@ -1366,8 +1408,8 @@ function renderFotoList(){
   const rows=lop.length? lop.map(v=>{ const n=adList(v.id).length;
     return `<div class="fotocar" onclick="openFotoCar('${v.id}')"><div class="thumb">${carIcon()}</div>
       <div style="flex:1;min-width:0"><div class="nm">${v.merk} ${v.model}</div><div class="id">${v.kenteken!=='—'?v.kenteken:v.vin}</div></div>
-      <div class="fotocount ${n?'has':''}">${n?`${n} foto${n===1?'':'’s'}`:'nog geen'}</div><span style="color:var(--muted);font-size:20px">›</span></div>`;
-  }).join("") : `<div class="empty"><div class="eb">📷</div>Er staan nog geen auto's binnen om te fotograferen.</div>`;
+      <div class="fotocount ${n?'has':''}">${n?`${n} foto${n===1?'':'’s'}`:'nog geen'}</div><span style="color:var(--muted);font-size:21px">›</span></div>`;
+  }).join("") : `<div class="empty"><div class="eb">${ico("camera",26)}</div>Er staan nog geen auto's binnen om te fotograferen.</div>`;
   app.innerHTML=`<h1 class="page-title">Te fotograferen</h1><p class="page-sub">Kies een auto en voeg de advertentiefoto's toe. Ze worden direct bewaard.</p>
     <div class="card"><div style="padding:4px">${rows}</div></div>`;
 }
@@ -1379,7 +1421,7 @@ function renderFotoCar(){ const v=V.find(x=>x.id===fotoState.car); if(!v){fotoSt
     <div class="det-head"><div class="hero"><svg width="64" height="40" viewBox="0 0 24 24" fill="#aebfce">${carIcon().replace('width="20" height="13"','')}</svg></div>
       <div class="det-title" style="flex:1;min-width:260px"><h1>${v.merk} ${v.model}</h1><div class="sub">${v.uitv||''}</div>
         <div class="chips"><span class="chip"><b>Kenteken</b> ${v.kenteken}</span><span class="chip"><b>VIN</b> <span class="mono">${v.vin}</span></span><span class="chip"><b>Km</b> ${km(v.km)}</span></div></div></div>
-    <div class="card"><h3>Advertentiefoto's <span class="muted" style="font-weight:500;font-size:12.5px">${n} foto${n===1?'':'’s'}</span></h3>
+    <div class="card"><h3>Advertentiefoto's <span class="muted" style="font-weight:500;font-size:12px">${n} foto${n===1?'':'’s'}</span></h3>
       <div class="card-body">${adGallery(v.id)}<div class="note" style="margin-top:10px">Maak of kies de foto's voor deze auto. Ze worden direct op de server bewaard.</div></div></div>`;
   window.scrollTo(0,0);
 }
