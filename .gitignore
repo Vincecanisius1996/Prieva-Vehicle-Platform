@@ -6,6 +6,12 @@ pg.env
 secret
 *.env
 .htpasswd
+# Google service-account-sleutel voor het Autoboek. Staat in /var/pvp/ en dus buiten de repo; deze
+# regels zijn de tweede grendel, voor als iemand hem hierheen kopieert om "even iets te proberen".
+autoboek-sleutel.json
+*-sleutel.json
+*service-account*.json
+*credentials*.json
 
 # Data en uploads: staan in PostgreSQL en /var/pvp/uploads, niet hier
 *.json.bak-*

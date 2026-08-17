@@ -34,6 +34,17 @@ CREATE TABLE IF NOT EXISTS vehicles (
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
 
+-- Toegevoegd 17-08-2026 bij de plusknop ("Auto toevoegen"). Als ALTER en niet in de CREATE hierboven,
+-- zodat dit bestand ook op een bestaande database gedraaid kan worden — het moet idempotent blijven.
+-- factuurnr/inkoopprijs/verkoopdatum vullen de laatste drie kolommen van het Autoboek-tabblad
+-- "Komende Autos" die PVP nog niet had. Zie PVP-autoboek-koppeling-voorstel.md.
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS factuurnr    text;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS inkoopprijs  numeric(12,2);   -- euro's, excl.
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS verkoopdatum text;            -- als de andere datums: tekst dd-mm-jjjj
+-- Documenten die bij het toevoegen zijn meegegeven: koopovereenkomst, proforma, screenshots.
+-- [ {url,name,ts}, ... ]. De bestanden zelf staan in /var/pvp/uploads, net als de foto's.
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS docs jsonb NOT NULL DEFAULT '[]'::jsonb;
+
 -- id komt van de frontend (gtUid), bewust géén serial.
 CREATE TABLE IF NOT EXISTS global_todos (
   id          bigint PRIMARY KEY,

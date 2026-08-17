@@ -209,6 +209,20 @@
   .modal input[type=text],.modal select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:13.5px;background:#fff;color:var(--ink);outline:none}
   .modal input[type=text]:focus,.modal select:focus{border-color:var(--blue)}
   .modal .mf{display:flex;gap:8px;justify-content:flex-end;padding:14px 18px;border-top:1px solid var(--line);background:#fafbfc}
+  /* Bredere variant voor "Auto toevoegen": dat formulier heeft te veel velden voor één kolom. */
+  .modal.wide{max-width:760px}
+  .modal.wide .mb{max-height:min(66vh,620px);overflow-y:auto}
+  .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+  .fgrid .full{grid-column:1/-1}
+  .fsec{font-size:11.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:5px;margin-top:2px}
+  .drop{border:1.5px dashed var(--line);border-radius:11px;padding:14px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer;background:#fafbfc}
+  .drop:hover,.drop.over{border-color:var(--blue);color:var(--blue);background:#f2fafc}
+  .doclist{display:flex;flex-direction:column;gap:5px;margin-top:9px}
+  .docrow{display:flex;align-items:center;gap:8px;font-size:12.5px;background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+  .docrow .dn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .docrow .dx{border:0;background:none;cursor:pointer;color:var(--muted);font-size:15px;line-height:1;padding:0 2px}
+  .docrow .dx:hover{color:#c0392b}
+  .fout{color:#c0392b;font-size:12.5px;font-weight:600}
   .mclose{background:transparent;border:0;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;padding:0 2px}
   /* login */
   .loginwrap{position:fixed;inset:0;z-index:300;background:linear-gradient(135deg,var(--brand-2),var(--brand));display:flex;align-items:center;justify-content:center;padding:22px}
@@ -282,6 +296,7 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a9c4dc" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
       <input id="search" placeholder="Zoek kenteken, VIN, merk…" autocomplete="off">
     </div>
+    <button id="addCarBtn" class="add-btn" onclick="openAutoModal()" title="Nieuw ingekochte auto toevoegen">＋ Auto</button>
     <button id="addTodoBtn" class="add-btn" onclick="openTodoModal()" title="Nieuwe to-do toevoegen">＋ To-do</button>
     <button id="undoBtn" class="undo-btn" onclick="undoLast()" disabled>↩ Ongedaan</button>
     <div class="avatar">VC</div>
@@ -387,6 +402,7 @@ let activityLog=[];
 
 /* ===== Helpers ===== */
 const km = n => (n==null?"—":n.toLocaleString("nl-NL")+" km");
+const euro = n => (n==null||n===""?"—":"€ "+Number(n).toLocaleString("nl-NL",{minimumFractionDigits:2,maximumFractionDigits:2}));
 const statusLabel = {komende:"Komende",lopende:"Lopende"};
 function stepList(v){
   if(!v.importAuto) return TAIL.slice();
@@ -425,6 +441,7 @@ let apiOk=false, saveT=null;
 let stateOk=false;
 function buildState(){const vehicles={}; V.forEach(v=>{vehicles[v.id]={status:v.status,klaar:v.klaar,route:v.route,owner:v.owner,subtasks:v.subtasks,photos:v.photos,arrivedAt:v.arrivedAt||null,taxAt:v.taxAt||null};}); return {vehicles,subUid,globalTodos,gtUid,activityLog};}
 async function loadState(){
+  stateOk=false;   // opnieuw inlezen: tot het gelukt is mag er niets terug naar de server
   try{ const r=await fetch("/api/state",{cache:"no-store"}); if(!r.ok)return; const s=await r.json(); apiOk=true;
     if(s&&s.vehicles){ V.forEach(v=>{const d=s.vehicles[v.id]; if(d){ if(d.status)v.status=d.status; if(typeof d.klaar==="number")v.klaar=d.klaar; v.route=d.route||null; v.owner=d.owner||null; v.subtasks=Array.isArray(d.subtasks)?d.subtasks:[]; v.photos=d.photos||{}; v.arrivedAt=d.arrivedAt||null; v.taxAt=d.taxAt||null; }});
       if(typeof s.subUid==="number")subUid=Math.max(subUid,s.subUid);
@@ -556,7 +573,12 @@ function komTable(list){
 }
 function renderKomende(){
   const all=V.filter(v=>match(v));
-  const b13=all.filter(v=>v.batch==="13-08"), b14=all.filter(v=>v.batch==="14-08");
+  // De transportpartijen komen uit de gegevens zelf. Stond hier vast op 13-08 en 14-08; een auto met
+  // een andere transportdatum viel toen in géén enkele groep en was daarmee onzichtbaar op deze pagina.
+  const partijen=[...new Set(all.filter(v=>v.batch).map(v=>v.batch))].sort((a,b)=>{
+    const d=s=>{const m=/^(\d{1,2})-(\d{1,2})/.exec(s||""); return m?Number(m[2])*100+Number(m[1]):9999;};
+    return d(a)-d(b)||String(a).localeCompare(String(b));
+  });
   const overigImp=all.filter(v=>!v.batch&&v.importAuto), overigNl=all.filter(v=>!v.batch&&!v.importAuto);
   const binnen=l=>l.filter(v=>v.status==="lopende").length;
   const grp=(title,date,list)=>!list.length?"":`
@@ -566,10 +588,9 @@ function renderKomende(){
     </div><div style="padding:0 4px">${komTable(list)}</div></div>`;
   app.innerHTML=`
     <h1 class="page-title">Komende auto's</h1>
-    <p class="page-sub">Live overgenomen uit het Autoboek (tab “Komende Autos”). <b>Vink een auto aan zodra hij binnen is</b> — dan verhuist hij naar Lopende en gaat de to-do voor stap 1 (RDW Foto's) lopen.</p>
+    <p class="page-sub">Nieuw ingekocht? Voeg hem toe met <b>＋ Auto</b> rechtsboven. <b>Vink een auto aan zodra hij binnen is</b> — dan verhuist hij naar Lopende en gaat de to-do voor stap 1 (RDW Foto's) lopen.</p>
     <div class="groupwrap">
-      ${grp("Transport gepland 13-08","verwacht — nog niet zeker welke",b13)}
-      ${grp("Transport gepland 14-08","verwacht",b14)}
+      ${partijen.map(p=>grp(`Transport gepland ${p}`,"verwacht",all.filter(v=>v.batch===p))).join("")}
       ${grp("Overig import — nog geen transportdatum","",overigImp)}
       ${grp("Overig / inruil (NL)","",overigNl)}
     </div>`;
@@ -610,7 +631,8 @@ function renderLopende(){
 function openVeh(id){
   const v=V.find(x=>x.id===id); if(!v)return; state.view="veh:"+id; setNav(v.status==='lopende'?'lopende':'komende');
   const s=steps(v); const act=currentAction(v);
-  const specs=[["Kenteken",v.kenteken],["VIN / chassis",`<span class="mono">${v.vin}</span>`],["Merk & model",`${v.merk} ${v.model}`],["Uitvoering",v.uitv],["1e toelating",v.reg],["Km-stand",km(v.km)],["Brandstof",v.brandstof],["Transmissie",v.transm],["Leverancier",v.lev],["Datum inkoop",v.inkoopdatum]];
+  const specs=[["Kenteken",v.kenteken],["VIN / chassis",`<span class="mono">${v.vin}</span>`],["Merk & model",`${v.merk} ${v.model}`],["Uitvoering",v.uitv],["1e toelating",v.reg],["Km-stand",km(v.km)],["Brandstof",v.brandstof],["Transmissie",v.transm],["Leverancier",v.lev],["Datum inkoop",v.inkoopdatum],
+    ["Factuurnummer",v.factuurnr],["Inkoopprijs",euro(v.inkoopprijs)],["Datum verkoop",v.verkoopdatum]];
   const opts=['<option value="">— niemand</option>'].concat(PEOPLE.map(p=>`<option value="${p}" ${v.owner===p?'selected':''}>${p}</option>`)).join("");
   app.innerHTML=`
     <div class="back" onclick="go('${v.status}')">← Terug</div>
@@ -643,10 +665,10 @@ function openVeh(id){
         ${v.status==='lopende'?`<div class="card"><h3>Verantwoordelijke</h3><div class="owner-box">${v.owner?pav(v.owner):`<span class="pav" style="background:var(--slate)">?</span>`}<div style="flex:1"><div style="font-weight:650;font-size:13.5px">${v.owner||'Niet toegewezen'}</div><div class="muted" style="font-size:12px">voor huidige fase</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div></div>`:''}
         ${v.status==='lopende'?subtaskCard(v):''}
         <div class="card"><h3>Herkomst</h3><div class="card-body">
-          <div class="spec"><span class="k">Bron</span><span class="v">Autoboek · Komende Autos</span></div>
-          <div class="spec"><span class="k">Leverancier</span><span class="v">${v.lev}</span></div>
-          <div class="spec" style="border-bottom:0"><span class="k">Transport / status</span><span class="v" style="max-width:160px">${v.note}</span></div>
+          <div class="spec"><span class="k">Leverancier</span><span class="v">${v.lev||'—'}</span></div>
+          <div class="spec" style="border-bottom:0"><span class="k">Transport / status</span><span class="v" style="max-width:160px">${v.note||'—'}</span></div>
         </div></div>
+        ${docCard(v)}
       </div>
     </div>`;
   window.scrollTo(0,0);
@@ -868,6 +890,150 @@ function openTodoModal(){
   setTimeout(()=>{const el=document.getElementById('gt-text'); if(el)el.focus();},40);
 }
 function closeTodoModal(){const ov=document.getElementById('todoModal'); if(ov)ov.classList.remove('show');}
+
+/* ===== Nieuwe auto toevoegen (de plusknop) =====
+   PVP is hiermee het invoerpunt voor pas ingekochte auto's; tot nu toe ging dat rechtstreeks in het
+   Autoboek, en dat liep aantoonbaar uiteen. Zie PVP-autoboek-koppeling-voorstel.md.
+   De documenten worden pas ná het opslaan geüpload: ze horen bij een auto-id, en dat id (de VIN, of
+   het kenteken als er geen VIN is) staat pas vast als het formulier is ingevuld. */
+let nieuweDocs=[];   // [{name,dataUrl}] — in het geheugen tot er een id is
+const BRANDSTOFFEN=["Benzine","Diesel","Elektrisch","PHEV","Hybride","LPG"];
+const TRANSMISSIES=["Handgeschakeld","Automaat"];
+// Datums in PVP zijn tekst in de vorm dd-mm-jjjj. Accepteer wat mensen typen en maak er dat van.
+function normDatum(s){
+  s=(s||"").trim(); if(!s)return "";
+  let m=/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(s);        // 2021-05-20
+  if(m)return `${String(m[3]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}-${m[1]}`;
+  m=/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/.exec(s);          // 20-5-2021 / 20/05/21
+  if(m){const j=m[3].length===2?"20"+m[3]:m[3]; return `${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}-${j}`;}
+  return s;   // niet herkend: laten staan, de gebruiker ziet het zelf terug
+}
+function openAutoModal(){
+  nieuweDocs=[];
+  let ov=document.getElementById('autoModal');
+  if(!ov){ov=document.createElement('div'); ov.id='autoModal'; ov.className='modal-ov';
+    ov.addEventListener('click',e=>{if(e.target===ov)closeAutoModal();}); document.body.appendChild(ov);}
+  const kies=(id,lijst)=>`<select id="${id}"><option value="">—</option>${lijst.map(x=>`<option value="${x}">${x}</option>`).join("")}</select>`;
+  const veld=(id,label,extra="",type="text")=>`<div><label>${label}</label><input type="${type}" id="${id}" ${extra}></div>`;
+  ov.innerHTML=`<div class="modal wide">
+    <h3>Auto toevoegen <button class="mclose" onclick="closeAutoModal()" title="Sluiten">×</button></h3>
+    <div class="mb">
+      <div class="fsec">Documenten</div>
+      <div class="full">
+        <div class="drop" id="na-drop" onclick="document.getElementById('na-files').click()">
+          Koopovereenkomst, proforma, screenshots — klik of sleep hierheen.<br>
+          <span style="font-size:11.5px">Ze worden bij de auto bewaard. Automatisch uitlezen komt later; vul de velden nu zelf in.</span>
+        </div>
+        <input type="file" id="na-files" multiple accept="application/pdf,image/*" style="display:none" onchange="autoDocsKiezen(this.files); this.value='';">
+        <div class="doclist" id="na-doclist"></div>
+      </div>
+      <div class="fsec">Identificatie</div>
+      <div class="fgrid">
+        ${veld('na-vin','VIN / chassisnummer','placeholder="VR7BAHNSBME016540" oninput="autoImportRaden()"')}
+        ${veld('na-kenteken','Kenteken','placeholder="nog geen NL-kenteken? leeg laten" oninput="autoImportRaden()"')}
+        <div><label>Traject</label><label style="display:flex;align-items:center;gap:7px;font-weight:500;padding-top:6px">
+          <input type="checkbox" id="na-import"> Import (volledig traject)</label></div>
+      </div>
+      <div class="fsec">Voertuig</div>
+      <div class="fgrid">
+        ${veld('na-merk','Merk','placeholder="Citroën"')}
+        ${veld('na-model','Model','placeholder="C4"')}
+        <div class="full">${veld('na-uitv','Uitvoering','placeholder="1.2 PureTech Feel EAT8 130pk 5d Aut."')}</div>
+        ${veld('na-kleur','Kleur','placeholder="Zwart"')}
+        <div><label>Brandstof</label>${kies('na-brandstof',BRANDSTOFFEN)}</div>
+        <div><label>Transmissie</label>${kies('na-transm',TRANSMISSIES)}</div>
+        ${veld('na-reg','1e toelating','placeholder="20-05-2021"')}
+        ${veld('na-km','Km-stand','placeholder="80344"')}
+      </div>
+      <div class="fsec">Inkoop</div>
+      <div class="fgrid">
+        ${veld('na-lev','Leverancier','placeholder="RJ, TX, COS, inruil …"')}
+        ${veld('na-inkoopdatum','Datum inkoop','placeholder="17-08-2026"')}
+        ${veld('na-factuurnr','Factuurnummer','placeholder="59635817"')}
+        ${veld('na-inkoopprijs','Inkoopprijs (€, excl.)','placeholder="7849"')}
+        ${veld('na-batch','Transportdatum','placeholder="13-08 — leeg als nog niet gepland"')}
+        <div class="full">${veld('na-note','Notitie','placeholder="Transport gepland — 13-08 binnen (betaald)"')}</div>
+      </div>
+      <div id="na-fout" class="fout full"></div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-ghost" onclick="closeAutoModal()">Annuleren</button>
+      <button class="btn btn-primary" id="na-opslaan" onclick="opslaanAuto()">Toevoegen »</button>
+    </div>
+  </div>`;
+  const d=document.getElementById('na-drop');
+  ['dragenter','dragover'].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault(); d.classList.add('over');}));
+  ['dragleave','drop'].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault(); d.classList.remove('over');}));
+  d.addEventListener('drop',ev=>autoDocsKiezen(ev.dataTransfer.files));
+  ov.classList.add('show');
+  setTimeout(()=>{const el=document.getElementById('na-vin'); if(el)el.focus();},40);
+}
+function closeAutoModal(){const ov=document.getElementById('autoModal'); if(ov)ov.classList.remove('show'); nieuweDocs=[];}
+// Import is de regel bij een VIN zonder NL-kenteken; blijft met de hand te wijzigen.
+function autoImportRaden(){
+  const vin=(document.getElementById('na-vin')||{}).value||"", k=(document.getElementById('na-kenteken')||{}).value||"";
+  const c=document.getElementById('na-import'); if(c&&!c.dataset.hand)c.checked=!!vin.trim()&&!k.trim();
+}
+async function autoDocsKiezen(files){
+  for(const f of Array.from(files||[])){
+    // Afbeeldingen langs leesFoto (verkleinen), pdf's rechtstreeks — een pdf mag nooit langs een canvas.
+    // Eén onleesbaar bestand mag de rest niet tegenhouden.
+    try{
+      const dataUrl=f.type==='application/pdf' ? await leesBestand(f) : await leesFoto(f);
+      if(dataUrl)nieuweDocs.push({name:f.name,dataUrl});
+    }catch(_){ showToast(`Kon "${f.name}" niet lezen — overgeslagen`,false); }
+  }
+  toonDocs();
+}
+function toonDocs(){
+  const el=document.getElementById('na-doclist'); if(!el)return;
+  el.innerHTML=nieuweDocs.map((d,i)=>`<div class="docrow"><span>${d.name.toLowerCase().endsWith('.pdf')?'📄':'🖼'}</span><span class="dn">${d.name}</span><button class="dx" onclick="autoDocWeg(${i})" title="Weghalen">×</button></div>`).join("");
+}
+function autoDocWeg(i){nieuweDocs.splice(i,1); toonDocs();}
+// Kaart op de detailpagina met de stukken die bij het toevoegen zijn meegegeven.
+function docCard(v){
+  const lijst=Array.isArray(v.docs)?v.docs:[];
+  if(!lijst.length)return "";
+  return `<div class="card"><h3>Inkoopdocumenten</h3><div class="card-body">
+    <div class="doclist" style="margin:0">${lijst.map(d=>`<a class="docrow" href="${d.url}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">
+      <span>${String(d.name||'').toLowerCase().endsWith('.pdf')?'📄':'🖼'}</span><span class="dn">${d.name||'document'}</span><span style="color:var(--muted);font-size:11.5px">openen ↗</span></a>`).join("")}</div>
+  </div></div>`;
+}
+async function opslaanAuto(){
+  const w=id=>{const e=document.getElementById(id); return e?e.value.trim():"";};
+  const fout=document.getElementById('na-fout');
+  const body={
+    vin:w('na-vin'), kenteken:w('na-kenteken'), merk:w('na-merk'), model:w('na-model'), uitv:w('na-uitv'),
+    kleur:w('na-kleur'), brandstof:w('na-brandstof'), transm:w('na-transm'), reg:normDatum(w('na-reg')),
+    km:w('na-km'), lev:w('na-lev'), inkoopdatum:normDatum(w('na-inkoopdatum')), batch:w('na-batch'),
+    note:w('na-note'), factuurnr:w('na-factuurnr'), inkoopprijs:w('na-inkoopprijs'),
+    importAuto:!!(document.getElementById('na-import')||{}).checked
+  };
+  if(!body.vin&&!body.kenteken){fout.textContent="Vul een VIN of een kenteken in — daar hangt de auto aan vast."; return;}
+  if(!apiOk){fout.textContent="Geen verbinding met de server; toevoegen kan nu niet."; return;}
+  const knop=document.getElementById('na-opslaan'); knop.disabled=true; knop.textContent="Bezig…"; fout.textContent="";
+  try{
+    const r=await fetch("/api/vehicle",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(r.status===409){fout.textContent="Deze auto staat al in PVP."; knop.disabled=false; knop.textContent="Toevoegen »"; return;}
+    if(!r.ok){fout.textContent="Opslaan mislukt — probeer het opnieuw."; knop.disabled=false; knop.textContent="Toevoegen »"; return;}
+    const {id}=await r.json();
+    let mislukt=0;
+    for(const d of nieuweDocs){
+      try{ const u=await fetch("/api/vehicledoc",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,dataUrl:d.dataUrl,name:d.name})}); if(!u.ok)mislukt++; }
+      catch(_){ mislukt++; }
+    }
+    // Opnieuw inlezen in dezelfde volgorde als bij het opstarten: eerst de catalogus, dan de voortgang.
+    // loadVehicles() zet de runtime-velden terug op leeg, dus loadState() moet er direct achteraan.
+    await loadVehicles(); await loadState();
+    logActivity('Auto toegevoegd',[body.merk,body.model].filter(Boolean).join(' ')||id,id);
+    scheduleSave();   // logActivity zet het alleen in het geheugen; dit stuurt het naar de server
+    closeAutoModal();
+    showToast(mislukt?`Auto toegevoegd — ${mislukt} document(en) niet geüpload`:"Auto toegevoegd ✓",false);
+    go('komende');
+  }catch(_){
+    fout.textContent="Geen verbinding met de server."; knop.disabled=false; knop.textContent="Toevoegen »";
+  }
+}
 function addGlobalTodo(){
   const inp=document.getElementById('gt-text'); if(!inp)return; const t=inp.value.trim(); if(!t){inp.focus();return;}
   const owner=document.getElementById('gt-owner').value||null;
@@ -1081,6 +1247,7 @@ async function startFor(){
   if(el('nav'))el('nav').style.display=restricted?'none':'';
   const sc=document.querySelector('.search'); if(sc)sc.style.display=restricted?'none':'';
   if(el('addTodoBtn'))el('addTodoBtn').style.display=restricted?'none':'';
+  if(el('addCarBtn'))el('addCarBtn').style.display=restricted?'none':'';
   if(el('undoBtn'))el('undoBtn').style.display=restricted?'none':'';
   if(el('logoutBtn'))el('logoutBtn').style.display='';
   if(el('logboekBtn'))el('logboekBtn').style.display=(currentUser.role==='admin')?'':'none';
