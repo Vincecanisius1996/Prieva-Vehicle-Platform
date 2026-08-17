@@ -95,6 +95,14 @@ Werk je **op de Mac**: commit + push naar GitHub, dan op de server `cd /root/pvp
 bovenstaande `cp`/restart. Doe daarna `grep -c renderTax /var/www/html/index.html` als snelle sanity-check
 op de frontend.
 
+Pushen **vanaf de droplet** kan sinds 17-08-2026: `origin` staat op SSH
+(`git@github.com:Vincecanisius1996/Prieva-Vehicle-Platform.git`) met de sleutel `~/.ssh/id_ed25519_pvp`,
+geregistreerd als **deploy key met schrijfrechten** op alleen deze repo — niet op het GitHub-account, zodat
+een gecompromitteerde droplet niet meteen bij alle repo's kan. Verbinding testen: `ssh -T git@github.com`
+(verwacht: `Hi Vincecanisius1996/Prieva-Vehicle-Platform!`). De privésleutel staat alleen op de server en
+hoort **niet** in de repo. Vervangen? Nieuwe sleutel maken, publieke helft in GitHub → Settings → Deploy
+keys (mét "Allow write access"), oude verwijderen.
+
 ## Back-up van de database
 `pvp-backup.timer` draait elke nacht om 02:15 UTC `/usr/local/bin/pvp-backup.sh`: een `pg_dump` van
 **alleen** de database `pvp` naar `/var/backups/pvp/pvp-<stempel>.sql.gz` (mode 600, map 700),
