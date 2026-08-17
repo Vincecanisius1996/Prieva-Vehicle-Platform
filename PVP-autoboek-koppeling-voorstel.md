@@ -243,6 +243,33 @@ systemd-unit in — dezelfde aanpak als `pg.env` en `restic.env`, en **niet in d
 Ondertekenen van het JWT kan met de ingebouwde `crypto`-module; er is dus **geen npm-pakket** nodig,
 in lijn met de regel dat `pg` de enige uitzondering is.
 
+## Vervolgstap: wat gebeurt er als een auto binnenkomt?
+
+**Open, 17-08-2026.** Vink je een auto in PVP aan als binnen, dan gebeurt er in het Autoboek niets:
+PVP schrijft alleen bij het aanmaken en daarna nooit meer. De auto blijft dus in *Komende Autos* staan
+terwijl hij in werkelijkheid al binnen is en in het Autoboek naar *Lopende Autos* hoort.
+
+Dit raakt de grens die tot nu toe bewust niet is overschreden: **de koppeling is strikt
+alleen-toevoegen**, en dat is precies waarom hij veilig is op het bestand waar de Power BI-rapportage
+op draait. Bij toevoegen levert een fout hooguit een regel te veel op; bij verplaatsen kan een regel
+verdwijnen.
+
+Drie richtingen:
+
+| | Wat het doet | Wat het kost |
+|---|---|---|
+| **Verplaatsen** | PVP haalt de regel uit *Komende Autos* en zet hem in *Lopende Autos* | PVP mag dan regels verwijderen. Vraagt zwaardere kleppen: eerst schrijven, nalezen dát het gelukt is, en pas daarna de oude regel weg — nooit andersom |
+| **Alleen bijschrijven** | PVP zet hem erbij in *Lopende Autos*, de oude regel blijft staan | Koppeling blijft alleen-toevoegen en dus veilig, maar de auto staat even op twee tabbladen |
+| **Alleen signaleren** | PVP toont welke regels in het Autoboek nog verplaatst moeten worden | Geen enkel risico, maar het blijft handwerk |
+
+Let op: *Lopende Autos* heeft **55 kolommen** in plaats van 18, met financiële velden en stapkolommen
+(RDW Foto's, RDW Gekeurd, BPM rapport, BIN, Fotograaf). Wat PVP daarvan kan vullen en wat handwerk
+blijft, is onderdeel van deze beslissing.
+
+Hier hangt ook het bredere gat aan: **PVP schrijft alleen bij het aanmaken.** Wijzig je later iets aan
+een auto, dan komt dat niet in het Autoboek terecht. Zie ook de auto die op 17-08 met alleen een VIN
+op rij 18 belandde.
+
 ## Nog te beslissen
 
 - ⬜ **Wat betekent kolom `F`** in *Komende Autos*?

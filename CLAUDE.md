@@ -322,7 +322,14 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
   na verlies van de server onleesbaar en beschermt de back-up dus nergens tegen.
 - Open, afweging nodig: **onveranderlijkheid van de bucket.** Verwijderen werkt nu, dus wie root op de
   droplet krijgt kan met de Backblaze-sleutel ook de back-ups wissen.
-- Klein & optioneel: nginx no-cache header voor `/` en `/index.html`.
+- ~~nginx no-cache header voor `/` en `/index.html`.~~ **Klaar 17-08-2026** — een oude pagina uit de
+  browsercache kostte een avond zoeken naar een fout die er niet was.
+- **Vervolgstap, besloten uit te stellen op 17-08-2026:** wat er in het Autoboek moet gebeuren als een
+  auto in PVP wordt afgevinkt als binnen. Hij hoort dan van *Komende Autos* naar *Lopende Autos*, maar
+  dat betekent dat PVP regels zou moeten kunnen verwijderen — nu is de koppeling strikt
+  alleen-toevoegen. Drie richtingen en de afweging staan in `PVP-autoboek-koppeling-voorstel.md`.
+- Bekend gat: **PVP schrijft alleen bij het aanmaken naar het Autoboek.** Latere wijzigingen aan een
+  auto komen daar niet in terecht.
 - Bekend, buiten Fase 1 gelaten: nginx serveert `/uploads/` rechtstreeks met `alias`, dus de
   auth-controle in `serveUpload()` wordt in productie overgeslagen — wie een URL kent, kan het bestand
   zonder inloggen ophalen.

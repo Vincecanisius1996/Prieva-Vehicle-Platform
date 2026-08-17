@@ -298,9 +298,22 @@ const server = http.createServer(async (req, res) => {
           waarschuwing: `Deze auto is al binnen en er is aan gewerkt: ${aantal(v.photos)} keuringsfoto's, ${aantal(v.ad_photos)} advertentiefoto's, ${aantal(v.subtasks)} subtaken, stap ${v.klaar || 0} afgerond.`,
         });
       }
-      await pool.query('DELETE FROM global_todos WHERE vehicle_id=$1', [b.id]);
-      await pool.query('DELETE FROM bpm_reports WHERE vehicle_id=$1', [b.id]).catch(() => {});
-      await pool.query('DELETE FROM vehicles WHERE id=$1', [b.id]);
+      // In één transactie: gaat er iets mis, dan is er niets half weg. Zonder dit kunnen de to-do's
+      // verdwenen zijn terwijl de auto blijft staan, en dan is niet meer te zien wat er gebeurd is.
+      // bpm_notifs hoort erbij: een melding die naar een verdwenen auto wijst, is een spookmelding.
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('DELETE FROM global_todos WHERE vehicle_id=$1', [b.id]);
+        await client.query('DELETE FROM bpm_reports  WHERE vehicle_id=$1', [b.id]);
+        await client.query('DELETE FROM bpm_notifs   WHERE vehicle_id=$1', [b.id]);
+        await client.query('DELETE FROM vehicles     WHERE id=$1', [b.id]);
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error('auto verwijderen mislukt:', b.id, e.message);
+        return sendJson(res, 500, { error: 'verwijderen mislukt — er is niets weggegooid' });
+      } finally { client.release(); }
       console.log('auto verwijderd:', b.id, 'door', u.u);
       return sendJson(res, 200, {
         ok: true, id: b.id,
