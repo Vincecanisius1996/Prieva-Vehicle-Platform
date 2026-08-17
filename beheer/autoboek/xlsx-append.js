@@ -125,12 +125,20 @@ function voegToe(pad, uitPad, auto) {
   if (!blad) throw new Error('sheet1.xml niet gevonden');
   let xml = uitpakken(blad).toString('utf8');
 
-  // Eerste vrije rijnummer bepalen: hoogste bestaande auto-rij + 1, en controleren dat die vrij is.
-  const bestaande = new Set([...xml.matchAll(/<row r="(\d+)"/g)].map(m => Number(m[1])));
-  let nr = 2; while (bestaande.has(nr)) nr++;
-  if (nr > 16) throw new Error('geen vrije rij direct onder de gegevens (rij ' + nr + ') — met de hand kijken');
+  // De eerstvolgende LEGE regel zoeken, niet de eerstvolgende ontbrekende. Een blad heeft meestal al
+  // honderden <row>-elementen die alleen opmaak dragen en geen waarde; dat is precies de regel waar
+  // een mens ook zou typen. Een rij telt als gevuld zodra er een <v> of een <is> in staat.
+  const rijen = [...xml.matchAll(/<row r="(\d+)"[^>]*>([\s\S]*?)<\/row>|<row r="(\d+)"[^>]*\/>/g)]
+    .map(m => ({ nr: Number(m[1] || m[3]), heel: m[0], gevuld: /<v>|<is>/.test(m[2] || '') }));
+  const gevuld = rijen.filter(r => r.gevuld).map(r => r.nr);
+  if (!gevuld.length) throw new Error('geen enkele gevulde rij gevonden — verkeerd blad?');
+  const laatste = Math.max(...gevuld);
+  const doelNr = laatste + 1;
+  const bestaand = rijen.find(r => r.nr === doelNr);
+  // Veiligheidsklep: er mag onder de laatste auto niets staan dat we zouden overschrijven.
+  if (bestaand && bestaand.gevuld) throw new Error('rij ' + doelNr + ' is niet leeg — met de hand kijken');
 
-  const rij = maakRij(nr, [
+  const rij = maakRij(doelNr, [
     auto.f, auto.todo, auto.transport, auto.factuur, auto.vin, auto.kenteken, auto.merk, auto.type,
     auto.kleur, auto.leverancier, auto.uitvoering, auto.brandstof, auto.transmissie,
     auto.reg ? { soort: 'datum', v: serie(auto.reg) } : '',
@@ -140,15 +148,19 @@ function voegToe(pad, uitPad, auto) {
     auto.inkoopprijs != null ? { soort: 'geld', v: auto.inkoopprijs } : '',
   ]);
 
-  // Vóór de eerstvolgende hogere rij plaatsen, zodat de rijen op volgorde blijven staan.
-  const volgende = xml.match(new RegExp(`<row r="(${[...bestaande].filter(r => r > nr).sort((a, b) => a - b)[0]})"`));
-  if (!volgende) throw new Error('geen rij gevonden om vóór te plaatsen');
-  const pos = xml.indexOf(volgende[0]);
-  xml = xml.slice(0, pos) + rij + xml.slice(pos);
+  if (bestaand) {
+    // De lege regel bestaat al (met opmaak): die vervangen we, zodat de volgorde vanzelf klopt.
+    xml = xml.replace(bestaand.heel, rij);
+  } else {
+    // Nog geen element voor deze regel: netjes vóór de eerstvolgende hogere rij invoegen.
+    const hoger = rijen.map(r => r.nr).filter(n => n > doelNr).sort((a, b) => a - b)[0];
+    if (hoger === undefined) xml = xml.replace('</sheetData>', rij + '</sheetData>');
+    else { const pos = xml.indexOf(`<row r="${hoger}"`); xml = xml.slice(0, pos) + rij + xml.slice(pos); }
+  }
 
   vervang(blad, Buffer.from(xml, 'utf8'));
   fs.writeFileSync(uitPad, schrijfZip(entries));
-  return nr;
+  return doelNr;
 }
 
 if (require.main === module) {
