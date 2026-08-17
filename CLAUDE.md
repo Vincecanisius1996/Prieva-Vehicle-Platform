@@ -317,9 +317,21 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
 - ~~Foto's verkleinen bij het uploaden.~~ **Klaar 16-08-2026.**
 - ~~Een kopie van de back-ups buiten de droplet (stap B).~~ **Klaar 17-08-2026:** `restic` naar
   Backblaze B2, EU Central. Zie "Kopie buiten de droplet" hierboven.
-- **Nog te regelen: het restic-wachtwoord buiten de server.** Het staat nu alleen in
-  `/var/pvp/restic.env` op de droplet. Zolang er geen kopie in een wachtwoordkluis ligt, is de bucket
-  na verlies van de server onleesbaar en beschermt de back-up dus nergens tegen.
+- **Deels geregeld: het restic-wachtwoord buiten de server.** Stand 17-08-2026: er ligt een kopie in
+  de persoonlijke notities van Vince, en een Bitwarden-kluis wordt aangemaakt. Nog te doen:
+  1. **Controleren dat de kopie klopt.** Een tikfout is erger dan geen kopie: je denkt dat je gedekt
+     bent. De vingerafdruk van het wachtwoord op de server is `45290ceac242` (eerste 12 tekens van de
+     sha256) en het telt 44 tekens. Toetsen kan zonder het ergens te tonen:
+     `printf '%s' '<kopie>' | shasum -a 256 | cut -c1-12`.
+  2. **Een tweede persoon toegang geven** (Floris), via de Bitwarden-kluis. Nu kan alleen Vince erbij;
+     bij vakantie, ziekte of verlies van zijn Apple-account kan niemand terugzetten.
+  3. **Erbij zetten waar het bij hoort:** restic, Backblaze B2, bucket `Prieva-Vehicle-Platform`,
+     `s3.eu-central-003.backblazeb2.com`, herstelinstructies in dit bestand. Een reeks tekens zonder
+     context zegt over een jaar niets meer.
+
+  Ter geruststelling: het restic-wachtwoord is het **enige onvervangbare**. De Backblaze-sleutel en de
+  bucketnaam zijn opnieuw te maken vanuit het B2-account, en dit bestand staat in GitHub en overleeft
+  de droplet dus sowieso.
 - Open, afweging nodig: **onveranderlijkheid van de bucket.** Verwijderen werkt nu, dus wie root op de
   droplet krijgt kan met de Backblaze-sleutel ook de back-ups wissen.
 - ~~nginx no-cache header voor `/` en `/index.html`.~~ **Klaar 17-08-2026** — een oude pagina uit de
