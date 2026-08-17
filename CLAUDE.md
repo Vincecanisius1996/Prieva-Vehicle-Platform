@@ -65,7 +65,9 @@ node /opt/pvp-api/setpw.js <gebruiker> <team|admin|foto|taxateur> "<wachtwoord>"
 `/api/status` (elke rol), `/api/vehicles` (elke rol, alleen-lezen catalogus — nog niet gebruikt door de
 frontend; haak voor Fase 3), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
 `/api/adphotos-set`, `/api/taxstate` (taxateur+team+admin), `/api/bpmreports`, `/api/bpmreport`,
-`/api/bpmnotif-seen`, `/api/bpmreport-del`, `/uploads/*` (auth).
+`/api/bpmnotif-seen`, `/api/bpmreport-del`, `/api/vehicle` (team+admin, nieuwe auto),
+`/api/vehicle-del` (**alleen admin**), `/api/vehicledoc`, `/api/uitlezen`, `/api/autoboek-retry`,
+`/uploads/*` (auth).
 Auth = HMAC-ondertekende cookie (stateless).
 
 ## Lokaal testen (voordat je deployt)
@@ -285,6 +287,9 @@ kwaliteit als 0–1 (browserconventie), `toBuffer` als 0–100 — dat verschil 
   dat slot zou een mislukte `GET /api/state` (backend-herstart, nginx-hik) ertoe leiden dat de
   eerstvolgende klik de beginwaarden van `V` over de database heen zet: alle lopende auto's terug naar
   komende, keuringsfoto's en subtaken weg. Haal die controle er dus niet uit.
+- **Verwijderen raakt het Autoboek niet.** `/api/vehicle-del` haalt de auto uit PVP en geeft het
+  rijnummer terug; die regel haal je met de hand uit het Autoboek. De koppeling blijft alleen-toevoegen
+  — dat is juist waarom hij veilig is op een bestand waar Power BI op draait.
 - **Het Autoboek: kolomstructuur nooit wijzigen.** `Autoboek PRIEVA.xlsx` (Drive, map `Autoboek`,
   bestands-ID `1MnSN9PJjzJTEp4aLwhyjKeH-h4-wb3if`) voedt een Power BI-rapportage. Verandert er een
   kolom, een kop of de volgorde, dan loopt die vast. Het moet ook een **.xlsx blijven** — omzetten

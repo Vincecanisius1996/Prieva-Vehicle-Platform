@@ -272,6 +272,44 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, id, autoboek: ab });
     }
 
+    // Auto verwijderen. Alleen admin: dit is de enige onomkeerbare handeling in PVP.
+    //
+    // Het Autoboek wordt NIET aangeraakt. De koppeling is met opzet alleen-toevoegen — dat is precies
+    // waarom hij veilig is op een bestand waar Power BI op draait. In plaats daarvan geven we het
+    // rijnummer terug, zodat de gebruiker die ene regel zelf kan weghalen.
+    //
+    // De geüploade bestanden blijven op schijf staan. `pvp-uploads-opruimen` verplaatst wezen
+    // vannacht naar /var/pvp/prullenbak, waar ze nog 30 dagen staan: het vangnet bij een vergissing.
+    if (url === '/api/vehicle-del' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'admin') return sendJson(res, 403, { error: 'alleen een beheerder kan een auto verwijderen' });
+      const b = await readBody(req) || {};
+      if (!b.id) return sendJson(res, 400, { error: 'missing' });
+      const r = await pool.query('SELECT id,merk,model,vin,kenteken,status,klaar,photos,subtasks,ad_photos,docs,autoboek_rij FROM vehicles WHERE id=$1', [b.id]);
+      if (!r.rowCount) return sendJson(res, 404, { error: 'onbekende auto' });
+      const v = r.rows[0];
+      const aantal = o => (Array.isArray(o) ? o.length : Object.keys(o || {}).length);
+      // Een lopend dossier met foto's of subtaken is geen vergissing maar werk. Alleen weggooien als
+      // de gebruiker dat na de waarschuwing nog steeds wil.
+      const bezet = v.status === 'lopende' && (aantal(v.photos) || aantal(v.subtasks) || aantal(v.ad_photos) || (v.klaar || 0) > 0);
+      if (bezet && b.tochWeg !== true) {
+        return sendJson(res, 409, {
+          error: 'lopend dossier',
+          waarschuwing: `Deze auto is al binnen en er is aan gewerkt: ${aantal(v.photos)} keuringsfoto's, ${aantal(v.ad_photos)} advertentiefoto's, ${aantal(v.subtasks)} subtaken, stap ${v.klaar || 0} afgerond.`,
+        });
+      }
+      await pool.query('DELETE FROM global_todos WHERE vehicle_id=$1', [b.id]);
+      await pool.query('DELETE FROM bpm_reports WHERE vehicle_id=$1', [b.id]).catch(() => {});
+      await pool.query('DELETE FROM vehicles WHERE id=$1', [b.id]);
+      console.log('auto verwijderd:', b.id, 'door', u.u);
+      return sendJson(res, 200, {
+        ok: true, id: b.id,
+        naam: [v.merk, v.model].filter(Boolean).join(' ') || b.id,
+        autoboekRij: v.autoboek_rij || null,
+        bestanden: aantal(v.photos) + aantal(v.ad_photos) + aantal(v.docs),
+      });
+    }
+
     // Inkoopstukken uitlezen en er een ingevuld voorstel van maken. Maakt zelf niets aan: de
     // gebruiker kijkt het na en drukt daarna pas op Opslaan. Eén verkeerd gelezen VIN levert anders
     // een spookauto op die je in twee systemen moet opruimen.

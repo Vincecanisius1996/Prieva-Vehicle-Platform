@@ -223,6 +223,12 @@
   .docrow .dx{border:0;background:none;cursor:pointer;color:var(--muted);font-size:15px;line-height:1;padding:0 2px}
   .docrow .dx:hover{color:#c0392b}
   .fout{color:#c0392b;font-size:12.5px;font-weight:600}
+  /* Verwijderen is de enige onomkeerbare handeling in PVP; die hoort er ook zo uit te zien. */
+  .btn.gevaar{color:#c0392b;border-color:#f0c8c2}
+  .btn.gevaar:hover{background:#fdecea;border-color:#e2a79f}
+  .btn-rood{background:#c0392b;color:#fff;border-color:#c0392b}
+  .btn-rood:hover{background:#a93226;border-color:#a93226}
+  .waarschuwing{background:#fdecea;border:1px solid #f5c6c0;border-radius:9px;padding:10px 12px;font-size:12.5px;color:#7b241c}
   .mclose{background:transparent;border:0;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;padding:0 2px}
   /* login */
   .loginwrap{position:fixed;inset:0;z-index:300;background:linear-gradient(135deg,var(--brand-2),var(--brand));display:flex;align-items:center;justify-content:center;padding:22px}
@@ -674,7 +680,10 @@ function openVeh(id){
         ${autoboekCard(v)}
         ${docCard(v)}
       </div>
-    </div>`;
+    </div>
+    ${isAdmin()?`<div style="display:flex;justify-content:flex-end;margin-top:22px;padding-top:14px;border-top:1px solid var(--line)">
+      <button class="btn btn-ghost btn-sm gevaar" onclick="vraagVerwijderen('${v.id}')" title="Deze auto uit PVP halen">🗑 Auto verwijderen</button>
+    </div>`:''}`;
   window.scrollTo(0,0);
 }
 
@@ -805,6 +814,68 @@ function backToKomend(id){const v=V.find(x=>x.id===id); if(!v)return; const ps=v
   v.status='komende'; v.klaar=0; v.route=null; v.arrivedAt=null;
   pushUndo(`${v.merk} ${v.model} teruggezet naar Komend`, ()=>{v.status=ps; v.klaar=pk; v.route=pr; v.arrivedAt=pa;});
   go('komende'); }
+/* ===== Auto verwijderen (alleen admin) =====
+   De enige onomkeerbare handeling in PVP, vandaar een eigen scherm met de gegevens erin in plaats van
+   een kaal "weet je het zeker". Het Autoboek wordt bewust niet aangeraakt: die koppeling is
+   alleen-toevoegen, en dat is precies waarom hij veilig is op een bestand waar Power BI op draait.
+   De gebruiker krijgt het rijnummer te zien en haalt die ene regel zelf weg. */
+function vraagVerwijderen(id, tochWeg, waarschuwing){
+  const v=V.find(x=>x.id===id); if(!v)return;
+  let ov=document.getElementById('delModal');
+  if(!ov){ov=document.createElement('div'); ov.id='delModal'; ov.className='modal-ov';
+    ov.addEventListener('click',e=>{if(e.target===ov)sluitVerwijderen();}); document.body.appendChild(ov);}
+  const docs=(v.docs||[]).length, fotos=Object.keys(v.photos||{}).length, ads=adList(v.id).length;
+  const todos=globalTodos.filter(t=>t.vehicleId===v.id).length;
+  const sleutel=v.kenteken&&v.kenteken!=='—'?v.kenteken:v.vin;
+  const regel=r=>`<div class="spec"><span class="k">${r[0]}</span><span class="v">${r[1]}</span></div>`;
+  ov.innerHTML=`<div class="modal">
+    <h3>Auto verwijderen <button class="mclose" onclick="sluitVerwijderen()" title="Sluiten">×</button></h3>
+    <div class="mb">
+      ${waarschuwing?`<div class="waarschuwing"><b>Let op — hier is al aan gewerkt.</b><br>${waarschuwing}</div>`:''}
+      <div>
+        ${regel(["Auto",`${v.merk||''} ${v.model||''}`.trim()||'—'])}
+        ${regel([v.kenteken&&v.kenteken!=='—'?"Kenteken":"VIN",`<span class="mono">${sleutel||'—'}</span>`])}
+        ${regel(["Status",statusLabel[v.status]||v.status])}
+        ${regel(["Bestanden",`${docs} document(en), ${fotos} keuringsfoto's, ${ads} advertentiefoto's`])}
+        ${todos?regel(["To-do's",`${todos} gekoppelde to-do(s) gaan ook weg`]):''}
+        ${v.autoboekRij?regel(["Autoboek",`staat op rij ${v.autoboekRij} — die blijft staan`]):''}
+      </div>
+      <div class="muted" style="font-size:12px">
+        De bestanden gaan vannacht naar de prullenbak en blijven daar 30 dagen; terughalen kan dus nog.
+        ${v.autoboekRij?`De regel in het Autoboek haal je zelf weg — PVP mag daar niets uit verwijderen.`:''}
+      </div>
+      <div id="del-fout" class="fout"></div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-ghost" onclick="sluitVerwijderen()">Annuleren</button>
+      <button class="btn btn-rood" id="del-ok" onclick="verwijderAuto('${v.id}',${tochWeg===true})">Definitief verwijderen</button>
+    </div>
+  </div>`;
+  ov.classList.add('show');
+}
+function sluitVerwijderen(){const ov=document.getElementById('delModal'); if(ov)ov.classList.remove('show');}
+async function verwijderAuto(id, tochWeg){
+  const v=V.find(x=>x.id===id); if(!v)return;
+  if(!apiOk){const f=document.getElementById('del-fout'); if(f)f.textContent="Geen verbinding met de server."; return;}
+  const knop=document.getElementById('del-ok'); if(knop){knop.disabled=true; knop.textContent="Bezig…";}
+  try{
+    const r=await fetch("/api/vehicle-del",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id, tochWeg:tochWeg===true})});
+    const j=await r.json().catch(()=>({}));
+    if(r.status===409){ sluitVerwijderen(); vraagVerwijderen(id,true,j.waarschuwing); return; }
+    if(!r.ok){ const f=document.getElementById('del-fout'); if(f)f.textContent=j.error||"Verwijderen mislukt."; if(knop){knop.disabled=false; knop.textContent="Definitief verwijderen";} return; }
+    // Uit het geheugen halen. De gekoppelde to-do's moeten mee: putState() schrijft die tabel
+    // helemaal opnieuw uit wat de frontend stuurt, dus wat hier blijft staan komt zo weer terug.
+    const i=V.indexOf(v); if(i>-1)V.splice(i,1);
+    for(let k=globalTodos.length-1;k>=0;k--) if(globalTodos[k].vehicleId===id)globalTodos.splice(k,1);
+    delete adPhotos[id];
+    logActivity('Auto verwijderd', `${j.naam||id} (${v.kenteken&&v.kenteken!=='—'?v.kenteken:v.vin})`, null);
+    scheduleSave();
+    sluitVerwijderen();
+    showToast(j.autoboekRij?`Auto verwijderd — staat nog op rij ${j.autoboekRij} van het Autoboek`:"Auto verwijderd",false);
+    go('komende');
+  }catch(_){ const f=document.getElementById('del-fout'); if(f)f.textContent="Geen verbinding met de server."; if(knop){knop.disabled=false; knop.textContent="Definitief verwijderen";} }
+}
 function askBackToKomend(id){const v=V.find(x=>x.id===id); if(!v)return; if(window.confirm(`${v.merk} ${v.model} terugzetten naar Komend?\n\nDe voortgang (afgevinkte stappen en route) van deze auto wordt gewist. Advertentie- en RDW-foto's blijven bewaard.`))backToKomend(id); }
 function removePhoto(id,key){const v=V.find(x=>x.id===id); if(!v)return; const prev=v.photos[key]; if(!prev)return;
   delete v.photos[key];
