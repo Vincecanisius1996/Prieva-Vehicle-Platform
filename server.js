@@ -8,6 +8,11 @@ const pg = require('pg');
 
 pg.types.setTypeParser(20, v => (v === null ? null : parseInt(v, 10))); // bigint -> number i.p.v. string
 
+// Koppeling met het Autoboek. Ontbreekt de map of gaat het laden mis, dan draait PVP gewoon door
+// zonder die koppeling — een auto toevoegen mag nooit stukgaan omdat Google onbereikbaar is.
+let autoboek = null;
+try { autoboek = require('./autoboek'); } catch (e) { console.error('autoboek-koppeling niet geladen:', e.message); }
+
 const DATA_DIR = process.env.PVP_DATA || '/var/pvp';
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const SECRET_FILE = path.join(DATA_DIR, 'secret');
@@ -106,6 +111,32 @@ async function getState() {
   };
 }
 
+// Eén auto naar het Autoboek schrijven en de uitkomst vastleggen. Gooit nooit: het toevoegen van een
+// auto in PVP mag niet mislukken omdat Google even niet meewerkt. Wat er misging komt in de database
+// en daarmee op het scherm, zodat het opnieuw geprobeerd kan worden in plaats van stil te verdwijnen.
+async function naarAutoboek(id) {
+  const bewaar = async (status, rij, fout) => {
+    await pool.query('UPDATE vehicles SET autoboek_status=$2, autoboek_rij=$3, autoboek_ts=$4, autoboek_fout=$5 WHERE id=$1',
+      [id, status, rij, Date.now(), fout]);
+    return { status, rij: rij || null, fout: fout || null };
+  };
+  if (!autoboek || !autoboek.aan()) return { status: 'uit', rij: null, fout: null };
+  try {
+    const r = await pool.query('SELECT * FROM vehicles WHERE id=$1', [id]);
+    if (!r.rowCount) return { status: 'fout', rij: null, fout: 'auto niet gevonden' };
+    const v = r.rows[0];
+    const uit = await autoboek.schrijfAuto({
+      vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model, uitv: v.uitv, kleur: v.kleur,
+      brandstof: v.brandstof, transm: v.transm, reg: v.reg, km: v.km, inkoopdatum: v.inkoopdatum,
+      lev: v.lev, batch: v.batch, inkoopprijs: v.inkoopprijs,
+    });
+    return await bewaar('ok', uit.rij, null);
+  } catch (e) {
+    console.error('autoboek:', id, e.message);
+    return await bewaar('fout', null, String(e.message).slice(0, 400));
+  }
+}
+
 // De frontend stuurt telkens de complete state op; dit is één transactie.
 // Voertuigen die niet in de payload zitten blijven staan (nodig voor de latere Autoboek-sync).
 async function putState(b) {
@@ -200,10 +231,11 @@ const server = http.createServer(async (req, res) => {
     // zijn auto's uit; de lijst in index.html is nog slechts terugval.
     if (url === '/api/vehicles' && method === 'GET') {
       const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
-      const r = await pool.query('SELECT id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,import_auto,batch,note,status,factuurnr,inkoopprijs,verkoopdatum,docs FROM vehicles ORDER BY sort_order NULLS LAST, id');
+      const r = await pool.query('SELECT id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,import_auto,batch,note,status,factuurnr,inkoopprijs,verkoopdatum,docs,autoboek_status,autoboek_rij,autoboek_fout FROM vehicles ORDER BY sort_order NULLS LAST, id');
       // inkoopprijs is numeric; die geeft pg als string terug. Hier omzetten en niet met een globale
       // type-parser, want dan raak je ook iedere toekomstige numeric elders in de app.
-      return sendJson(res, 200, r.rows.map(v => ({ id: v.id, vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model, uitv: v.uitv, kleur: v.kleur, brandstof: v.brandstof, transm: v.transm, reg: v.reg, km: v.km, inkoopdatum: v.inkoopdatum, lev: v.lev, importAuto: v.import_auto, batch: v.batch, note: v.note, status: v.status, factuurnr: v.factuurnr, inkoopprijs: v.inkoopprijs === null ? null : Number(v.inkoopprijs), verkoopdatum: v.verkoopdatum, docs: Array.isArray(v.docs) ? v.docs : [] })));
+      return sendJson(res, 200, r.rows.map(v => ({ id: v.id, vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model, uitv: v.uitv, kleur: v.kleur, brandstof: v.brandstof, transm: v.transm, reg: v.reg, km: v.km, inkoopdatum: v.inkoopdatum, lev: v.lev, importAuto: v.import_auto, batch: v.batch, note: v.note, status: v.status, factuurnr: v.factuurnr, inkoopprijs: v.inkoopprijs === null ? null : Number(v.inkoopprijs), verkoopdatum: v.verkoopdatum, docs: Array.isArray(v.docs) ? v.docs : [],
+        autoboekStatus: v.autoboek_status, autoboekRij: v.autoboek_rij, autoboekFout: v.autoboek_fout })));
     }
 
     // Nieuwe auto vastleggen (de plusknop). Alleen team/admin. Bewust een eigen endpoint en niet via
@@ -232,7 +264,19 @@ const server = http.createServer(async (req, res) => {
       // Bewust niet hier in activity_log schrijven: putState() gooit die tabel leeg en vult hem
       // opnieuw uit de payload van de frontend, dus een regel van de server zou weer verdwijnen.
       // De frontend logt dit met logActivity().
-      return sendJson(res, 200, { ok: true, id });
+      const ab = await naarAutoboek(id);
+      return sendJson(res, 200, { ok: true, id, autoboek: ab });
+    }
+
+    // Opnieuw proberen de auto in het Autoboek te zetten (knop in de app na een mislukte poging).
+    if (url === '/api/autoboek-retry' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      if (!b.id) return sendJson(res, 400, { error: 'missing' });
+      const bestaat = await pool.query('SELECT id FROM vehicles WHERE id=$1', [b.id]);
+      if (!bestaat.rowCount) return sendJson(res, 404, { error: 'onbekende auto' });
+      return sendJson(res, 200, { autoboek: await naarAutoboek(b.id) });
     }
 
     // Document bij een auto (koopovereenkomst, proforma, screenshot). Gaat via saveFile en niet via

@@ -45,6 +45,14 @@ ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS verkoopdatum text;            -- a
 -- [ {url,name,ts}, ... ]. De bestanden zelf staan in /var/pvp/uploads, net als de foto's.
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS docs jsonb NOT NULL DEFAULT '[]'::jsonb;
 
+-- Wegschrijven naar het Autoboek. Bewust bijgehouden per auto: een mislukte schrijfactie mag niet
+-- stilletjes verdwijnen, anders ontstaat precies het gat dat we aan het dichten zijn.
+-- status: NULL = nog niet geprobeerd | 'ok' | 'fout'
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS autoboek_status text;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS autoboek_rij    int;      -- rijnummer in "Komende Autos"
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS autoboek_ts     bigint;   -- wanneer voor het laatst geprobeerd
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS autoboek_fout   text;     -- waarom het misging
+
 -- id komt van de frontend (gtUid), bewust géén serial.
 CREATE TABLE IF NOT EXISTS global_todos (
   id          bigint PRIMARY KEY,

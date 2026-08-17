@@ -565,7 +565,7 @@ function komTable(list){
     const arrived=v.status==='lopende';
     return `<tr class="${arrived?'row-arrived':''}">
       <td><label class="chk" title="Aanvinken zodra binnen"><input type="checkbox" ${arrived?'checked':''} onchange="arrive('${v.id}',this.checked)"><span class="box"></span></label></td>
-      <td><div class="veh-cell" onclick="openVeh('${v.id}')"><div class="thumb">${carIcon()}</div><div><div class="nm">${v.merk} ${v.model}</div><div class="id">${v.kenteken!=='—'?v.kenteken:v.vin}</div></div></div></td>
+      <td><div class="veh-cell" onclick="openVeh('${v.id}')"><div class="thumb">${carIcon()}</div><div><div class="nm">${v.merk} ${v.model}${v.autoboekStatus==='fout'?` <span class="tag" style="background:#fdecea;color:#c0392b;border-color:#f5c6c0" title="${(v.autoboekFout||'').replace(/"/g,'&quot;')}">niet in Autoboek</span>`:''}</div><div class="id">${v.kenteken!=='—'?v.kenteken:v.vin}</div></div></div></td>
       <td><div>${v.reg}</div><div class="note">${km(v.km)}</div></td>
       <td><span class="tag ${v.importAuto?'tag-imp':'tag-nl'}">${v.importAuto?'Import':'NL / inruil'}</span> <span class="tag">${v.lev}</span></td>
       <td>${arrived?`<span class="arr-lab">✓ Binnen — stap 1 loopt</span>`:`<span class="note">${v.note}</span>`}</td>
@@ -668,6 +668,7 @@ function openVeh(id){
           <div class="spec"><span class="k">Leverancier</span><span class="v">${v.lev||'—'}</span></div>
           <div class="spec" style="border-bottom:0"><span class="k">Transport / status</span><span class="v" style="max-width:160px">${v.note||'—'}</span></div>
         </div></div>
+        ${autoboekCard(v)}
         ${docCard(v)}
       </div>
     </div>`;
@@ -990,6 +991,31 @@ function toonDocs(){
   el.innerHTML=nieuweDocs.map((d,i)=>`<div class="docrow"><span>${d.name.toLowerCase().endsWith('.pdf')?'📄':'🖼'}</span><span class="dn">${d.name}</span><button class="dx" onclick="autoDocWeg(${i})" title="Weghalen">×</button></div>`).join("");
 }
 function autoDocWeg(i){nieuweDocs.splice(i,1); toonDocs();}
+/* Staat deze auto in het Autoboek? Een mislukte schrijfactie mag niet stil verdwijnen — dan ontstaat
+   precies het gat tussen PVP en het Autoboek dat we aan het dichten zijn. */
+function autoboekCard(v){
+  const s=v.autoboekStatus;
+  if(!s||s==='uit')return "";                       // koppeling staat uit: niets tonen
+  const ok=s==='ok';
+  return `<div class="card"><h3>Autoboek</h3><div class="card-body">
+    <div class="spec" style="border-bottom:0"><span class="k">Status</span><span class="v" style="max-width:170px">
+      ${ok?`<span style="color:#1a7f37">✓ bijgeschreven${v.autoboekRij?` (rij ${v.autoboekRij})`:''}</span>`
+          :`<span style="color:#c0392b">✕ nog niet bijgeschreven</span>`}</span></div>
+    ${ok?'':`<div class="muted" style="font-size:12px;padding:8px 2px 0">${v.autoboekFout||'onbekende fout'}</div>
+      <button class="btn btn-ghost" style="margin-top:9px;width:100%;justify-content:center"
+        onclick="autoboekOpnieuw('${v.id}',this)">Opnieuw proberen</button>`}
+  </div></div>`;
+}
+async function autoboekOpnieuw(id,knop){
+  if(!apiOk)return; knop.disabled=true; const oud=knop.textContent; knop.textContent="Bezig…";
+  try{
+    const r=await fetch("/api/autoboek-retry",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});
+    const j=r.ok?await r.json():null;
+    await loadVehicles(); await loadState();
+    showToast(j&&j.autoboek&&j.autoboek.status==='ok'?"In het Autoboek gezet ✓":"Nog steeds niet gelukt",false);
+    rerenderCurrent();
+  }catch(_){ knop.disabled=false; knop.textContent=oud; showToast("Geen verbinding met de server",false); }
+}
 // Kaart op de detailpagina met de stukken die bij het toevoegen zijn meegegeven.
 function docCard(v){
   const lijst=Array.isArray(v.docs)?v.docs:[];
@@ -1016,7 +1042,7 @@ async function opslaanAuto(){
     const r=await fetch("/api/vehicle",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     if(r.status===409){fout.textContent="Deze auto staat al in PVP."; knop.disabled=false; knop.textContent="Toevoegen »"; return;}
     if(!r.ok){fout.textContent="Opslaan mislukt — probeer het opnieuw."; knop.disabled=false; knop.textContent="Toevoegen »"; return;}
-    const {id}=await r.json();
+    const antwoord=await r.json(); const id=antwoord.id;
     let mislukt=0;
     for(const d of nieuweDocs){
       try{ const u=await fetch("/api/vehicledoc",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,dataUrl:d.dataUrl,name:d.name})}); if(!u.ok)mislukt++; }
@@ -1028,7 +1054,12 @@ async function opslaanAuto(){
     logActivity('Auto toegevoegd',[body.merk,body.model].filter(Boolean).join(' ')||id,id);
     scheduleSave();   // logActivity zet het alleen in het geheugen; dit stuurt het naar de server
     closeAutoModal();
-    showToast(mislukt?`Auto toegevoegd — ${mislukt} document(en) niet geüpload`:"Auto toegevoegd ✓",false);
+    const ab=antwoord.autoboek||{};
+    const staart = mislukt ? ` — ${mislukt} document(en) niet geüpload`
+                 : ab.status==='ok'   ? " — ook in het Autoboek gezet ✓"
+                 : ab.status==='fout' ? " — nog NIET in het Autoboek, zie de auto zelf"
+                 : "";
+    showToast("Auto toegevoegd"+staart,false);
     go('komende');
   }catch(_){
     fout.textContent="Geen verbinding met de server."; knop.disabled=false; knop.textContent="Toevoegen »";

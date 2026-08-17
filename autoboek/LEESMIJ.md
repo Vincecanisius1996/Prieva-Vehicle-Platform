@@ -1,10 +1,12 @@
 # `beheer/autoboek/` — bouwstenen voor de koppeling met het Autoboek
 
-Nog **geen** draaiende koppeling: dit zijn de bewezen onderdelen waarop die gebouwd wordt.
+Deze map draait mee met de backend: hij hoort in `/opt/pvp-api/autoboek/`. `server.js` doet
+`require('./autoboek')` en gebruikt `schrijfAuto()` nadat een auto is toegevoegd.
 Achtergrond, afwegingen en de openstaande beslissingen staan in `PVP-autoboek-koppeling-voorstel.md`.
 
 | Bestand | Wat het doet |
 |---|---|
+| `index.js` | `schrijfAuto(v)`: één auto als regel bijschrijven, met alle controles hieronder. |
 | `drive.js` | Inloggen als serviceaccount (JWT, RS256 via de ingebouwde `crypto`) en Drive lezen/schrijven. |
 | `xlsx-append.js` | Eén regel toevoegen aan een tabblad van een `.xlsx`. Zip met de hand, `zlib` uit Node. |
 | `xlsx-lees.js` | Een `.xlsx` terugleiden naar rijen en cellen, om te controleren wat er geschreven is. |
@@ -36,6 +38,29 @@ Vier kleppen, alle vier getest tegen de kopie van het Autoboek op 17-08-2026:
    bij een botsing bleef de ongewenste regel aantoonbaar buiten het bestand.
 5. **Nalezen achteraf:** opnieuw ophalen en controleren dat alle zes tabbladen hun breedte en
    rijaantal houden, dat de koprij identiek is en dat geen bestaande rij is veranderd.
+
+## Instellingen
+
+`/var/pvp/autoboek.env` (chmod 600, via `EnvironmentFile=` in `pvp-api.service`):
+
+```
+AUTOBOEK_FILE_ID=<bestands-ID in Drive>
+AUTOBOEK_SLEUTEL=/var/pvp/autoboek-sleutel.json
+```
+
+Staat `AUTOBOEK_FILE_ID` leeg, dan doet de koppeling niets en zegt PVP dat ook — zo is hij met één
+regel aan en uit te zetten, en wijst hij eerst naar de testkopie voordat het echte Autoboek erbij komt.
+
+## Wat er gebeurt als het misgaat
+
+Het toevoegen van een auto in PVP mislukt **nooit** omdat Google niet meewerkt: de auto komt gewoon in
+de database. Wat er misging wordt per auto vastgelegd (`autoboek_status`, `autoboek_rij`,
+`autoboek_ts`, `autoboek_fout`) en is zichtbaar op de detailpagina en als waarschuwing in de lijst,
+met een knop **Opnieuw proberen**. Zo verdwijnt een mislukking niet stil — dat zou precies het gat
+tussen PVP en het Autoboek terugbrengen dat deze koppeling dicht.
+
+Staat de auto al in het boek (zelfde VIN of kenteken), dan wordt er niets toegevoegd. Een tweede klik
+of een halfgeslaagde poging levert dus geen dubbele regel op.
 
 ## Sleutel
 
