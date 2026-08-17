@@ -20,6 +20,9 @@ en er wordt alleen een regel aan toegevoegd.
 Vier kleppen, alle vier getest tegen de kopie van het Autoboek op 17-08-2026:
 
 1. **Alleen toevoegen**, alleen op het tabblad *Komende Autos*. Bestaande cellen worden nooit geraakt.
+   PVP vult niet alle kolommen: **A (F), B (TO-DO), D (Fact. Nr.) en Q (Datum verkoop) blijven leeg** —
+   dat is handwerk van kantoor (afspraak 17-08-2026). Het merk wordt genormaliseerd naar eerste letter
+   hoofdletter, rest klein, met een uitzonderingslijst voor afkortingsmerken (BMW, VW, MG, DS, BYD, SEAT).
 2. **De eerstvolgende lege regel**, niet de eerstvolgende ontbrekende. Een blad heeft honderden
    `<row>`-elementen die alleen opmaak dragen; dat is precies de regel waar een mens ook zou typen.
    Is die regel niet leeg, dan breekt het af in plaats van te overschrijven.

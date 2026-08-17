@@ -76,11 +76,19 @@ elkaar met `inruil` en namen van particulieren (`Marcel Otten`, `inruil Kelly Th
 | KM | `km` | ✅ |
 | Datum inkoop | `inkoopdatum` | ✅ |
 | Transport | `batch` | ✅ |
-| TO-DO | `note` | ✅ |
-| **Fact. Nr.** | — | ⬜ nieuw veld nodig |
-| **Inkoop EX/EX** | — | ⬜ nieuw veld nodig (komt gratis uit de koopstukken) |
-| **Datum verkoop** | — | ⬜ nieuw veld nodig |
-| **F** | — | ⬜ onbekend wat deze kolom betekent — uitvragen |
+| Inkoop EX/EX | `inkoopprijs` | ✅ toegevoegd 17-08-2026 |
+| TO-DO | `note` | ⛔ **blijft leeg** — handwerk van kantoor |
+| Fact. Nr. | `factuurnr` | ⛔ **blijft leeg** — handwerk van kantoor |
+| Datum verkoop | `verkoopdatum` | ⛔ blijft leeg — een komende auto is nog niet verkocht |
+| F (kolom A) | — | ⛔ blijft leeg — vrij opmerkingenveld van kantoor |
+
+`factuurnr`, `inkoopprijs` en `verkoopdatum` bestaan sinds 17-08-2026 wél in PVP; alleen `inkoopprijs`
+gaat mee naar het Autoboek. De andere twee blijven in PVP staan omdat ze daar hun eigen nut hebben.
+
+**Merknotatie** (afspraak 17-08-2026): eerste letter hoofdletter, de rest klein — `volkswagen` →
+`Volkswagen`, `CITROËN` → `Citroën`. Per woord en ook na een koppelteken, zodat `land rover` →
+`Land Rover` en `mercedes-benz` → `Mercedes-Benz`. Met een korte uitzonderingslijst voor merken die
+als afkorting geschreven worden (BMW, VW, MG, DS, BYD, SEAT), anders komt er `Bmw` in het boek.
 
 De sleutel `id` in PVP is de VIN bij import en het kenteken bij Nederlandse auto's; dat past op de
 twee eerste kolommen. Veertien van de achttien kolommen kan PVP dus vandaag al vullen.

@@ -105,6 +105,22 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(
 // Excel-serienummer; epoch 1899-12-30 vanwege de schrikkeljaarfout van 1900.
 const serie = iso => { const [d, m, j] = iso.split('-').map(Number); return Math.round((Date.UTC(j, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000); };
 
+// Merknotatie in het Autoboek: eerste letter hoofdletter, de rest klein (afspraak 17-08-2026).
+// Per woord, zodat "land rover" -> "Land Rover" en niet "Land rover".
+// De uitzonderingen zijn merken die als afkorting geschreven worden; zonder die lijst zou er "Bmw"
+// en "Vw" in het boek komen te staan.
+const MERK_AFKORTINGEN = ['BMW', 'VW', 'MG', 'DS', 'BYD', 'SEAT'];
+function merkNotatie(s){
+  s = String(s || '').trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  // Ook na een koppelteken een hoofdletter, anders wordt het "Mercedes-benz".
+  return s.split(' ').map(w => {
+    const boven = w.toUpperCase();
+    if (MERK_AFKORTINGEN.includes(boven)) return boven;
+    return w.toLowerCase().replace(/(^|-)([a-zà-ÿ])/g, (_, v, l) => v + l.toUpperCase());
+  }).join(' ');
+}
+
 // Opmaakverwijzingen overgenomen van de bestaande regels: tekst 48, datum 94, km 95, bedrag 99, leeg 43.
 const STIJL = { leeg: 43, tekst: 48, datum: 94, km: 95, geld: 99 };
 const KOL = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R'];
@@ -138,8 +154,10 @@ function voegToe(pad, uitPad, auto) {
   // Veiligheidsklep: er mag onder de laatste auto niets staan dat we zouden overschrijven.
   if (bestaand && bestaand.gevuld) throw new Error('rij ' + doelNr + ' is niet leeg — met de hand kijken');
 
+  // Kolom A (F), B (TO-DO), D (Fact. Nr.) en Q (Datum verkoop) laat PVP bewust leeg — dat is handwerk
+  // van kantoor (afspraak 17-08-2026). Ze bestaan wél in PVP, ze gaan alleen niet mee naar het boek.
   const rij = maakRij(doelNr, [
-    auto.f, auto.todo, auto.transport, auto.factuur, auto.vin, auto.kenteken, auto.merk, auto.type,
+    '', '', auto.transport, '', auto.vin, auto.kenteken, merkNotatie(auto.merk), auto.type,
     auto.kleur, auto.leverancier, auto.uitvoering, auto.brandstof, auto.transmissie,
     auto.reg ? { soort: 'datum', v: serie(auto.reg) } : '',
     auto.km != null ? { soort: 'km', v: auto.km } : '',
