@@ -44,6 +44,28 @@ Vier dingen zijn bewust zo:
 echte auto's op 17-08-2026. Het scherm zet die dan ook onder "niet gevonden": een veld dat niet
 gevuld kan worden is geen storing maar een gat in het dossier, en dat hoort zichtbaar te zijn.
 
+## Gemeten op echte stukken (17-08-2026)
+
+| Geval | Stukken | Verbruik | Uitkomst |
+|---|---|---|---|
+| Import, Citroën C4 | pro forma (pdf) + veilingscreenshot (png) | ~6.000 in / ~600 uit | **11 van de 11** bekende velden goed, plus uitvoering en inkoopdatum |
+| NL-inkoop, Nissan Leaf | inkoopformulier particulier (pdf) | ~6.800 in / ~750 uit | **9 van de 10** goed; model kwam als `LEAF` |
+| DEKRA-rapport, VW Tiguan | Zustandsbericht, 15 pagina's, 1,9 MB (pdf) | 33.880 in / 863 uit | **8 van de 8** goed |
+
+Bij de Nissan kwam **geen enkel persoonsgegeven** terug: naam, adres, telefoonnummer en e-mailadres van
+de verkoper stonden in het document en niet in het antwoord.
+
+Twee dingen die de eerste proef aan het licht bracht en die zijn opgelost:
+
+- `1e toelating` werd `01-01-2016` terwijl er alleen "Bouwjaar 2016" stond. Verzonnen precisie in een
+  veld dat doorwerkt in de BPM en de advertentie. De opdracht zegt nu uitdrukkelijk dat zo'n veld
+  leeg blijft.
+- `merk` kwam de ene keer als `Nissan` en de andere keer als `NISSAN` terug. Dat is nu code, niet
+  instructie: dezelfde `merkNotatie()` als de Autoboek-koppeling gebruikt.
+
+`model` wordt bewust **niet** genormaliseerd. `LEAF` netjes maken zou `CLA`, `GTE`, `500e` en `e-Corsa`
+juist stukmaken. Daar is het controlescherm voor.
+
 ## Testen zonder echte aanroepen
 
 `UITLEZEN_API` wijst standaard naar de echte API, maar kan naar een nepserver wijzen. Zo is de vorm

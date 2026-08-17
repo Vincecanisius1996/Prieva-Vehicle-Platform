@@ -15,6 +15,13 @@
 
 // Instelbaar zodat dit met een nepserver te testen is zonder echte aanroepen te doen.
 const API = () => process.env.UITLEZEN_API || 'https://api.anthropic.com/v1/messages';
+
+// Merknotatie niet aan het model overlaten: de ene keer komt er "Nissan" terug en de andere keer
+// "NISSAN", precies zoals het in het document staat. Dezelfde functie als de Autoboek-koppeling
+// gebruikt, zodat de twee niet uiteen kunnen lopen.
+let merkNotatie = s => s;
+try { merkNotatie = require('../autoboek/xlsx-append.js').merkNotatie || merkNotatie; }
+catch (e) { console.error('merknotatie niet geladen:', e.message); }
 const VERSIE = '2023-06-01';
 const MODEL = () => process.env.UITLEZEN_MODEL || 'claude-sonnet-5';
 const MAX_BYTES = () => (Number(process.env.UITLEZEN_MAX_MB) || 20) * 1024 * 1024;
@@ -55,6 +62,12 @@ Haal er de gegevens uit die hieronder gevraagd worden, en gebruik het gereedscha
 Regels:
 - Vul een veld ALLEEN als je het echt in de stukken ziet. Verzin niets en leid niets af uit algemene kennis
   over het model. Weet je het niet: null. Een leeg veld is bruikbaar, een verzonnen veld is schadelijk.
+- Geef ELK veld terug, ook als het null is. Laat velden niet weg.
+- Verzin geen precisie die er niet staat. Staat er alleen een bouwjaar ("Bouwjaar 2016") en geen volledige
+  datum, laat "reg" dan LEEG — maak er geen 01-01-2016 van. Een verkeerde datum eerste toelating werkt door
+  in de BPM en in de advertentie.
+- "inkoopdatum" is de datum die op de koopovereenkomst, aankoopspecificatie of factuur staat; bij een
+  inkoopformulier van een particulier is dat de datum onderaan bij het kavelnummer.
 - Staat hetzelfde gegeven in meerdere stukken en spreken die elkaar tegen, zet het veld dan in "onzeker".
 - Datums altijd als dd-mm-jjjj. Kilometerstand als geheel getal zonder scheidingstekens.
 - Kleuren naar gewoon Nederlands: "Black" en "Schwarz" worden "Zwart", een fabrieksnaam als "Magnetic Tech"
@@ -127,6 +140,7 @@ async function lees(docs) {
   if (!gereedschap || !gereedschap.input) throw new Error('het model gaf geen bruikbaar antwoord terug');
   const uit = gereedschap.input;
   const { bronnen = {}, onzeker = [], ...velden } = uit;
+  if (velden.merk) velden.merk = merkNotatie(velden.merk);
 
   return {
     velden, bronnen, onzeker: Array.isArray(onzeker) ? onzeker : [],
