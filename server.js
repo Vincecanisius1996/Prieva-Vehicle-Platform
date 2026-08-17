@@ -12,6 +12,10 @@ pg.types.setTypeParser(20, v => (v === null ? null : parseInt(v, 10))); // bigin
 // zonder die koppeling — een auto toevoegen mag nooit stukgaan omdat Google onbereikbaar is.
 let autoboek = null;
 try { autoboek = require('./autoboek'); } catch (e) { console.error('autoboek-koppeling niet geladen:', e.message); }
+// Inkoopstukken uitlezen. Zelfde gedachte: ontbreekt het of staat de sleutel er niet, dan werkt de
+// app gewoon door en vult de gebruiker het formulier met de hand.
+let uitlezen = null;
+try { uitlezen = require('./uitlezen'); } catch (e) { console.error('uitlezen niet geladen:', e.message); }
 
 const DATA_DIR = process.env.PVP_DATA || '/var/pvp';
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
@@ -217,7 +221,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { name: user.name || user.username, role: user.role }, { 'Set-Cookie': `pvp_session=${makeToken(user)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000` });
     }
     if (method === 'POST' && url === '/api/logout') return sendJson(res, 200, { ok: true }, { 'Set-Cookie': 'pvp_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' });
-    if (method === 'GET' && url === '/api/me') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); return sendJson(res, 200, { name: u.n, role: u.r }); }
+    if (method === 'GET' && url === '/api/me') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); return sendJson(res, 200, { name: u.n, role: u.r, uitlezen: !!(uitlezen && uitlezen.aan()) }); }
 
     if (method === 'GET' && url.indexOf('/uploads/') === 0) return serveUpload(req, res, url);
 
@@ -266,6 +270,25 @@ const server = http.createServer(async (req, res) => {
       // De frontend logt dit met logActivity().
       const ab = await naarAutoboek(id);
       return sendJson(res, 200, { ok: true, id, autoboek: ab });
+    }
+
+    // Inkoopstukken uitlezen en er een ingevuld voorstel van maken. Maakt zelf niets aan: de
+    // gebruiker kijkt het na en drukt daarna pas op Opslaan. Eén verkeerd gelezen VIN levert anders
+    // een spookauto op die je in twee systemen moet opruimen.
+    if (url === '/api/uitlezen' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      if (!uitlezen || !uitlezen.aan()) return sendJson(res, 200, { uit: true, fout: 'automatisch uitlezen staat uit' });
+      const b = await readBody(req) || {};
+      if (!Array.isArray(b.docs) || !b.docs.length) return sendJson(res, 400, { error: 'geen documenten' });
+      try {
+        const r = await uitlezen.lees(b.docs);
+        console.log('uitlezen:', u.u, r.gebruikt.length, 'stuk(ken),', r.verbruik.in, 'in /', r.verbruik.uit, 'uit tokens');
+        return sendJson(res, 200, r);
+      } catch (e) {
+        console.error('uitlezen:', e.message);
+        return sendJson(res, 200, { fout: String(e.message).slice(0, 300) });
+      }
     }
 
     // Opnieuw proberen de auto in het Autoboek te zetten (knop in de app na een mislukte poging).

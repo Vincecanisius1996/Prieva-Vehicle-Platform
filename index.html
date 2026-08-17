@@ -398,6 +398,9 @@ V.forEach(initVeh);
 let subUid=1;
 let globalTodos=[]; let gtUid=1;
 let currentUser=null; let adPhotos={}; let fotoState={car:null}; let taxState={car:null};
+// Staat het automatisch uitlezen aan op de server? Zo niet, dan tonen we de knop niet — een knop die
+// alleen "staat uit" kan zeggen, is erger dan geen knop.
+let kanUitlezen=false;
 let activityLog=[];
 
 /* ===== Helpers ===== */
@@ -927,6 +930,7 @@ function openAutoModal(){
         </div>
         <input type="file" id="na-files" multiple accept="application/pdf,image/*" style="display:none" onchange="autoDocsKiezen(this.files); this.value='';">
         <div class="doclist" id="na-doclist"></div>
+        <div id="na-uitlees" style="margin-top:9px"></div>
       </div>
       <div class="fsec">Identificatie</div>
       <div class="fgrid">
@@ -988,9 +992,54 @@ async function autoDocsKiezen(files){
 }
 function toonDocs(){
   const el=document.getElementById('na-doclist'); if(!el)return;
-  el.innerHTML=nieuweDocs.map((d,i)=>`<div class="docrow"><span>${d.name.toLowerCase().endsWith('.pdf')?'📄':'🖼'}</span><span class="dn">${d.name}</span><button class="dx" onclick="autoDocWeg(${i})" title="Weghalen">×</button></div>`).join("");
+  el.innerHTML=nieuweDocs.map((d,i)=>`<div class="docrow"><span>${d.name.toLowerCase().endsWith('.pdf')?'📄':'🖼'}</span><span class="dn">${d.name}</span><button class="dx" onclick="autoDocWeg(${i})" title="Weghalen">×</button></div>`).join("")
+    + (nieuweDocs.length&&kanUitlezen?`<button class="btn btn-primary" style="margin-top:4px;justify-content:center" onclick="autoUitlezen()">Gegevens uit de stukken halen »</button>`:"");
 }
 function autoDocWeg(i){nieuweDocs.splice(i,1); toonDocs();}
+
+/* ===== Stukken laten uitlezen =====
+   Vult het formulier vóór, maar slaat niets op: jij kijkt het na. Een veld dat leeg blijft is geen
+   storing maar een signaal — dan mist die informatie in de aangeleverde stukken. */
+const UITLEES_VELDEN=[["vin","na-vin"],["kenteken","na-kenteken"],["merk","na-merk"],["model","na-model"],
+  ["uitv","na-uitv"],["kleur","na-kleur"],["brandstof","na-brandstof"],["transm","na-transm"],
+  ["reg","na-reg"],["km","na-km"],["inkoopdatum","na-inkoopdatum"],["factuurnr","na-factuurnr"],
+  ["inkoopprijs","na-inkoopprijs"],["note","na-note"]];
+const UITLEES_NAMEN={vin:"VIN",kenteken:"Kenteken",merk:"Merk",model:"Model",uitv:"Uitvoering",kleur:"Kleur",
+  brandstof:"Brandstof",transm:"Transmissie",reg:"1e toelating",km:"Km-stand",inkoopdatum:"Datum inkoop",
+  factuurnr:"Factuurnummer",inkoopprijs:"Inkoopprijs",note:"Notitie",lev:"Leverancier",batch:"Transportdatum"};
+// Deze twee komen nooit uit de stukken (bewezen op tien echte auto's) — die vraag je gewoon.
+const ALTIJD_ZELF=["lev","batch"];
+async function autoUitlezen(){
+  if(!nieuweDocs.length){showToast("Voeg eerst documenten toe",false);return;}
+  const vak=document.getElementById('na-uitlees'); if(!vak)return;
+  vak.innerHTML=`<div class="muted" style="font-size:12.5px">Stukken lezen…</div>`;
+  try{
+    const r=await fetch("/api/uitlezen",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({docs:nieuweDocs.map(d=>({name:d.name,dataUrl:d.dataUrl}))})});
+    const j=await r.json();
+    if(j.uit||j.fout){vak.innerHTML=`<div class="fout">${j.fout||'automatisch uitlezen staat uit'}</div>`; return;}
+    const gevuld=[], leeg=[];
+    for(const [veld,id] of UITLEES_VELDEN){
+      const el=document.getElementById(id); if(!el)continue;
+      const w=j.velden?j.velden[veld]:null;
+      if(w===null||w===undefined||w===""){ if(!el.value)leeg.push(veld); continue; }
+      el.value=String(w); gevuld.push(veld);
+    }
+    if(j.velden&&typeof j.velden.importAuto==='boolean'){
+      const c=document.getElementById('na-import'); if(c){c.checked=j.velden.importAuto; c.dataset.hand="1";}
+    }
+    leeg.push(...ALTIJD_ZELF);
+    const bron=v=>(j.bronnen&&j.bronnen[v])?` <span class="muted" style="font-weight:400">(${j.bronnen[v]})</span>`:'';
+    vak.innerHTML=`
+      <div style="font-size:12.5px;line-height:1.7">
+        <div style="color:#1a7f37;font-weight:650">✓ ${gevuld.length} veld(en) ingevuld uit ${j.gebruikt.length} stuk(ken)</div>
+        ${gevuld.length?`<div class="muted">${gevuld.map(v=>`${UITLEES_NAMEN[v]||v}${bron(v)}`).join(' · ')}</div>`:''}
+        ${j.onzeker&&j.onzeker.length?`<div style="color:#b26a00;margin-top:5px"><b>Nakijken:</b> ${j.onzeker.map(v=>UITLEES_NAMEN[v]||v).join(', ')} — de stukken spreken elkaar tegen</div>`:''}
+        ${leeg.length?`<div style="color:#c0392b;margin-top:5px"><b>Niet gevonden:</b> ${leeg.map(v=>UITLEES_NAMEN[v]||v).join(', ')} — vul zelf aan of voeg een document toe</div>`:''}
+        ${j.overgeslagen&&j.overgeslagen.length?`<div class="muted" style="margin-top:5px">Overgeslagen: ${j.overgeslagen.join(', ')}</div>`:''}
+      </div>`;
+  }catch(_){ vak.innerHTML=`<div class="fout">Geen verbinding met de server.</div>`; }
+}
 /* Staat deze auto in het Autoboek? Een mislukte schrijfactie mag niet stil verdwijnen — dan ontstaat
    precies het gat tussen PVP en het Autoboek dat we aan het dichten zijn. */
 function autoboekCard(v){
@@ -1260,7 +1309,7 @@ function renderLogin(err){
 async function doLogin(){ const uu=document.getElementById('lg-user'), pp=document.getElementById('lg-pass'); if(!uu||!pp)return;
   const u=uu.value.trim(), p=pp.value; if(!u||!p){renderLogin('Vul gebruikersnaam en wachtwoord in.');return;}
   try{ const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})});
-    if(r.ok){ const j=await r.json(); currentUser={name:j.name,role:j.role}; apiOk=true; startFor(); }
+    if(r.ok){ const j=await r.json(); currentUser={name:j.name,role:j.role}; kanUitlezen=!!j.uitlezen; apiOk=true; startFor(); }
     else { renderLogin('Onjuiste gebruikersnaam of wachtwoord.'); }
   }catch(_){ renderLogin('Kan de server niet bereiken.'); }
 }
@@ -1292,7 +1341,7 @@ async function startFor(){
 }
 async function boot(){
   try{ const r=await fetch("/api/me",{cache:"no-store"});
-    if(r.ok){ currentUser=await r.json(); apiOk=true; startFor(); return; }
+    if(r.ok){ currentUser=await r.json(); kanUitlezen=!!currentUser.uitlezen; apiOk=true; startFor(); return; }
     if(r.status===401){ apiOk=true; renderLogin(); return; }
   }catch(_){ /* geen backend bereikbaar → demo/standalone */ }
   currentUser={name:'Demo',role:'team'}; apiOk=false; startFor();

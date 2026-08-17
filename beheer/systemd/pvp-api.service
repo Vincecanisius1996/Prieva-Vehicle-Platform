@@ -11,6 +11,8 @@ EnvironmentFile=/var/pvp/pg.env
 # Koppeling met het Autoboek. Ontbreekt dit bestand, dan start de service gewoon en staat de
 # koppeling uit — vandaar het minteken.
 EnvironmentFile=-/var/pvp/autoboek.env
+# Sleutel voor het uitlezen van inkoopstukken. Ontbreekt hij, dan blijft die functie simpelweg uit.
+EnvironmentFile=-/var/pvp/ai.env
 
 [Install]
 WantedBy=multi-user.target
