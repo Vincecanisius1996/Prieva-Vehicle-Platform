@@ -121,16 +121,28 @@ function merkNotatie(s){
   }).join(' ');
 }
 
-// Opmaakverwijzingen overgenomen van de bestaande regels: tekst 48, datum 94, km 95, bedrag 99, leeg 43.
-const STIJL = { leeg: 43, tekst: 48, datum: 94, km: 95, geld: 99 };
 const KOL = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R'];
 
-function maakRij(nr, waarden) {
+// De opmaak NIET hardcoderen. Excel hernummert bij elke keer opslaan zijn hele stijltabel; een vast
+// nummer wijst daarna naar iets anders — datums worden kale getallen, kilometers krijgen een euroteken.
+// Daarom lezen we per kolom het stijlnummer van de laatste gevulde regel en gebruiken we dat. De
+// nieuwe regel ziet er dan per definitie uit als de regel erboven, wat er ook met de tabel gebeurt.
+function stijlenUit(rijXml) {
+  const uit = {};
+  for (const c of rijXml.matchAll(/<c r="([A-Z]+)\d+"([^>]*?)(?:\/>|>[\s\S]*?<\/c>)/g)) {
+    const s = /s="(\d+)"/.exec(c[2]);
+    if (s) uit[c[1]] = s[1];
+  }
+  return uit;
+}
+
+function maakRij(nr, waarden, stijl) {
   const cellen = KOL.map((letter, i) => {
     const w = waarden[i];
-    if (w === undefined || w === null || w === '') return `<c r="${letter}${nr}" s="${STIJL.leeg}"/>`;
-    if (typeof w === 'object') return `<c r="${letter}${nr}" s="${STIJL[w.soort]}"><v>${w.v}</v></c>`;
-    return `<c r="${letter}${nr}" s="${STIJL.tekst}" t="inlineStr"><is><t>${esc(w)}</t></is></c>`;
+    const s = stijl[letter] !== undefined ? ` s="${stijl[letter]}"` : '';
+    if (w === undefined || w === null || w === '') return `<c r="${letter}${nr}"${s}/>`;
+    if (typeof w === 'object') return `<c r="${letter}${nr}"${s}><v>${w.v}</v></c>`;
+    return `<c r="${letter}${nr}"${s} t="inlineStr"><is><t>${esc(w)}</t></is></c>`;
   });
   return `<row r="${nr}">${cellen.join('')}</row>`;
 }
@@ -156,15 +168,20 @@ function voegToe(pad, uitPad, auto) {
 
   // Kolom A (F), B (TO-DO), D (Fact. Nr.) en Q (Datum verkoop) laat PVP bewust leeg — dat is handwerk
   // van kantoor (afspraak 17-08-2026). Ze bestaan wél in PVP, ze gaan alleen niet mee naar het boek.
+  // Opmaak overnemen van de laatste gevulde regel — zie stijlenUit().
+  const bron = rijen.find(r => r.nr === laatste);
+  const stijl = stijlenUit(bron ? bron.heel : '');
+  if (Object.keys(stijl).length < 10) throw new Error('kon de opmaak van rij ' + laatste + ' niet aflezen');
+
   const rij = maakRij(doelNr, [
     '', '', auto.transport, '', auto.vin, auto.kenteken, merkNotatie(auto.merk), auto.type,
     auto.kleur, auto.leverancier, auto.uitvoering, auto.brandstof, auto.transmissie,
-    auto.reg ? { soort: 'datum', v: serie(auto.reg) } : '',
-    auto.km != null ? { soort: 'km', v: auto.km } : '',
-    auto.inkoopdatum ? { soort: 'datum', v: serie(auto.inkoopdatum) } : '',
-    auto.verkoopdatum ? { soort: 'datum', v: serie(auto.verkoopdatum) } : '',
-    auto.inkoopprijs != null ? { soort: 'geld', v: auto.inkoopprijs } : '',
-  ]);
+    auto.reg ? { v: serie(auto.reg) } : '',
+    auto.km != null ? { v: auto.km } : '',
+    auto.inkoopdatum ? { v: serie(auto.inkoopdatum) } : '',
+    auto.verkoopdatum ? { v: serie(auto.verkoopdatum) } : '',
+    auto.inkoopprijs != null ? { v: auto.inkoopprijs } : '',
+  ], stijl);
 
   if (bestaand) {
     // De lege regel bestaat al (met opmaak): die vervangen we, zodat de volgorde vanzelf klopt.

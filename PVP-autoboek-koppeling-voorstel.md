@@ -217,6 +217,14 @@ toegevoegd aan een kopie van het Autoboek. Daarna streng nagerekend:
 Het script weigert te schrijven als er geen vrije rij direct onder de gegevens is; dan stopt het in
 plaats van te gokken.
 
+**Gevonden bij de proef op de kopie (17-08-2026):** de stijlnummers mogen niet vastgelegd worden in
+de code. Excel hernummert zijn hele stijltabel elke keer dat iemand het bestand opslaat; de nummers
+die ik uit het oorspronkelijke bestand had overgenomen, wezen daarna naar een andere opmaak. Gevolg in
+de laatste kolommen: kilometerstanden als `€ 80.344,00` en datums als kaal getal. Opgelost door per
+kolom de opmaak van de laatste gevulde regel over te nemen. Blijft over: tekstcellen komen als
+`inlineStr` in plaats van via de gedeelde tekstentabel — geldig Excel, zelfde weergave, en bij de
+eerstvolgende keer opslaan zet Excel ze zelf om.
+
 **Wat dit nog niet bewijst:** het terugleggen gebeurde met een eigen lezer en met Python, niet met
 Excel of Power BI — die draaien niet op de droplet. Daarom eerst een proef op een **kopie van het
 Autoboek in Drive**: daar de regel in laten schrijven, die kopie in Excel openen en de rapportage er

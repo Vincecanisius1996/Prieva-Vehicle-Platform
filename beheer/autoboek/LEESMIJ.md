@@ -26,10 +26,15 @@ Vier kleppen, alle vier getest tegen de kopie van het Autoboek op 17-08-2026:
 2. **De eerstvolgende lege regel**, niet de eerstvolgende ontbrekende. Een blad heeft honderden
    `<row>`-elementen die alleen opmaak dragen; dat is precies de regel waar een mens ook zou typen.
    Is die regel niet leeg, dan breekt het af in plaats van te overschrijven.
-3. **Revisiecontrole:** vlak vóór het uploaden nagaan of `headRevisionId` nog dezelfde is als bij het
+3. **Opmaak overnemen van de regel erboven, nooit hardcoderen.** Excel hernummert bij elke keer
+   opslaan zijn hele stijltabel. Vaste nummers wijzen daarna naar iets anders: op 17-08-2026 kwamen
+   daardoor de kilometers als `€ 80.344,00` in het boek en de datums als kaal getal. Nu wordt per
+   kolom het stijlnummer van de laatste gevulde regel gelezen, zodat de nieuwe regel er per definitie
+   uitziet als de regel erboven — wat er ook met de tabel gebeurt.
+4. **Revisiecontrole:** vlak vóór het uploaden nagaan of `headRevisionId` nog dezelfde is als bij het
    downloaden. Zo niet, dan heeft iemand anders opgeslagen en wordt er niet geschreven. Aangetoond:
    bij een botsing bleef de ongewenste regel aantoonbaar buiten het bestand.
-4. **Nalezen achteraf:** opnieuw ophalen en controleren dat alle zes tabbladen hun breedte en
+5. **Nalezen achteraf:** opnieuw ophalen en controleren dat alle zes tabbladen hun breedte en
    rijaantal houden, dat de koprij identiek is en dat geen bestaande rij is veranderd.
 
 ## Sleutel
