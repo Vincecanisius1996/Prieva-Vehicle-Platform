@@ -42,8 +42,8 @@ Draait live op **https://pvp.prieva.nl**. Meerdere gebruikers, met rollen en log
   twee exemplaren van hetzelfde bestand lopen uiteen en dan weet niemand meer welke geldt.
 - In de repo staan historische `index_N.html`-kopieën en een bestand `server.js update`; die zijn
   van vóór deze opschoning en niet meer in gebruik. Bron van waarheid is `index.html`.
-- **Niet in de repo, met opzet:** `/var/pvp/pg.env`, `/var/pvp/secret`, `/var/pvp/uploads`, de
-  JSON-back-ups en alles wat `.gitignore` uitsluit.
+- **Niet in de repo, met opzet:** `/var/pvp/pg.env`, `/var/pvp/restic.env`, `/var/pvp/secret`,
+  `/var/pvp/uploads`, de JSON-back-ups en alles wat `.gitignore` uitsluit.
 
 ## Rollen (server dwingt af)
 - `team` — volledige app.
@@ -116,7 +116,8 @@ systemctl stop pvp-api
 gunzip -c /var/backups/pvp/pvp-<stempel>.sql.gz | sudo -u postgres psql -d pvp
 systemctl start pvp-api
 ```
-Wat er **niet** in zit: `/var/pvp/uploads` (zie hieronder) en `/var/pvp/secret`.
+Wat er **niet** in zit: `/var/pvp/uploads` (zie hieronder) en `/var/pvp/secret`. Die twee gaan wél mee
+in de kopie naar Backblaze, verderop.
 
 ## Back-up van de uploads (foto's en BPM-rapporten)
 `pvp-uploads-snapshot.timer` draait elke nacht om 02:30 UTC `/usr/local/bin/pvp-uploads-snapshot.sh`:
@@ -133,9 +134,58 @@ cp /var/backups/pvp/uploads/laatste/<auto>/<bestand> /var/pvp/uploads/<auto>/
 Alles terugzetten: `rsync -a /var/backups/pvp/uploads/<stempel>/ /var/pvp/uploads/`.
 De URL's in de database wijzen naar hetzelfde pad, dus verder hoeft er niets aangepast te worden.
 
-**Dit is stap A** uit `PVP-uploads-backup-voorstel.md` en beschermt tegen per ongeluk verwijderen.
-**Stap B — een versleutelde kopie buiten de droplet — staat nog open**; zonder dat is verlies van de
-server nog steeds verlies van alle foto's.
+**Dit is stap A** uit `PVP-uploads-backup-voorstel.md` en beschermt tegen per ongeluk verwijderen — niet
+tegen het kwijtraken van de droplet, want deze momentopnamen staan op dezelfde schijf. Daarvoor is de
+kopie naar buiten (hieronder).
+
+## Kopie buiten de droplet (Backblaze B2, Amsterdam)
+Stap B, klaar 17-08-2026. `pvp-offsite.timer` draait elke nacht om 03:00 UTC
+`/usr/local/bin/pvp-offsite.sh`: `restic` stuurt twee momentopnamen naar de bucket
+`Prieva-Vehicle-Platform` op `s3.eu-central-003.backblazeb2.com`.
+
+- tag `db` — een verse `pg_dump` via stdin, als **onversleutelde SQL**. Bewust niet het gzip-bestand
+  van `pvp-backup.sh`: platte SQL laat `restic` dedupliceren, terwijl een gzip elke nacht volledig
+  verandert en dus elke nacht de volle omvang kost.
+- tag `bestanden` — `/var/pvp/uploads`, plus `secret`, `pg.env`, `/opt/pvp-api`, de nginx-config en de
+  PVP-scripts en -units. `restic.env` zit er bewust **niet** in: het wachtwoord waarmee je de kluis
+  opent hoort niet in de kluis.
+
+Bewaartermijn 14 dagelijks / 8 wekelijks / 12 maandelijks, per tag apart (`--group-by tags`), anders
+duwen de twee reeksen elkaar uit de termijn. Elke nacht wordt **1/30 van de data echt teruggedownload
+en nagerekend** (`check --read-data-subset`); over een maand is daarmee alles gecontroleerd, en het
+dataverkeer blijft binnen de gratis marge van B2. Een back-up die je nooit uitleest is een aanname.
+
+**`restic` versleutelt lokaal**, dus Backblaze ziet alleen blokken zonder betekenis — kentekenbewijzen
+en vrijwaringen liggen niet leesbaar bij een externe partij. Regio EU Central i.v.m. de AVG, en bewust
+een andere leverancier dan DigitalOcean: een back-up in hetzelfde account overleeft het verlies van dat
+account niet.
+
+Instellingen staan in **`/var/pvp/restic.env`** (chmod 600, `RESTIC_REPOSITORY`, `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`, `RESTIC_PASSWORD`), ingeladen via `EnvironmentFile=`. **Nooit committen.**
+De Backblaze-sleutel is beperkt tot alleen deze bucket, niet de master key.
+
+> **Zonder `RESTIC_PASSWORD` is er niets terug te zetten** — door niemand, ook niet door Backblaze.
+> Een kopie hoort in een wachtwoordkluis buiten deze server. Ligt die er niet, dan beschermt deze
+> back-up tegen niets.
+
+Terugzetten (getest op 17-08-2026: 244 bestanden byte-voor-byte identiek, database met gelijke
+rijaantallen én gelijke inhoud):
+```
+set -a; . /var/pvp/restic.env; . /var/pvp/pg.env; set +a
+export RESTIC_CACHE_DIR=/var/cache/restic     # systemd geeft geen $HOME; met de hand dus zelf zetten
+restic snapshots                                        # wat is er?
+restic restore latest --tag bestanden --target /tmp/x    # eerst naar een tijdelijke map kijken
+restic dump latest --tag db pvp.sql | psql "$PVP_PG"     # database
+```
+Het script **initialiseert nooit zelf een repository**: een timer die stilletjes een lege repository
+aanlegt, verbergt een verkeerde bucket of sleutel achter een geslaagde back-up van niets. Bij een
+nieuwe server dus eerst met de hand `restic init`, en de timer pas aan als `restic cat config` werkt.
+
+**Nog open: onveranderlijkheid.** Verwijderen in de bucket werkt (getest), dus Object Lock is niet
+actief. Goed voor het opruimen, maar het betekent dat wie root op de droplet krijgt óók de
+Backblaze-sleutel heeft en de back-ups kan wissen. Zie `PVP-uploads-backup-voorstel.md` voor de
+afweging; echte onveranderlijkheid vraagt een sleutel zonder verwijderrecht plus een tweede,
+losstaande opruimtaak.
 
 ## Wees-bestanden in uploads
 De app verwijdert URL's uit de database zonder het bestand van schijf te halen — zowel via
@@ -226,11 +276,13 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
   dan alleen nog rijen te upserten in `vehicles`.
 - ~~Back-up van `/var/pvp/uploads`.~~ **Klaar 15-08-2026** (stap A: nachtelijke momentopnamen).
 - ~~Foto's verkleinen bij het uploaden.~~ **Klaar 16-08-2026.**
-- **Nog te regelen (open): een kopie van de back-ups buiten de droplet.** Stap B uit
-  `PVP-uploads-backup-voorstel.md`: `restic` naar **Backblaze B2, regio EU Central (Amsterdam)** —
-  bewust een andere leverancier dan DigitalOcean, want anders staan server en back-up in hetzelfde
-  account. Wacht op bucket + sleutels (Vince regelt dit 17-08-2026) en op een plek buiten de server
-  voor het restic-wachtwoord. **Tot die er is, betekent verlies van de droplet verlies van alle foto's.**
+- ~~Een kopie van de back-ups buiten de droplet (stap B).~~ **Klaar 17-08-2026:** `restic` naar
+  Backblaze B2, EU Central. Zie "Kopie buiten de droplet" hierboven.
+- **Nog te regelen: het restic-wachtwoord buiten de server.** Het staat nu alleen in
+  `/var/pvp/restic.env` op de droplet. Zolang er geen kopie in een wachtwoordkluis ligt, is de bucket
+  na verlies van de server onleesbaar en beschermt de back-up dus nergens tegen.
+- Open, afweging nodig: **onveranderlijkheid van de bucket.** Verwijderen werkt nu, dus wie root op de
+  droplet krijgt kan met de Backblaze-sleutel ook de back-ups wissen.
 - Klein & optioneel: nginx no-cache header voor `/` en `/index.html`.
 - Bekend, buiten Fase 1 gelaten: nginx serveert `/uploads/` rechtstreeks met `alias`, dus de
   auth-controle in `serveUpload()` wordt in productie overgeslagen — wie een URL kent, kan het bestand

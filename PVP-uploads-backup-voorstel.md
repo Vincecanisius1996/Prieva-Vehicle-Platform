@@ -12,8 +12,33 @@ Status: opgesteld 15-08-2026, na afronding van Fase 1 (Postgres).
 >   560 MB → 119 MB (4,7x), 39,6 dB PSNR. Werkt vanaf de eerstvolgende upload; bestaande foto's zijn
 >   bewust niet omgezet. Instellingen en valkuilen staan in `CLAUDE.md`.
 >   *Correctie op §7: daar stond een geschatte factor 8; de gemeten factor is 4,7.*
-> - ⬜ **Stap B — versleutelde kopie buiten de droplet** — nog te doen. Vince regelt de bucket op
->   17-08-2026. **Tot die er is, betekent verlies van de droplet nog steeds verlies van alle foto's.**
+> - ✅ **Stap B — versleutelde kopie buiten de droplet** — uitgevoerd 17-08-2026. `restic` naar
+>   Backblaze B2, bucket `Prieva-Vehicle-Platform` op `s3.eu-central-003.backblazeb2.com` (Amsterdam),
+>   elke nacht 03:00 UTC via `pvp-offsite.timer`. Twee momentopnamen per nacht (`db` = verse `pg_dump`
+>   als platte SQL zodat deduplicatie werkt, `bestanden` = uploads + sleutels + config). Eerste upload
+>   439 MB in 1 min 26; de tweede run duurde 15 s en voegde niets toe.
+>   **Terugzetten is getest, niet alleen uploaden:** 244 bestanden byte-voor-byte identiek aan live
+>   (661.773.924 bytes aan beide kanten), en de database teruggezet in een wegwerp-database met gelijke
+>   rijaantallen én een gelijke `md5` over de inhoud van `vehicles` en `global_todos`. Details en de
+>   herstelprocedure staan in `CLAUDE.md`.
+> - ⬜ **Het restic-wachtwoord buiten de server** — nog te doen. Het staat alleen in
+>   `/var/pvp/restic.env` op de droplet. Zonder kopie in een kluis elders is de bucket na verlies van de
+>   server onleesbaar, en beschermt deze back-up dus tegen niets.
+> - ⬜ **Onveranderlijkheid van de bucket** — afweging nog te maken, zie hieronder.
+>
+> **Object Lock blijkt niet aan te staan** (getest 17-08-2026: `restic forget --prune` verwijderde
+> zonder bezwaar objecten). Dat is niet zomaar een vergeten vinkje, want de twee eisen bijten elkaar:
+> `restic` moet kunnen verwijderen om verlopen momentopnamen op te ruimen, terwijl onveranderlijkheid
+> juist betekent dat er niets verwijderd kan worden. Zet je Object Lock met een bewaartermijn aan, dan
+> faalt het opruimen elke nacht en groeit de opslag door. Echte onveranderlijkheid vraagt daarom een
+> tweede sleutel: de nachtelijke taak krijgt er één **zonder** verwijderrecht, en het opruimen gebeurt
+> los daarvan, vanaf een andere machine met een sleutel die dat wél mag.
+> Goedkoper alternatief dat de lat een stuk hoger legt zonder iets te breken: een **lifecycle-regel op
+> de bucket die verwijderde versies nog 30 dagen bewaart**. Een verkeerd commando of een fout in het
+> script is dan terug te draaien; een gerichte aanvaller met de sleutel niet. Bij het huidige volume
+> (439 MB, ~9 GB groei per jaar) kost dat vrijwel niets.
+> **Wat nu al wél beschermd is:** brand, een defecte schijf, een verwijderde of geschorste
+> DigitalOcean-account, en een per ongeluk gewiste map.
 >
 > **Tweede afwijking van dit voorstel, bewust:** §3 en §5 gingen uit van **DigitalOcean Spaces in
 > `ams3`**. Dat advies is herzien naar **Backblaze B2, regio EU Central (Amsterdam)**. Reden: de droplet
@@ -21,8 +46,8 @@ Status: opgesteld 15-08-2026, na afronding van Fase 1 (Postgres).
 > gekaapt account — een reservesleutel in dezelfde auto. B2 is een andere leverancier, S3-compatibel
 > (dus `restic` werkt identiek), houdt de data in de EU — relevant, er zitten kentekens en
 > kentekenbewijzen tussen — en kost bij de nieuwe raming enkele dubbeltjes per maand in plaats van $5.
-> Zet op de bucket **Object Lock** aan: zonder dat kan iemand met root op de droplet ook de back-up
-> wissen, want de sleutel ligt op de machine die beschermd moet worden.
+> Dat deel is uitgevoerd zoals hier beschreven. De aanbeveling om **Object Lock** aan te zetten bleek
+> minder eenvoudig dan hier gesteld; zie het punt over onveranderlijkheid hierboven.
 >
 > **De kostenraming in §5 klopt niet meer.** Die ging uit van 60–70 GB groei per jaar; door het
 > verkleinen wordt dat ongeveer 9 GB per jaar.

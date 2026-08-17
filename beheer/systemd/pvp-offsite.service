@@ -1,0 +1,32 @@
+[Unit]
+Description=PVP: versleutelde kopie naar Backblaze B2 (buiten de droplet)
+# Netwerk moet er zijn; anders faalt hij zinloos bij het opstarten van de server.
+After=network-online.target postgresql.service
+Wants=network-online.target
+# Vier pogingen in zes uur, dan opgeven en in de toestand 'failed' blijven staan. Zonder deze grens
+# blijft de unit eindeloos in 'auto-restart' hangen en komt hij NIET in `systemctl --failed` — dan
+# denk je dat het goed gaat terwijl er weken geen kopie meer weggaat.
+StartLimitIntervalSec=6h
+StartLimitBurst=4
+
+[Service]
+Type=oneshot
+# systemd geeft een service geen $HOME, dus restic vindt zijn cache niet en haalt elke nacht alle
+# metadata opnieuw op. CacheDirectory laat systemd /var/cache/restic aanmaken en beheren.
+CacheDirectory=restic
+Environment=RESTIC_CACHE_DIR=/var/cache/restic
+# Twee bestanden: pg.env voor PVP_PG (de pg_dump), restic.env voor de repository en de sleutels.
+EnvironmentFile=/var/pvp/pg.env
+EnvironmentFile=/var/pvp/restic.env
+ExecStart=/usr/local/bin/pvp-offsite.sh
+# Standaard breekt systemd een oneshot na 90 seconden af. Uploaden, opruimen en narekenen duurt
+# langer — de eerste keer minuten, later minder. Zes uur is ruim en houdt tegelijk een grens: een
+# vastgelopen verbinding blijft niet eeuwig hangen.
+TimeoutStartSec=6h
+# Uploaden en narekenen mag de rest van de server niet in de weg zitten.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+# Een mislukte nacht (netwerk eruit, B2 onbereikbaar) niet laten liggen tot de volgende dag.
+Restart=on-failure
+RestartSec=30min

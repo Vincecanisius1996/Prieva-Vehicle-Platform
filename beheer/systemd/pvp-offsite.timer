@@ -1,0 +1,11 @@
+[Unit]
+Description=PVP: versleutelde kopie naar Backblaze B2 (buiten de droplet)
+
+[Timer]
+# Ná de momentopname van 02:30, zodat er niets halfs wordt meegenomen.
+OnCalendar=*-*-* 03:00:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
