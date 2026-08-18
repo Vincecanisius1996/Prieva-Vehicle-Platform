@@ -5,7 +5,8 @@ Antwoord en commit-berichten in het **Nederlands**. De UI van PVP is volledig Ne
 
 ## Wat is PVP
 Intern platform van Prieva B.V. (autobedrijf) om de doorloop van ingekochte/geïmporteerde auto's
-te volgen: van "komend" → binnengekomen → import/BPM-traject → foto's → advertentie → verkoopklaar.
+te volgen: van "komend" → binnengekomen → import/BPM-traject → foto's → advertentie → verkoopklaar →
+verkocht. In de app: de pagina's Komende, Lopende en Verkocht.
 Draait live op **https://pvp.prieva.nl**. Meerdere gebruikers, met rollen en login.
 
 ## Architectuur (bewust simpel — geen build-stap, geen frameworks)
@@ -67,7 +68,8 @@ uit), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
 `/api/adphotos-set`, `/api/taxstate` (taxateur+team+admin), `/api/bpmreports`, `/api/bpmreport`,
 `/api/bpmnotif-seen`, `/api/bpmreport-del`, `/api/vehicle` (team+admin, nieuwe auto),
 `/api/vehicle-del` (**alleen admin**), `/api/vehicledoc`, `/api/uitlezen`, `/api/autoboek-retry`,
-`/api/verkoop-bevestigen` (**alleen admin**), `/uploads/*` (auth).
+`/api/verkoop-bevestigen` + `/api/verkoop-terug` (**alleen admin**), `/api/binnengekomen`,
+`/uploads/*` (auth).
 Auth = HMAC-ondertekende cookie (stateless).
 
 **Uitzondering: `/api/verkocht`** gebruikt géén cookie maar een **bearer-token** uit
@@ -307,8 +309,10 @@ kwaliteit als 0–1 (browserconventie), `toBuffer` als 0–100 — dat verschil 
   kolom, een kop of de volgorde, dan loopt die vast. Het moet ook een **.xlsx blijven** — omzetten
   naar een Google Sheet is daarom uitgesloten. **Regels toevoegen én verwijderen mag** (18-08-2026,
   overlegd met de bouwer van de rapportage); alleen de kolommen zijn onaantastbaar. PVP schrijft nu op
-  *Komende Autos* (nieuwe auto) en verplaatst bij een bevestigde verkoop een regel van *Lopende Autos*
-  naar *Verkochte Autos*. De koppeling zit in `autoboek/` (draait mee in `/opt/pvp-api/autoboek/`);
+  *Komende Autos* (nieuwe auto) en verplaatst regels in drie richtingen: **Komende → Lopende** (auto
+  afgevinkt als binnen), **Lopende → Verkochte** (verkoop bevestigd) en **Verkochte → Lopende** (per
+  ongeluk bevestigd). Alle drie via dezelfde functie met dezelfde controles; de kolomindeling per paar
+  staat in `autoboek/index.js` bij `RICHTING`. De koppeling zit in `autoboek/` (draait mee in `/opt/pvp-api/autoboek/`);
   instellingen in `/var/pvp/autoboek.env` (chmod 600, **niet committen**), sleutel in
   `/var/pvp/autoboek-sleutel.json`. `AUTOBOEK_FILE_ID` leeg = koppeling uit. Staat sinds 17-08-2026 op
   de **kopie**; overgaan op het echte boek is die ene regel wijzigen plus `systemctl restart pvp-api`.

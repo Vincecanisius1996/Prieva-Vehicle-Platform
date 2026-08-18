@@ -153,7 +153,25 @@ function celsUit(rijXml, gedeeld) {
   return uit;
 }
 
-async function verplaatsNaarVerkocht(v, verkoop) {
+/* Eén verplaatsing, drie richtingen. Zelfde code en dezelfde controles voor alle drie, want dit is
+   het onderdeel dat regels uit het Autoboek weghaalt — daar wil je niet drie varianten van hebben.
+
+   De kolomindeling verschilt per paar:
+   - Lopende  -> Verkochte : positioneel A t/m AV (38 kolommen hebben dezelfde kop), de zeven
+                             stapkolommen van Lopende (AW-BC) vallen weg.
+   - Verkochte -> Lopende  : hetzelfde terug, met de verkoopvelden leeg.
+   - Komende  -> Lopende   : D t/m P zijn gelijk; Komende R (Inkoop EX/EX) hoort in Lopende op T.
+                             A/B/C betekenen op de twee bladen iets anders en gaan dus niet mee. */
+const RICHTING = {
+  verkocht:  { van: 'Lopende Autos',   naar: 'Verkochte Autos', tot: 48, paren: null },
+  terug:     { van: 'Verkochte Autos', naar: 'Lopende Autos',   tot: 48, paren: null, wissen: [3, 17, 20] },
+  binnen:    { van: 'Komende Autos',   naar: 'Lopende Autos',   tot: 56,
+               paren: [[3,3],[4,4],[5,5],[6,6],[7,7],[8,8],[9,9],[10,10],[11,11],[12,12],[13,13],[14,14],[15,15],[17,19]] },
+};
+
+async function verplaats(v, welke, extra) {
+  const R = RICHTING[welke];
+  if (!R) throw new Error('onbekende richting: ' + welke);
   if (!aan()) throw new Error('koppeling staat uit (AUTOBOEK_FILE_ID ontbreekt)');
   if (!plat(v.vin) && !plat(v.kenteken)) throw new Error('deze auto heeft geen VIN en geen kenteken — niet terug te vinden in het Autoboek');
   const ID = process.env.AUTOBOEK_FILE_ID.trim();
@@ -168,10 +186,10 @@ async function verplaatsNaarVerkocht(v, verkoop) {
   const gedeeldE = entries.find(x => x.naam === 'xl/sharedStrings.xml');
   const gedeeld = gedeeldE ? xlsx.tekstUit(bouw.uitpakken(gedeeldE).toString('utf8')) : [];
 
-  const van = pakXml(bouw.bladPad(entries, VAN_BLAD));
-  const naar = pakXml(bouw.bladPad(entries, NAAR_BLAD));
+  const van = pakXml(bouw.bladPad(entries, R.van));
+  const naar = pakXml(bouw.bladPad(entries, R.naar));
 
-  // 1. De auto zoeken in Lopende Autos, op VIN of kenteken.
+  // 1. De auto zoeken op het bronblad, op VIN of kenteken.
   const sleutels = [plat(v.vin), plat(v.kenteken)].filter(Boolean);
   const vanRijen = bouw.rijenUit(van.xml);
   let bron = null;
@@ -184,32 +202,24 @@ async function verplaatsNaarVerkocht(v, verkoop) {
     }
     if (bron) break;
   }
-  if (!bron) throw new Error(`auto staat niet in "${VAN_BLAD}" — niets verplaatst`);
+  if (!bron) throw new Error(`auto staat niet in "${R.van}" — niets verplaatst`);
 
-  // 2. De regel voor Verkochte Autos: A t/m AV overnemen, de drie verkoopvelden invullen.
-  const waarden = [];
-  for (let i = 0; i < KOL_TOT; i++) {
-    const c = bron.cellen[i];
-    waarden.push(!c ? '' : (c.soort === 'getal' ? { v: c.w } : c.w));
-  }
-  if (verkoop.factuurnr) {
-    const n = Number(String(verkoop.factuurnr).replace(/[^0-9.]/g, ''));
-    waarden[K_FACTUUR] = Number.isFinite(n) && String(verkoop.factuurnr).trim() !== '' ? { v: n } : String(verkoop.factuurnr);
-  }
-  const dserie = bouw.serie(verkoop.factuurdatum);
-  if (dserie) waarden[K_VERKOOPDATUM] = { v: dserie };
-  if (verkoop.verkoopprijs !== null && verkoop.verkoopprijs !== undefined && Number.isFinite(Number(verkoop.verkoopprijs))) {
-    waarden[K_VERKOOPPRIJS] = { v: Number(verkoop.verkoopprijs) };
-  }
+  // 2. De nieuwe regel opbouwen.
+  const waarden = new Array(R.tot).fill('');
+  const zet = (i, c) => { if (c) waarden[i] = (c.soort === 'getal' ? { v: c.w } : c.w); };
+  if (R.paren) for (const [a, b] of R.paren) zet(b, bron.cellen[a]);
+  else for (let i = 0; i < R.tot; i++) zet(i, bron.cellen[i]);
+  for (const i of (R.wissen || [])) waarden[i] = '';
+  for (const [i, w] of Object.entries(extra || {})) waarden[Number(i)] = w;
 
-  // 3. Toevoegen op de eerste vrije regel van Verkochte, met de opmaak van de regel erboven.
+  // 3. Toevoegen op de eerste vrije regel, met de opmaak van de regel erboven.
   const naarRijen = bouw.rijenUit(naar.xml);
   const gevuld = naarRijen.filter(r => r.gevuld).map(r => r.nr);
-  if (!gevuld.length) throw new Error(`geen gevulde regels in "${NAAR_BLAD}" — verkeerd blad?`);
+  if (!gevuld.length) throw new Error(`geen gevulde regels in "${R.naar}" — verkeerd blad?`);
   const laatste = Math.max(...gevuld);
   const doelNr = laatste + 1;
   const bestaand = naarRijen.find(r => r.nr === doelNr);
-  if (bestaand && bestaand.gevuld) throw new Error(`rij ${doelNr} in "${NAAR_BLAD}" is niet leeg`);
+  if (bestaand && bestaand.gevuld) throw new Error(`rij ${doelNr} in "${R.naar}" is niet leeg`);
   const stijl = bouw.stijlenUit((naarRijen.find(r => r.nr === laatste) || {}).heel || '');
   if (Object.keys(stijl).length < 10) throw new Error(`kon de opmaak van rij ${laatste} niet aflezen`);
   const nieuweRij = bouw.maakRij(doelNr, waarden, stijl);
@@ -222,11 +232,10 @@ async function verplaatsNaarVerkocht(v, verkoop) {
     else { const pos = naarXml.indexOf(`<row r="${hoger}"`); naarXml = naarXml.slice(0, pos) + nieuweRij + naarXml.slice(pos); }
   }
 
-  // 4. De regel uit Lopende verwijderen, mét renummering.
+  // 4. De regel van het bronblad weghalen, mét renummering.
   const vanXml = bouw.verwijderRij(van.xml, bron.rij);
 
-  // 5. Eén bestand, één upload. Twee uploads zouden een moment opleveren waarop de auto op twee
-  //    tabbladen staat of op geen enkel.
+  // 5. Eén bestand, één upload — anders bestaat er een moment waarop de auto op twee bladen staat.
   bouw.vervang(van.e, Buffer.from(vanXml, 'utf8'));
   bouw.vervang(naar.e, Buffer.from(naarXml, 'utf8'));
   const nieuw = bouw.schrijfZip(entries);
@@ -236,19 +245,18 @@ async function verplaatsNaarVerkocht(v, verkoop) {
   const telling = o => Object.keys(o).filter(n => Object.keys(o[n]).length).length;
   const breedte = o => Math.max(0, ...Object.values(o).map(r => Math.max(-1, ...Object.keys(r).map(Number)) + 1));
   for (const naam of Object.keys(boekVoor)) {
-    const verwacht = naam === NAAR_BLAD ? telling(boekVoor[naam]) + 1
-                   : naam === VAN_BLAD  ? telling(boekVoor[naam]) - 1
+    const verwacht = naam === R.naar ? telling(boekVoor[naam]) + 1
+                   : naam === R.van  ? telling(boekVoor[naam]) - 1
                    : telling(boekVoor[naam]);
     if (telling(boekNa[naam]) !== verwacht) throw new Error(`controle: "${naam}" heeft ${telling(boekNa[naam])} regels, verwacht ${verwacht} — niet geschreven`);
     if (breedte(boekVoor[naam]) !== breedte(boekNa[naam])) throw new Error(`controle: "${naam}" is van breedte veranderd — niet geschreven`);
     if (JSON.stringify(boekVoor[naam][1]) !== JSON.stringify(boekNa[naam][1])) throw new Error(`controle: de koprij van "${naam}" is veranderd — niet geschreven`);
   }
-  // Elke overgebleven regel in Lopende moet inhoudelijk gelijk zijn; alleen het rijnummer schuift op.
   const rijNrs = o => Object.keys(o).map(Number).filter(n => n > 1 && Object.keys(o[n]).length).sort((a, b) => a - b);
-  const verwachtInhoud = rijNrs(boekVoor[VAN_BLAD]).filter(n => n !== bron.rij).map(n => JSON.stringify(boekVoor[VAN_BLAD][n]));
-  const feitelijkInhoud = rijNrs(boekNa[VAN_BLAD]).map(n => JSON.stringify(boekNa[VAN_BLAD][n]));
+  const verwachtInhoud = rijNrs(boekVoor[R.van]).filter(n => n !== bron.rij).map(n => JSON.stringify(boekVoor[R.van][n]));
+  const feitelijkInhoud = rijNrs(boekNa[R.van]).map(n => JSON.stringify(boekNa[R.van][n]));
   if (JSON.stringify(verwachtInhoud) !== JSON.stringify(feitelijkInhoud)) {
-    throw new Error(`controle: de overgebleven regels in "${VAN_BLAD}" zijn niet ongewijzigd — niet geschreven`);
+    throw new Error(`controle: de overgebleven regels in "${R.van}" zijn niet ongewijzigd — niet geschreven`);
   }
 
   // 7. Revisiecontrole vlak vóór het uploaden, en achteraf teruglezen.
@@ -257,10 +265,30 @@ async function verplaatsNaarVerkocht(v, verkoop) {
   await drive.upload(tok, ID, nieuw);
 
   const terug = lees(await drive.download(tok, ID));
-  const staatErNog = Object.keys(terug[VAN_BLAD]).some(n => sleutels.includes(plat(terug[VAN_BLAD][n][K_VIN])) || sleutels.includes(plat(terug[VAN_BLAD][n][K_KENTEKEN])));
-  const staatErNu = Object.keys(terug[NAAR_BLAD]).some(n => sleutels.includes(plat(terug[NAAR_BLAD][n][K_VIN])) || sleutels.includes(plat(terug[NAAR_BLAD][n][K_KENTEKEN])));
-  if (staatErNog || !staatErNu) throw new Error('na het uploaden klopt het niet: de auto staat niet (alleen) bij Verkochte — nakijken');
+  const zoek = blad => Object.keys(terug[blad]).some(n => sleutels.includes(plat(terug[blad][n][K_VIN])) || sleutels.includes(plat(terug[blad][n][K_KENTEKEN])));
+  if (zoek(R.van) || !zoek(R.naar)) throw new Error(`na het uploaden klopt het niet: de auto staat niet (alleen) bij "${R.naar}" — nakijken`);
   return { rij: doelNr, vanRij: bron.rij };
 }
 
-module.exports = { schrijfAuto, verplaatsNaarVerkocht, aan, BLAD };
+// Bevestigde verkoop: Lopende -> Verkochte, met factuurnummer, datum en prijs erbij.
+async function verplaatsNaarVerkocht(v, verkoop) {
+  const extra = {};
+  if (verkoop.factuurnr) {
+    const n = Number(String(verkoop.factuurnr).replace(/[^0-9.]/g, ''));
+    extra[K_FACTUUR] = Number.isFinite(n) && String(verkoop.factuurnr).trim() !== '' ? { v: n } : String(verkoop.factuurnr);
+  }
+  const d = bouw.serie(verkoop.factuurdatum);
+  if (d) extra[K_VERKOOPDATUM] = { v: d };
+  if (verkoop.verkoopprijs !== null && verkoop.verkoopprijs !== undefined && Number.isFinite(Number(verkoop.verkoopprijs))) {
+    extra[K_VERKOOPPRIJS] = { v: Number(verkoop.verkoopprijs) };
+  }
+  return verplaats(v, 'verkocht', extra);
+}
+
+// Per ongeluk bevestigd: Verkochte -> Lopende, met de verkoopvelden leeg.
+async function verplaatsNaarLopend(v) { return verplaats(v, 'terug'); }
+
+// Auto binnengekomen: Komende -> Lopende.
+async function verplaatsBinnengekomen(v) { return verplaats(v, 'binnen'); }
+
+module.exports = { schrijfAuto, verplaatsNaarVerkocht, verplaatsNaarLopend, verplaatsBinnengekomen, aan, BLAD };

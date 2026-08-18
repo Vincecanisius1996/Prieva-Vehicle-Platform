@@ -305,6 +305,7 @@
     <button data-view="vandaag" class="active">Vandaag</button>
     <button data-view="komende">Komende</button>
     <button data-view="lopende">Lopende</button>
+    <button data-view="verkocht">Verkocht</button>
     <button data-view="logboek" id="logboekBtn" style="display:none"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h12a2 2 0 012 2v14H7a2 2 0 01-2-2z"/><path d="M5 16h12"/><path d="M9 8h6"/></svg> Logboek</button>
   </nav>
   <div class="top-right">
@@ -742,7 +743,17 @@ function arrive(id,checked){const v=V.find(x=>x.id===id); if(!v)return;
   if(v.status==='lopende'){ v.arrivedAt=Date.now(); logActivity('Auto binnengekomen','',v.id); }
   else { v.arrivedAt=null; }
   pushUndo(`${v.merk} ${v.model} ${v.status==='lopende'?'op binnen gezet':'teruggezet naar komende'}`, ()=>{v.status=ps; v.klaar=pk; v.route=pr; v.arrivedAt=pa;});
-  rerender();}
+  rerender();
+  // Binnengekomen? Dan verhuist de regel in het Autoboek van Komende naar Lopende. Apart van het
+  // opslaan, zodat de klik meteen doorgaat; het resultaat komt bij de auto te staan.
+  if(v.status==='lopende'&&apiOk){
+    fetch("/api/binnengekomen",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})})
+      .then(r=>r.ok?r.json():null).then(j=>{
+        if(!j)return; const ab=j.autoboek||{};
+        if(ab.status==='fout'){ showToast("Autoboek niet bijgewerkt — zie de auto",false); }
+        loadVehicles().then(()=>{ if(state.view!=='veh:'+id)rerenderCurrent(); });
+      }).catch(()=>{});
+  }}
 function assign(id,val){const v=V.find(x=>x.id===id); if(!v)return;
   const po=v.owner; v.owner=val||null;
   pushUndo(`${v.merk} ${v.model} toegewezen aan ${v.owner||'niemand'}`, ()=>{v.owner=po;});
@@ -862,6 +873,53 @@ function backToKomend(id){const v=V.find(x=>x.id===id); if(!v)return; const ps=v
   v.status='komende'; v.klaar=0; v.route=null; v.arrivedAt=null;
   pushUndo(`${v.merk} ${v.model} teruggezet naar Komend`, ()=>{v.status=ps; v.klaar=pk; v.route=pr; v.arrivedAt=pa;});
   go('komende'); }
+/* ===== Verkocht =====
+   Het sluitstuk van de levensloop: komend → lopend → verkocht. Een auto komt hier pas nadat een
+   beheerder de verkoop heeft bevestigd. Terugzetten kan, want per ongeluk bevestigen moet te
+   herstellen zijn — maar alleen door een beheerder, en met de regel in het Autoboek erbij. */
+function renderVerkocht(){
+  const alle=V.filter(v=>v.status==='verkocht');
+  const lijst=alle.filter(v=>match(v)).sort((a,b)=>(b.verkochtTs||0)-(a.verkochtTs||0));
+  const rij=v=>`<tr>
+    <td><div class="veh-cell" onclick="openVeh('${v.id}')"><div class="thumb">${carIcon()}</div><div>
+      <div class="nm">${v.merk||''} ${v.model||''}</div>
+      <div class="id">${v.kenteken&&v.kenteken!=='—'?v.kenteken:v.vin}</div></div></div></td>
+    <td>${v.verkoopFactuurnr||'—'}</td>
+    <td>${v.verkoopFactuurdatum||'—'}</td>
+    <td>${euro(v.verkoopprijs)}</td>
+    <td><span class="note">${v.verkochtDoor?`bevestigd door ${v.verkochtDoor}`:''}</span></td>
+  </tr>`;
+  app.innerHTML=`
+    <h1 class="page-title">Verkochte auto's</h1>
+    <p class="page-sub">Auto's waarvan de verkoop is bevestigd. De regel staat in het Autoboek bij <b>Verkochte Autos</b>.
+      Per ongeluk bevestigd? Open de auto — een beheerder kan hem terugzetten naar Lopende.</p>
+    ${lijst.length?`<div class="grp"><div class="grp-head">
+        <span class="gt">Verkocht</span><span class="gcount">${lijst.length}</span>
+      </div><div style="padding:0 4px"><table><thead><tr>
+        <th>Voertuig</th><th style="width:110px">Factuur</th><th style="width:110px">Datum</th>
+        <th style="width:120px">Verkoopprijs</th><th>&nbsp;</th>
+      </tr></thead><tbody>${lijst.map(rij).join('')}</tbody></table></div></div>`
+      :`<div class="empty"><div class="eb">${ico("inbox",26)}</div>${state.q?`Geen verkochte auto's die op “${state.q}” passen.`:`Nog geen verkochte auto's.`}</div>`}`;
+}
+async function zetTerugNaarLopend(id,knop){
+  const v=V.find(x=>x.id===id); if(!v||!apiOk)return;
+  if(!window.confirm(`${v.merk} ${v.model} terugzetten naar Lopende?\n\nDe verkoopgegevens worden gewist en de regel gaat in het Autoboek terug van Verkochte naar Lopende.`))return;
+  knop.disabled=true; knop.textContent="Bezig…";
+  try{
+    const r=await fetch("/api/verkoop-terug",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ const f=document.getElementById('vk-fout'); if(f)f.textContent=j.error||"Terugzetten mislukt.";
+      knop.disabled=false; knop.textContent="Terugzetten naar Lopende"; return; }
+    await loadVehicles(); await loadState();
+    logActivity('Verkoop teruggedraaid',`${v.merk} ${v.model}`,id);
+    scheduleSave();
+    const ab=j.autoboek||{};
+    showToast(ab.status==='ok'?"Teruggezet naar Lopende — regel verplaatst in het Autoboek ✓"
+             :ab.status==='fout'?"Teruggezet — Autoboek NIET bijgewerkt, zie de auto"
+             :"Teruggezet naar Lopende",false);
+    go('lopende');
+  }catch(_){ const f=document.getElementById('vk-fout'); if(f)f.textContent="Geen verbinding met de server."; knop.disabled=false; knop.textContent="Terugzetten naar Lopende"; }
+}
 /* ===== Verkoop =====
    Een melding van buiten (straks Mobilox) zet de auto op 'gemeld verkocht'. Bevestigen is met opzet
    een aparte handeling van een beheerder: pas dan verhuist de regel in het Autoboek, en dat is niet
@@ -881,6 +939,9 @@ function verkoopCard(v){
        onclick="bevestigVerkoop('${v.id}',this)">Verkoop bevestigen</button>
       <div class="muted" style="font-size:12px;margin-top:8px">Hiermee gaat de auto op verkocht en verhuist de regel in het Autoboek van Lopende naar Verkochte.</div>`:''}
     ${!bevestigd&&!isAdmin()?`<div class="muted" style="font-size:12px;margin-top:8px">Alleen een beheerder kan een verkoop bevestigen.</div>`:''}
+    ${bevestigd&&isAdmin()?`<button class="btn btn-ghost btn-sm" style="margin-top:12px;width:100%;justify-content:center"
+       onclick="zetTerugNaarLopend('${v.id}',this)">Terugzetten naar Lopende</button>
+      <div class="muted" style="font-size:12px;margin-top:8px">Voor als de verkoop per ongeluk is bevestigd. De regel gaat in het Autoboek terug van Verkochte naar Lopende.</div>`:''}
     <div id="vk-fout" class="fout"></div>
   </div></div>`;
 }
@@ -1532,12 +1593,13 @@ function rerender(){
   if(state.view==="vandaag")renderVandaag();
   else if(state.view==="komende")renderKomende();
   else if(state.view==="lopende")renderLopende();
+  else if(state.view==="verkocht")renderVerkocht();
   else if(state.view==="logboek")renderLog();
   else if(state.view.startsWith("veh:"))openVeh(state.view.split(":")[1]);
   updateUndoUI(); syncHistory();
 }
 function setNav(view){document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===view));}
-function go(view){state.view=view; if(["vandaag","komende","lopende","logboek"].includes(view))setNav(view); rerender(); window.scrollTo(0,0);}
+function go(view){state.view=view; if(["vandaag","komende","lopende","verkocht","logboek"].includes(view))setNav(view); rerender(); window.scrollTo(0,0);}
 document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>go(b.dataset.view));
 document.getElementById("search").addEventListener("input",e=>{state.q=e.target.value; if(state.view.startsWith("veh:"))go("komende"); else rerender(); document.getElementById("search").focus();});
 /* ===== In-app navigatie: browser terug/vooruit blijft binnen PVP ===== */

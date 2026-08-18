@@ -179,6 +179,27 @@ async function verkoopNaarAutoboek(id) {
   }
 }
 
+// Dezelfde opzet als hierboven, voor de andere twee richtingen.
+async function autoboekVerplaats(id, wat) {
+  const bewaar = async (status, rij, fout) => {
+    await pool.query('UPDATE vehicles SET autoboek_status=$2, autoboek_rij=$3, autoboek_ts=$4, autoboek_fout=$5 WHERE id=$1',
+      [id, status, rij, Date.now(), fout]);
+    return { status, rij: rij || null, fout: fout || null };
+  };
+  if (!autoboek || !autoboek.aan()) return { status: 'uit', rij: null, fout: null };
+  try {
+    const r = await pool.query('SELECT vin,kenteken FROM vehicles WHERE id=$1', [id]);
+    if (!r.rowCount) return { status: 'fout', rij: null, fout: 'auto niet gevonden' };
+    const v = r.rows[0];
+    const fn = wat === 'terug' ? autoboek.verplaatsNaarLopend : autoboek.verplaatsBinnengekomen;
+    const uit = await fn({ vin: v.vin, kenteken: v.kenteken });
+    return await bewaar('ok', uit.rij, null);
+  } catch (e) {
+    console.error('autoboek ' + wat + ':', id, e.message);
+    return await bewaar('fout', null, String(e.message).slice(0, 400));
+  }
+}
+
 // De frontend stuurt telkens de complete state op; dit is één transactie.
 // Voertuigen die niet in de payload zitten blijven staan (nodig voor de latere Autoboek-sync).
 async function putState(b) {
@@ -302,7 +323,9 @@ const server = http.createServer(async (req, res) => {
       if (!id) return sendJson(res, 400, { error: 'geen vin of kenteken' });
       const bestaat = await pool.query('SELECT id FROM vehicles WHERE id=$1', [id]);
       if (bestaat.rowCount) return sendJson(res, 409, { error: 'bestaat al', id });
-      const getal = x => { const n = Number(String(x === undefined || x === null ? '' : x).replace(/[^0-9.-]/g, '')); return Number.isFinite(n) && String(x).trim() !== '' ? n : null; };
+      // Dezelfde omzetting als bij de verkoopmelding. Stond hier een eigen variant die "12.500,00" tot
+      // 12,5 maakte — een factor duizend te laag, en dat merk je pas als het in het Autoboek staat.
+      const getal = x => { const n = bedrag(x); return n === null || Number.isNaN(n) ? null : n; };
       // Achteraan in de weergavevolgorde; nieuwe auto's horen onderaan de lijst.
       const so = await pool.query('SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM vehicles');
       await pool.query(
@@ -389,6 +412,34 @@ const server = http.createServer(async (req, res) => {
       await spoor(v.id, 'gemeld');
       console.log('verkoop gemeld:', v.id, 'factuur', factuurnr);
       return sendJson(res, 200, { ok: true, id: v.id, status: 'gemeld verkocht' });
+    }
+
+    // Per ongeluk bevestigd: terug naar lopende, en de regel gaat in het Autoboek terug.
+    if (url === '/api/verkoop-terug' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'admin') return sendJson(res, 403, { error: 'alleen een beheerder kan dit terugzetten' });
+      const b = await readBody(req) || {};
+      if (!b.id) return sendJson(res, 400, { error: 'missing' });
+      const r = await pool.query('SELECT id,status FROM vehicles WHERE id=$1', [b.id]);
+      if (!r.rowCount) return sendJson(res, 404, { error: 'onbekende auto' });
+      if (r.rows[0].status !== 'verkocht') return sendJson(res, 409, { error: 'deze auto staat niet op verkocht', status: r.rows[0].status });
+      await pool.query(`UPDATE vehicles SET status='lopende', verkoop_factuurnr=NULL, verkoop_factuurdatum=NULL,
+        verkoopprijs=NULL, verkocht_gemeld_ts=NULL, verkocht_bevestigd_ts=NULL, verkocht_bevestigd_door=NULL,
+        updated_at=now() WHERE id=$1`, [b.id]);
+      console.log('verkoop teruggedraaid:', b.id, 'door', u.u);
+      return sendJson(res, 200, { ok: true, id: b.id, status: 'lopende', autoboek: await autoboekVerplaats(b.id, 'terug') });
+    }
+
+    // Auto binnengekomen: de regel verhuist in het Autoboek van Komende naar Lopende. De status zelf
+    // loopt via PUT /api/state; dit endpoint doet alleen het Autoboek, zodat het opslaan snel blijft.
+    if (url === '/api/binnengekomen' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      if (!b.id) return sendJson(res, 400, { error: 'missing' });
+      const r = await pool.query('SELECT id FROM vehicles WHERE id=$1', [b.id]);
+      if (!r.rowCount) return sendJson(res, 404, { error: 'onbekende auto' });
+      return sendJson(res, 200, { autoboek: await autoboekVerplaats(b.id, 'binnen') });
     }
 
     // Bevestigen door een beheerder: status 'verkocht' én de regel in het Autoboek verplaatsen.
