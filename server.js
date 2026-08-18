@@ -526,7 +526,14 @@ const server = http.createServer(async (req, res) => {
       if (!Array.isArray(b.docs) || !b.docs.length) return sendJson(res, 400, { error: 'geen documenten' });
       try {
         const r = await uitlezen.lees(b.docs);
-        console.log('uitlezen:', u.u, r.gebruikt.length, 'stuk(ken),', r.verbruik.in, 'in /', r.verbruik.uit, 'uit tokens');
+        // Namen erbij, niet alleen een aantal: bij een tegenvallende uitlezing is de eerste vraag
+        // altijd "welke stukken kreeg het model eigenlijk te zien?", en die was zo niet te beantwoorden.
+        const gevuld = Object.entries(r.velden || {}).filter(([, w]) => w !== null && w !== undefined && w !== '').map(([k]) => k);
+        console.log('uitlezen:', u.u, r.verbruik.in, 'in /', r.verbruik.uit, 'uit tokens'
+          + (r.pogingen > 1 ? ' | ' + r.pogingen + ' pogingen' : '')
+          + ' | gebruikt: ' + r.gebruikt.join(', ')
+          + ' | overgeslagen: ' + (r.overgeslagen.join(', ') || '-')
+          + ' | gevuld: ' + (gevuld.join(',') || 'NIETS'));
         return sendJson(res, 200, r);
       } catch (e) {
         console.error('uitlezen:', e.message);

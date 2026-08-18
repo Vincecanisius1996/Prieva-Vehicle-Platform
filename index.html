@@ -1297,7 +1297,11 @@ async function autoUitlezen(){
   try{
     const r=await fetch("/api/uitlezen",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({docs:nieuweDocs.map(d=>({name:d.name,dataUrl:d.dataUrl}))})});
-    const j=await r.json();
+    // Een te grote upload komt terug als 413 van nginx, en die geeft geen json. Zonder deze controle
+    // zegt de app "geen verbinding met de server", en dan zoek je op de verkeerde plek.
+    if(r.status===413){vak.innerHTML=`<div class="fout">De stukken zijn samen te groot om in één keer te lezen. Laat een paar veilingfoto's weg — de gegevens staan toch op de screenshot en in het rapport.</div>`; return;}
+    const j=await r.json().catch(()=>null);
+    if(!j){vak.innerHTML=`<div class="fout">Onverwacht antwoord van de server.</div>`; return;}
     if(j.uit||j.fout){vak.innerHTML=`<div class="fout">${j.fout||'automatisch uitlezen staat uit'}</div>`; return;}
     const gevuld=[], leeg=[];
     for(const [veld,id] of UITLEES_VELDEN){

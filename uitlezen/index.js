@@ -144,7 +144,7 @@ async function lees(docs) {
   if (!gebruikt.length) throw new Error('geen bruikbare documenten (alleen pdf en afbeeldingen)');
   inhoud.push({ type: 'text', text: OPDRACHT });
 
-  const r = await fetch(API(), {
+  const doeAanroep = async () => fetch(API(), {
     method: 'POST',
     headers: {
       'x-api-key': process.env.ANTHROPIC_API_KEY.trim(),
@@ -161,11 +161,24 @@ async function lees(docs) {
       messages: [{ role: 'user', content: inhoud }],
     }),
   });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(netteFout(r.status, j));
-
-  const gereedschap = (j.content || []).find(c => c.type === 'tool_use');
-  if (!gereedschap || !gereedschap.input) throw new Error('het model gaf geen bruikbaar antwoord terug');
+  // Eén keer opnieuw proberen als er niets uitkwam. Op precies dezelfde stukken gaf dit model de ene
+  // keer negen velden en de andere keer nul (17-08: 845 tokens antwoord tegenover 173). Dat is geen
+  // instelling die fout staat maar wisselvalligheid, en die vang je alleen op door het te merken en
+  // over te doen. Twee lege pogingen achter elkaar betekent: er staat echt niets bruikbaar in.
+  let j = null, gereedschap = null, pogingen = 0;
+  for (let poging = 1; poging <= 2; poging++) {
+    pogingen = poging;
+    const r = await doeAanroep();
+    j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(netteFout(r.status, j));
+    gereedschap = (j.content || []).find(c => c.type === 'tool_use');
+    if (!gereedschap || !gereedschap.input) throw new Error('het model gaf geen bruikbaar antwoord terug');
+    const iets = Object.entries(gereedschap.input)
+      .filter(([k]) => k !== 'bronnen' && k !== 'onzeker')
+      .some(([, w]) => w !== null && w !== undefined && w !== '');
+    if (iets) break;
+    if (poging === 1) console.error('uitlezen: eerste poging leverde niets op, opnieuw');
+  }
   const uit = gereedschap.input;
   const { bronnen = {}, onzeker = [], ...velden } = uit;
   if (velden.merk) velden.merk = merkNotatie(velden.merk);
@@ -173,6 +186,7 @@ async function lees(docs) {
   return {
     velden, bronnen, onzeker: Array.isArray(onzeker) ? onzeker : [],
     gebruikt, overgeslagen,
+    pogingen,
     verbruik: { in: (j.usage || {}).input_tokens || 0, uit: (j.usage || {}).output_tokens || 0, model: j.model || MODEL() },
   };
 }
