@@ -1201,7 +1201,7 @@ function openAutoModal(){
       <div class="full">
         <div class="drop" id="na-drop" onclick="document.getElementById('na-files').click()">
           Koopovereenkomst, proforma, screenshots — klik of sleep hierheen.<br>
-          <span style="font-size:11px">Ze worden bij de auto bewaard. Automatisch uitlezen komt later; vul de velden nu zelf in.</span>
+          <span style="font-size:11px">Ze worden bij de auto bewaard en meteen uitgelezen; kijk daarna na wat er is ingevuld.</span>
         </div>
         <input type="file" id="na-files" multiple accept="application/pdf,image/*" style="display:none" onchange="autoDocsKiezen(this.files); this.value='';">
         <div class="doclist" id="na-doclist"></div>
@@ -1210,7 +1210,7 @@ function openAutoModal(){
       <div class="fsec">Identificatie</div>
       <div class="fgrid">
         ${veld('na-vin','VIN / chassisnummer','oninput="autoImportRaden()"')}
-        ${veld('na-kenteken','Kenteken','placeholder="nog geen NL-kenteken? leeg laten" oninput="autoImportRaden()"')}
+        ${veld('na-kenteken','Kenteken','oninput="autoImportRaden()"')}
         <div><label>Traject</label><label style="display:flex;align-items:center;gap:7px;font-weight:500;padding-top:6px">
           <input type="checkbox" id="na-import"> Import (volledig traject)</label></div>
       </div>
@@ -1222,16 +1222,16 @@ function openAutoModal(){
         ${veld('na-kleur','Kleur')}
         <div><label>Brandstof</label>${kies('na-brandstof',BRANDSTOFFEN)}</div>
         <div><label>Transmissie</label>${kies('na-transm',TRANSMISSIES)}</div>
-        ${veld('na-reg','1e toelating','placeholder="dd-mm-jjjj"')}
+        ${veld('na-reg','1e toelating (dd-mm-jjjj)')}
         ${veld('na-km','Km-stand')}
       </div>
       <div class="fsec">Inkoop</div>
       <div class="fgrid">
-        ${veld('na-lev','Leverancier','placeholder="RJ, TX, COS, inruil …"')}
-        ${veld('na-inkoopdatum','Datum inkoop','placeholder="dd-mm-jjjj"')}
+        ${veld('na-lev','Leverancier')}
+        ${veld('na-inkoopdatum','Datum inkoop (dd-mm-jjjj)')}
         ${veld('na-factuurnr','Factuurnummer')}
         ${veld('na-inkoopprijs','Inkoopprijs (€, excl.)')}
-        ${veld('na-batch','Transportdatum','placeholder="dd-mm — leeg als nog niet gepland"')}
+        ${veld('na-batch','Transportdatum (dd-mm)')}
         <div class="full">${veld('na-note','Notitie')}</div>
       </div>
       <div id="na-fout" class="fout full"></div>
