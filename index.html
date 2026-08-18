@@ -725,6 +725,11 @@ function openVeh(id){
           <div class="spec"><span class="k">Leverancier</span><span class="v">${v.lev||'—'}</span></div>
           <div class="spec" style="border-bottom:0"><span class="k">Transport / status</span><span class="v" style="max-width:160px">${v.note||'—'}</span></div>
         </div></div>
+        ${v.status==='lopende'?`<div class="card"><h3>Verkoop</h3><div class="card-body">
+          <div class="muted" style="font-size:12.5px">Deze auto is nog niet verkocht gemeld.</div>
+          <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;justify-content:center"
+            onclick="openVerkochtModal('${v.id}')">Verkocht melden</button>
+        </div></div>`:''}
         ${verkoopCard(v)}
         ${autoboekCard(v)}
         ${docCard(v)}
@@ -919,6 +924,51 @@ async function zetTerugNaarLopend(id,knop){
              :"Teruggezet naar Lopende",false);
     go('lopende');
   }catch(_){ const f=document.getElementById('vk-fout'); if(f)f.textContent="Geen verbinding met de server."; knop.disabled=false; knop.textContent="Terugzetten naar Lopende"; }
+}
+/* Verkocht melden vanuit de app. Zelfde endpoint als de koppeling van buiten gebruikt, zodat er maar
+   één set regels is: dezelfde controle op dubbele meldingen, hetzelfde spoor in verkoop_meldingen. */
+function openVerkochtModal(id){
+  const v=V.find(x=>x.id===id); if(!v)return;
+  let ov=document.getElementById('vkModal');
+  if(!ov){ov=document.createElement('div'); ov.id='vkModal'; ov.className='modal-ov';
+    ov.addEventListener('click',e=>{if(e.target===ov)sluitVerkochtModal();}); document.body.appendChild(ov);}
+  const d=new Date(), vandaag=`${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
+  ov.innerHTML=`<div class="modal">
+    <h3>Verkocht melden <button class="mclose" onclick="sluitVerkochtModal()" title="Sluiten">×</button></h3>
+    <div class="mb">
+      <div class="muted" style="font-size:12.5px">${v.merk||''} ${v.model||''} · ${v.kenteken&&v.kenteken!=='—'?v.kenteken:v.vin}</div>
+      <div><label>Factuurnummer</label><input type="text" id="vk-nr" placeholder="324" autocomplete="off"></div>
+      <div><label>Factuurdatum</label><input type="text" id="vk-datum" value="${vandaag}"></div>
+      <div><label>Verkoopprijs (€)</label><input type="text" id="vk-prijs" placeholder="15.750,00"></div>
+      <div class="muted" style="font-size:12px">De auto komt op <b>gemeld verkocht</b> te staan. Een beheerder bevestigt daarna; pas dan verhuist de regel in het Autoboek.</div>
+      <div id="vk-mfout" class="fout"></div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-ghost" onclick="sluitVerkochtModal()">Annuleren</button>
+      <button class="btn btn-primary" id="vk-ok" onclick="meldVerkocht('${v.id}')">Melden »</button>
+    </div>
+  </div>`;
+  ov.classList.add('show');
+  setTimeout(()=>{const el=document.getElementById('vk-nr'); if(el)el.focus();},40);
+}
+function sluitVerkochtModal(){const ov=document.getElementById('vkModal'); if(ov)ov.classList.remove('show');}
+async function meldVerkocht(id){
+  const w=x=>{const e=document.getElementById(x); return e?e.value.trim():"";};
+  const fout=document.getElementById('vk-mfout');
+  const nr=w('vk-nr');
+  if(!nr){fout.textContent="Vul het factuurnummer in."; return;}
+  if(!apiOk){fout.textContent="Geen verbinding met de server."; return;}
+  const knop=document.getElementById('vk-ok'); knop.disabled=true; knop.textContent="Bezig…"; fout.textContent="";
+  try{
+    const r=await fetch("/api/verkocht",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({voertuig:id,factuurnummer:nr,factuurdatum:normDatum(w('vk-datum')),verkoopprijs:w('vk-prijs')})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){fout.textContent=j.error||"Melden mislukt."; knop.disabled=false; knop.textContent="Melden »"; return;}
+    await loadVehicles(); await loadState();
+    sluitVerkochtModal();
+    showToast(j.ongewijzigd?"Stond al gemeld op dit factuurnummer":"Gemeld als verkocht — een beheerder bevestigt",false);
+    openVeh(id);
+  }catch(_){ fout.textContent="Geen verbinding met de server."; knop.disabled=false; knop.textContent="Melden »"; }
 }
 /* ===== Verkoop =====
    Een melding van buiten (straks Mobilox) zet de auto op 'gemeld verkocht'. Bevestigen is met opzet

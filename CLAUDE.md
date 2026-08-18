@@ -72,9 +72,10 @@ uit), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
 `/uploads/*` (auth).
 Auth = HMAC-ondertekende cookie (stateless).
 
-**Uitzondering: `/api/verkocht`** gebruikt géén cookie maar een **bearer-token** uit
-`/var/pvp/verkoop.env` (`PVP_VERKOOP_TOKEN`, chmod 600, **niet committen**). Bedoeld voor een ander
-systeem (straks Mobilox). Zonder token ingesteld geeft het endpoint **503** — uit staan is nooit
+**Uitzondering: `/api/verkocht`** neemt twee soorten toegang aan: een **bearer-token** uit
+`/var/pvp/verkoop.env` (`PVP_VERKOOP_TOKEN`, chmod 600, **niet committen**) voor een ander systeem
+(straks Mobilox), óf een gewone sessie van `team`/`admin` — dat is de knop **Verkocht melden** in de
+app. Bewust hetzelfde endpoint, zodat er maar één set regels is rond idempotentie en vastleggen. Zonder token ingesteld geeft het endpoint **503** — uit staan is nooit
 hetzelfde als vrije toegang. Het zet een auto op `gemeld verkocht`; een beheerder bevestigt daarna in
 de app, en pas dán verhuist de regel in het Autoboek. Elke melding, ook een mislukte, komt in de tabel
 `verkoop_meldingen`.

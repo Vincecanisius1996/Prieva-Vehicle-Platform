@@ -357,14 +357,21 @@ const server = http.createServer(async (req, res) => {
 
     // Melding van buiten: bearer-token, geen sessiecookie. Token uit /var/pvp/verkoop.env.
     if (url === '/api/verkocht' && method === 'POST') {
-      const token = (process.env.PVP_VERKOOP_TOKEN || '').trim();
-      // Geen token ingesteld = koppeling uit. Nooit "geen token dus vrije toegang".
-      if (!token) return sendJson(res, 503, { error: 'verkoopkoppeling staat uit' });
-      const kop = String(req.headers.authorization || '');
-      const gegeven = kop.startsWith('Bearer ') ? kop.slice(7).trim() : '';
-      const a = Buffer.from(gegeven), b = Buffer.from(token);
-      // Lengte eerst vergelijken: timingSafeEqual gooit bij ongelijke lengte.
-      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return sendJson(res, 401, { error: 'auth' });
+      // Twee manieren binnen: een ander systeem met een bearer-token, of een ingelogde collega in de
+      // app. Bewust hetzelfde endpoint — dan gelden voor beide dezelfde regels rond idempotentie,
+      // opzoeken en vastleggen, en kan er geen tweede variant ontstaan die net iets anders doet.
+      const sessie = userFromReq(req);
+      const viaApp = sessie && (sessie.r === 'team' || sessie.r === 'admin');
+      if (!viaApp) {
+        const token = (process.env.PVP_VERKOOP_TOKEN || '').trim();
+        // Geen token ingesteld = de koppeling van buiten staat uit. Nooit "geen token dus vrije toegang".
+        if (!token) return sendJson(res, 503, { error: 'verkoopkoppeling staat uit' });
+        const kop = String(req.headers.authorization || '');
+        const gegeven = kop.startsWith('Bearer ') ? kop.slice(7).trim() : '';
+        const a = Buffer.from(gegeven), b = Buffer.from(token);
+        // Lengte eerst vergelijken: timingSafeEqual gooit bij ongelijke lengte.
+        if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return sendJson(res, 401, { error: 'auth' });
+      }
 
       const body = await readBody(req) || {};
       const tekst = x => { const t = (x === undefined || x === null) ? '' : String(x).trim(); return t === '' ? null : t; };
@@ -376,7 +383,7 @@ const server = http.createServer(async (req, res) => {
 
       const spoor = (vid, uitkomst) => pool.query(
         'INSERT INTO verkoop_meldingen (ts,vehicle_id,bron,factuurnr,factuurdatum,verkoopprijs,uitkomst,payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-        [Date.now(), vid, tekst(body.bron) || 'onbekend', factuurnr, factuurdatum, Number.isFinite(prijs) ? prijs : null, uitkomst, JSON.stringify(body)]
+        [Date.now(), vid, tekst(body.bron) || (viaApp ? 'app: ' + (sessie.u || '?') : 'onbekend'), factuurnr, factuurdatum, Number.isFinite(prijs) ? prijs : null, uitkomst, JSON.stringify(body)]
       ).catch(e => console.error('verkoopmelding niet gelogd:', e.message));
 
       if (!sleutel || !factuurnr) { await spoor(null, 'ongeldig'); return sendJson(res, 400, { error: 'voertuig en factuurnummer zijn verplicht' }); }
