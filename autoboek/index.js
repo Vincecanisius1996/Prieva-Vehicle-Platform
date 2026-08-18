@@ -10,7 +10,7 @@
 // De kolomstructuur mag daarom nooit veranderen. Zie LEESMIJ.md en PVP-autoboek-koppeling-voorstel.md.
 const drive = require('./drive.js');
 const bouw = require('./xlsx-append.js');
-const { voegToe } = bouw;
+const { voegToe, vulAan } = bouw;
 const xlsx = require('./xlsx-lees.js');
 const { lees } = xlsx;
 const fs = require('fs');
@@ -71,6 +71,35 @@ function staatErAl(boek, v) {
 }
 
 /**
+ * Vult de lege cellen van een bestaande regel aan uit PVP. Zelfde voorzorgen als bij het toevoegen:
+ * botsingscontrole vlak vóór het uploaden, en achteraf teruglezen. Verandert er niets, dan wordt er
+ * ook niet geüpload — een lege wijziging kost alleen maar een revisie waar een ander over struikelt.
+ * @returns {Promise<{rij:number, aloud:true, aangevuld:string[]}>}
+ */
+async function vulAanBestaande(tok, ID, voor, buf, rij, v) {
+  const map = fs.mkdtempSync(path.join(os.tmpdir(), 'pvp-autoboek-'));
+  const inPad = path.join(map, 'in.xlsx'), uitPad = path.join(map, 'uit.xlsx');
+  try {
+    fs.writeFileSync(inPad, buf);
+    const { kolommen } = vulAan(inPad, uitPad, BLAD, rij, uitVoertuig(v));
+    if (!kolommen.length) return { rij, aloud: true, aangevuld: [] };
+
+    const nu = await drive.meta(tok, ID);
+    if (nu.headRevisionId !== voor.headRevisionId) {
+      throw new Error('het Autoboek is intussen door iemand anders gewijzigd — niet geschreven, probeer het zo opnieuw');
+    }
+    await drive.upload(tok, ID, fs.readFileSync(uitPad));
+
+    const na = lees(await drive.download(tok, ID));
+    const kopVoor = lees(buf)[BLAD][1], kopNa = na[BLAD] && na[BLAD][1];
+    if (JSON.stringify(kopVoor) !== JSON.stringify(kopNa)) throw new Error('de koprij van het Autoboek is veranderd — teruggedraaid nakijken!');
+    return { rij, aloud: true, aangevuld: kolommen };
+  } finally {
+    try { fs.rmSync(map, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
+/**
  * Schrijft één auto bij. Gooit een Error met een leesbare tekst als het niet lukt; die tekst gaat
  * naar de database en naar het scherm, zodat een mislukking zichtbaar is in plaats van stil.
  * @returns {Promise<{rij:number, aloud?:boolean}>}
@@ -91,8 +120,12 @@ async function schrijfAuto(v) {
 
   const boek = lees(buf);
   if (!boek[BLAD]) throw new Error(`tabblad "${BLAD}" niet gevonden`);
+  // Staat de regel er al, dan vullen we aan wat daar leeg is in plaats van niets te doen. Dat scheelde
+  // gegevens: wie een auto in PVP weggooit en opnieuw aanmaakt — bijvoorbeeld omdat het uitlezen de
+  // eerste keer weinig vond — hield de oude, magere regel, want PVP verwijdert niets uit het Autoboek.
+  // Ingevulde cellen blijven staan; die kunnen handwerk van kantoor zijn.
   const al = staatErAl(boek, v);
-  if (al) return { rij: al.rij, aloud: true };        // niets doen: staat er al
+  if (al) return await vulAanBestaande(tok, ID, voor, buf, al.rij, v);
 
   const map = fs.mkdtempSync(path.join(os.tmpdir(), 'pvp-autoboek-'));
   const inPad = path.join(map, 'in.xlsx'), uitPad = path.join(map, 'uit.xlsx');

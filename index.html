@@ -937,9 +937,9 @@ function openVerkochtModal(id){
     <h3>Verkocht melden <button class="mclose" onclick="sluitVerkochtModal()" title="Sluiten">×</button></h3>
     <div class="mb">
       <div class="muted" style="font-size:12.5px">${v.merk||''} ${v.model||''} · ${v.kenteken&&v.kenteken!=='—'?v.kenteken:v.vin}</div>
-      <div><label>Factuurnummer</label><input type="text" id="vk-nr" placeholder="324" autocomplete="off"></div>
+      <div><label>Factuurnummer</label><input type="text" id="vk-nr" autocomplete="off"></div>
       <div><label>Factuurdatum</label><input type="text" id="vk-datum" value="${vandaag}"></div>
-      <div><label>Verkoopprijs (€)</label><input type="text" id="vk-prijs" placeholder="15.750,00"></div>
+      <div><label>Verkoopprijs (€)</label><input type="text" id="vk-prijs"></div>
       <div class="muted" style="font-size:12px">De auto komt op <b>gemeld verkocht</b> te staan. Een beheerder bevestigt daarna; pas dan verhuist de regel in het Autoboek.</div>
       <div id="vk-mfout" class="fout"></div>
     </div>
@@ -1209,30 +1209,30 @@ function openAutoModal(){
       </div>
       <div class="fsec">Identificatie</div>
       <div class="fgrid">
-        ${veld('na-vin','VIN / chassisnummer','placeholder="VR7BAHNSBME016540" oninput="autoImportRaden()"')}
+        ${veld('na-vin','VIN / chassisnummer','oninput="autoImportRaden()"')}
         ${veld('na-kenteken','Kenteken','placeholder="nog geen NL-kenteken? leeg laten" oninput="autoImportRaden()"')}
         <div><label>Traject</label><label style="display:flex;align-items:center;gap:7px;font-weight:500;padding-top:6px">
           <input type="checkbox" id="na-import"> Import (volledig traject)</label></div>
       </div>
       <div class="fsec">Voertuig</div>
       <div class="fgrid">
-        ${veld('na-merk','Merk','placeholder="Citroën"')}
-        ${veld('na-model','Model','placeholder="C4"')}
-        <div class="full">${veld('na-uitv','Uitvoering','placeholder="1.2 PureTech Feel EAT8 130pk 5d Aut."')}</div>
-        ${veld('na-kleur','Kleur','placeholder="Zwart"')}
+        ${veld('na-merk','Merk')}
+        ${veld('na-model','Model')}
+        <div class="full">${veld('na-uitv','Uitvoering')}</div>
+        ${veld('na-kleur','Kleur')}
         <div><label>Brandstof</label>${kies('na-brandstof',BRANDSTOFFEN)}</div>
         <div><label>Transmissie</label>${kies('na-transm',TRANSMISSIES)}</div>
-        ${veld('na-reg','1e toelating','placeholder="20-05-2021"')}
-        ${veld('na-km','Km-stand','placeholder="80344"')}
+        ${veld('na-reg','1e toelating','placeholder="dd-mm-jjjj"')}
+        ${veld('na-km','Km-stand')}
       </div>
       <div class="fsec">Inkoop</div>
       <div class="fgrid">
         ${veld('na-lev','Leverancier','placeholder="RJ, TX, COS, inruil …"')}
-        ${veld('na-inkoopdatum','Datum inkoop','placeholder="17-08-2026"')}
-        ${veld('na-factuurnr','Factuurnummer','placeholder="59635817"')}
-        ${veld('na-inkoopprijs','Inkoopprijs (€, excl.)','placeholder="7849"')}
-        ${veld('na-batch','Transportdatum','placeholder="13-08 — leeg als nog niet gepland"')}
-        <div class="full">${veld('na-note','Notitie','placeholder="Transport gepland — 13-08 binnen (betaald)"')}</div>
+        ${veld('na-inkoopdatum','Datum inkoop','placeholder="dd-mm-jjjj"')}
+        ${veld('na-factuurnr','Factuurnummer')}
+        ${veld('na-inkoopprijs','Inkoopprijs (€, excl.)')}
+        ${veld('na-batch','Transportdatum','placeholder="dd-mm — leeg als nog niet gepland"')}
+        <div class="full">${veld('na-note','Notitie')}</div>
       </div>
       <div id="na-fout" class="fout full"></div>
     </div>

@@ -153,11 +153,33 @@ function bladPad(entries, naam){
   throw new Error(`tabblad "${naam}" niet gevonden`);
 }
 
-// Rijen van een blad als {nr, heel, gevuld}. Een rij telt als gevuld zodra er een <v> of <is> in staat;
-// een blad heeft honderden rijen die alleen opmaak dragen.
+// Letter naar kolomnummer: A=0, Z=25, AA=26. De tegenhanger van kolLetter().
+function kolNummer(letters) {
+  let n = 0;
+  for (const c of letters) n = n * 26 + (c.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+// Alleen kolom A t/m X telt mee bij de vraag of een regel gevuld is. Rechts daarvan staan op sommige
+// bladen losse aantekeningen, en op "Verkochte Autos" ooit een vergeten formule in BC300. Die ene cel
+// gold als "hier staat een auto", waardoor de volgende auto op rij 301 belandde in plaats van 297 —
+// met drie lege regels ertussen die niemand meer kan verklaren. Een auto herken je aan zijn kern.
+const KERN_TOT = 24;                                  // A t/m X
+
+function gevuldIn(binnen, tot) {
+  for (const c of binnen.matchAll(/<c r="([A-Z]+)\d+"[^>]*?(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    if (kolNummer(c[1]) < tot && /<v>|<is>/.test(c[2] || '')) return true;
+  }
+  return false;
+}
+
+// Rijen van een blad als {nr, heel, binnen, gevuld, gevuldBreed}. Een blad heeft honderden rijen die
+// alleen opmaak dragen; `gevuld` kijkt naar de kern (zie hierboven), `gevuldBreed` naar de hele regel.
 function rijenUit(xml){
   return [...xml.matchAll(/<row r="(\d+)"[^>]*>([\s\S]*?)<\/row>|<row r="(\d+)"[^>]*\/>/g)]
-    .map(m => ({ nr: Number(m[1] || m[3]), heel: m[0], binnen: m[2] || '', gevuld: /<v>|<is>/.test(m[2] || '') }));
+    .map(m => { const binnen = m[2] || '';
+      return { nr: Number(m[1] || m[3]), heel: m[0], binnen,
+               gevuld: gevuldIn(binnen, KERN_TOT), gevuldBreed: /<v>|<is>/.test(binnen) }; });
 }
 
 // De opmaak NIET hardcoderen. Excel hernummert bij elke keer opslaan zijn hele stijltabel; een vast
@@ -237,6 +259,83 @@ function verwijderRij(xml, weg) {
   return kop + nieuw + staart2;
 }
 
+// De kolomindeling van een PVP-regel, op één plek. Zowel een nieuwe regel als het aanvullen van een
+// bestaande gaat hierlangs; twee lijstjes die uit elkaar lopen is precies hoe een auto in het Autoboek
+// andere gegevens krijgt dan in PVP.
+// Kolom A (F), B (TO-DO), D (Fact. Nr.) en Q (Datum verkoop) laat PVP bewust leeg — handwerk van
+// kantoor (afspraak 17-08-2026). Ze bestaan wél in PVP, ze gaan alleen niet mee naar het boek.
+function rijWaarden(auto) {
+  return [
+    '', '', auto.transport, '', auto.vin, auto.kenteken, merkNotatie(auto.merk), auto.type,
+    auto.kleur, auto.leverancier, auto.uitvoering, auto.brandstof, auto.transmissie,
+    serie(auto.reg) ? { v: serie(auto.reg) } : '',
+    auto.km != null ? { v: auto.km } : '',
+    serie(auto.inkoopdatum) ? { v: serie(auto.inkoopdatum) } : '',
+    serie(auto.verkoopdatum) ? { v: serie(auto.verkoopdatum) } : '',
+    auto.inkoopprijs != null ? { v: auto.inkoopprijs } : '',
+  ];
+}
+
+/* ---------- lege cellen van een bestaande regel aanvullen ----------
+   Vult alleen cellen die in het Autoboek leeg zijn. Een cel die daar al iets bevat blijft staan, ook
+   als PVP iets anders weet: die kan met de hand zijn bijgewerkt door kantoor, en dat werk overschrijven
+   is erger dan een veld dat achterloopt. De opmaak van de cel blijft zoals hij was.
+   Geeft terug welke kolommen er zijn bijgekomen; een lege lijst betekent: niets te doen, niet uploaden. */
+function vulAan(pad, uitPad, bladNaam, rijNr, auto) {
+  const entries = leesZip(fs.readFileSync(pad));
+  const bp = bladPad(entries, bladNaam);
+  const blad = entries.find(e => e.naam === bp);
+  if (!blad) throw new Error(bp + ' niet gevonden');
+  let xml = uitpakken(blad).toString('utf8');
+
+  const rijen = rijenUit(xml);
+  const doel = rijen.find(r => r.nr === rijNr);
+  if (!doel) throw new Error(`rij ${rijNr} bestaat niet in "${bladNaam}"`);
+
+  // Voor kolommen die op deze regel nog helemaal geen cel hebben: de opmaak van de regel erboven.
+  const boven = rijen.filter(r => r.nr < rijNr && r.gevuld).sort((a, b) => b.nr - a.nr)[0];
+  const stijlBoven = stijlenUit(boven ? boven.heel : doel.heel);
+
+  const cellen = [...doel.binnen.matchAll(/<c r="([A-Z]+)\d+"([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)]
+    .map(m => ({ heel: m[0], letter: m[1], nr: kolNummer(m[1]), attr: m[2] || '', inhoud: m[3] || '' }));
+  const perLetter = Object.fromEntries(cellen.map(c => [c.letter, c]));
+
+  const waarden = rijWaarden(auto);
+  const bij = [];
+  let binnen = doel.binnen;
+  for (let i = 0; i < waarden.length; i++) {
+    const w = waarden[i];
+    if (w === undefined || w === null || w === '') continue;
+    const letter = kolLetter(i);
+    const cel = perLetter[letter];
+    if (cel && /<v>|<is>/.test(cel.inhoud)) continue;          // staat er al: nooit overschrijven
+    const s = cel ? (/s="(\d+)"/.exec(cel.attr) || [])[1] : stijlBoven[letter];
+    const sAttr = s !== undefined ? ` s="${s}"` : '';
+    const nieuw = (typeof w === 'object')
+      ? `<c r="${letter}${rijNr}"${sAttr}><v>${w.v}</v></c>`
+      : `<c r="${letter}${rijNr}"${sAttr} t="inlineStr"><is><t>${esc(w)}</t></is></c>`;
+    // Vervangen met een functie, niet met een string: een waarde met een $ erin zou anders als
+    // vervangingspatroon worden gelezen.
+    if (cel) binnen = binnen.replace(cel.heel, () => nieuw);
+    else {
+      const na = cellen.filter(c => c.nr > i).sort((a, b) => a.nr - b.nr)[0];
+      if (na) { const pos = binnen.indexOf(na.heel); binnen = binnen.slice(0, pos) + nieuw + binnen.slice(pos); }
+      else binnen += nieuw;
+    }
+    bij.push(letter);
+  }
+  if (!bij.length) return { kolommen: [] };
+
+  const opening = /^<row[^>]*>/.exec(doel.heel);
+  if (!opening) throw new Error(`rij ${rijNr} heeft geen inhoud om aan te vullen`);
+  const nieuweRij = opening[0] + binnen + '</row>';
+  xml = xml.replace(doel.heel, () => nieuweRij);
+
+  vervang(blad, Buffer.from(xml, 'utf8'));
+  fs.writeFileSync(uitPad, schrijfZip(entries));
+  return { kolommen: bij };
+}
+
 function voegToe(pad, uitPad, auto) {
   const entries = leesZip(fs.readFileSync(pad));
   const pad2 = bladPad(entries, 'Komende Autos');
@@ -247,8 +346,7 @@ function voegToe(pad, uitPad, auto) {
   // De eerstvolgende LEGE regel zoeken, niet de eerstvolgende ontbrekende. Een blad heeft meestal al
   // honderden <row>-elementen die alleen opmaak dragen en geen waarde; dat is precies de regel waar
   // een mens ook zou typen. Een rij telt als gevuld zodra er een <v> of een <is> in staat.
-  const rijen = [...xml.matchAll(/<row r="(\d+)"[^>]*>([\s\S]*?)<\/row>|<row r="(\d+)"[^>]*\/>/g)]
-    .map(m => ({ nr: Number(m[1] || m[3]), heel: m[0], gevuld: /<v>|<is>/.test(m[2] || '') }));
+  const rijen = rijenUit(xml);
   const gevuld = rijen.filter(r => r.gevuld).map(r => r.nr);
   if (!gevuld.length) throw new Error('geen enkele gevulde rij gevonden — verkeerd blad?');
   const laatste = Math.max(...gevuld);
@@ -264,15 +362,7 @@ function voegToe(pad, uitPad, auto) {
   const stijl = stijlenUit(bron ? bron.heel : '');
   if (Object.keys(stijl).length < 10) throw new Error('kon de opmaak van rij ' + laatste + ' niet aflezen');
 
-  const rij = maakRij(doelNr, [
-    '', '', auto.transport, '', auto.vin, auto.kenteken, merkNotatie(auto.merk), auto.type,
-    auto.kleur, auto.leverancier, auto.uitvoering, auto.brandstof, auto.transmissie,
-    serie(auto.reg) ? { v: serie(auto.reg) } : '',
-    auto.km != null ? { v: auto.km } : '',
-    serie(auto.inkoopdatum) ? { v: serie(auto.inkoopdatum) } : '',
-    serie(auto.verkoopdatum) ? { v: serie(auto.verkoopdatum) } : '',
-    auto.inkoopprijs != null ? { v: auto.inkoopprijs } : '',
-  ], stijl);
+  const rij = maakRij(doelNr, rijWaarden(auto), stijl);
 
   if (bestaand) {
     // De lege regel bestaat al (met opmaak): die vervangen we, zodat de volgorde vanzelf klopt.
@@ -299,4 +389,4 @@ if (require.main === module) {
   });
   console.log('regel toegevoegd op rij', nr);
 }
-module.exports = { voegToe, verwijderRij, verschuifBereik, leesZip, uitpakken, schrijfZip, vervang, stijlenUit, maakRij, rijenUit, bladPad, kolLetter, serie, merkNotatie };
+module.exports = { voegToe, vulAan, rijWaarden, kolNummer, verwijderRij, verschuifBereik, leesZip, uitpakken, schrijfZip, vervang, stijlenUit, maakRij, rijenUit, bladPad, kolLetter, serie, merkNotatie };
