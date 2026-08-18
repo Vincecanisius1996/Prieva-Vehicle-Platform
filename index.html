@@ -422,7 +422,7 @@ let activityLog=[];
 /* ===== Helpers ===== */
 const km = n => (n==null?"—":n.toLocaleString("nl-NL")+" km");
 const euro = n => (n==null||n===""?"—":"€ "+Number(n).toLocaleString("nl-NL",{minimumFractionDigits:2,maximumFractionDigits:2}));
-const statusLabel = {komende:"Komende",lopende:"Lopende"};
+const statusLabel = {komende:"Komende",lopende:"Lopende","gemeld verkocht":"Gemeld verkocht",verkocht:"Verkocht"};
 function stepList(v){
   if(!v.importAuto) return TAIL.slice();
   // Taxatie (JA/NEE) is losgekoppeld: staat niet meer als stap in de rij, maar wordt apart gezet
@@ -652,8 +652,11 @@ function renderKomende(){
 /* ===== Lopende ===== */
 function catOf(v){const s=steps(v); if(s.currentIdx==null)return null; return s.list[s.currentIdx].cat;}
 function renderLopende(){
-  const lop=V.filter(v=>v.status==="lopende"&&match(v));
-  const allLop=V.filter(v=>v.status==="lopende");
+  // 'gemeld verkocht' hoort hier nog thuis: pas als een beheerder bevestigt is de auto klaar, en tot
+  // die tijd moet iemand hem kunnen vinden. 'verkocht' valt uit beide lijsten.
+  const inLijst=v=>v.status==="lopende"||v.status==="gemeld verkocht";
+  const lop=V.filter(v=>inLijst(v)&&match(v));
+  const allLop=V.filter(inLijst);
   const perCat=CATS.map(c=>allLop.filter(v=>catOf(v)===c).length);
   const maxc=Math.max(1,...perCat);
   if(!allLop.length){
@@ -721,6 +724,7 @@ function openVeh(id){
           <div class="spec"><span class="k">Leverancier</span><span class="v">${v.lev||'—'}</span></div>
           <div class="spec" style="border-bottom:0"><span class="k">Transport / status</span><span class="v" style="max-width:160px">${v.note||'—'}</span></div>
         </div></div>
+        ${verkoopCard(v)}
         ${autoboekCard(v)}
         ${docCard(v)}
       </div>
@@ -858,6 +862,51 @@ function backToKomend(id){const v=V.find(x=>x.id===id); if(!v)return; const ps=v
   v.status='komende'; v.klaar=0; v.route=null; v.arrivedAt=null;
   pushUndo(`${v.merk} ${v.model} teruggezet naar Komend`, ()=>{v.status=ps; v.klaar=pk; v.route=pr; v.arrivedAt=pa;});
   go('komende'); }
+/* ===== Verkoop =====
+   Een melding van buiten (straks Mobilox) zet de auto op 'gemeld verkocht'. Bevestigen is met opzet
+   een aparte handeling van een beheerder: pas dan verhuist de regel in het Autoboek, en dat is niet
+   met één klik terug te draaien. */
+function verkoopCard(v){
+  if(v.status!=='gemeld verkocht'&&v.status!=='verkocht')return "";
+  const bevestigd=v.status==='verkocht';
+  const regel=(k,w)=>`<div class="spec"><span class="k">${k}</span><span class="v">${w||'—'}</span></div>`;
+  return `<div class="card"><h3>Verkoop</h3><div class="card-body">
+    ${regel("Status", bevestigd
+        ? `<span style="color:var(--green)">✓ bevestigd${v.verkochtDoor?` door ${v.verkochtDoor}`:''}</span>`
+        : `<span style="color:var(--amber)">gemeld — nog te bevestigen</span>`)}
+    ${regel("Factuurnummer", v.verkoopFactuurnr)}
+    ${regel("Factuurdatum", v.verkoopFactuurdatum)}
+    ${regel("Verkoopprijs", euro(v.verkoopprijs))}
+    ${!bevestigd&&isAdmin()?`<button class="btn btn-primary" style="margin-top:12px;width:100%;justify-content:center"
+       onclick="bevestigVerkoop('${v.id}',this)">Verkoop bevestigen</button>
+      <div class="muted" style="font-size:12px;margin-top:8px">Hiermee gaat de auto op verkocht en verhuist de regel in het Autoboek van Lopende naar Verkochte.</div>`:''}
+    ${!bevestigd&&!isAdmin()?`<div class="muted" style="font-size:12px;margin-top:8px">Alleen een beheerder kan een verkoop bevestigen.</div>`:''}
+    <div id="vk-fout" class="fout"></div>
+  </div></div>`;
+}
+async function bevestigVerkoop(id,knop){
+  if(!apiOk)return;
+  const v=V.find(x=>x.id===id); if(!v)return;
+  if(!window.confirm(`Verkoop van ${v.merk} ${v.model} bevestigen?\n\nDe auto gaat op verkocht en de regel verhuist in het Autoboek van Lopende naar Verkochte.`))return;
+  knop.disabled=true; knop.textContent="Bezig…";
+  try{
+    const r=await fetch("/api/verkoop-bevestigen",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ const f=document.getElementById('vk-fout'); if(f)f.textContent=j.error||"Bevestigen mislukt.";
+      knop.disabled=false; knop.textContent="Verkoop bevestigen"; return; }
+    // Eerst opnieuw inlezen, dán loggen: loadState() haalt het logboek van de server en zou een regel
+    // die hiervóór is toegevoegd meteen weer overschrijven.
+    const nr=v.verkoopFactuurnr;
+    await loadVehicles(); await loadState();
+    logActivity('Verkoop bevestigd',`${v.merk} ${v.model}`+(nr?` — factuur ${nr}`:''),id);
+    scheduleSave();
+    const ab=j.autoboek||{};
+    showToast(ab.status==='ok'?"Verkoop bevestigd — regel verplaatst in het Autoboek ✓"
+             :ab.status==='fout'?"Verkoop bevestigd — Autoboek NIET bijgewerkt, zie de auto"
+             :"Verkoop bevestigd",false);
+    go('lopende');
+  }catch(_){ const f=document.getElementById('vk-fout'); if(f)f.textContent="Geen verbinding met de server."; knop.disabled=false; knop.textContent="Verkoop bevestigen"; }
+}
 /* ===== Auto verwijderen (alleen admin) =====
    De enige onomkeerbare handeling in PVP, vandaar een eigen scherm met de gegevens erin in plaats van
    een kaal "weet je het zeker". Het Autoboek wordt bewust niet aangeraakt: die koppeling is

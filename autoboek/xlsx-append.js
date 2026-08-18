@@ -133,7 +133,32 @@ function merkNotatie(s){
   }).join(' ');
 }
 
-const KOL = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R'];
+// Kolomletter bij een index: 0=A … 25=Z, 26=AA. De Komende-tab gaat tot R, Verkochte tot AV.
+function kolLetter(i){ let s='', n=i; while(n>=0){ s=String.fromCharCode(65+(n%26))+s; n=Math.floor(n/26)-1; } return s; }
+const KOL = [...Array(18)].map((_,i)=>kolLetter(i));
+
+// Van bladnaam naar het xml-bestand in de zip. Stond hard op sheet1.xml; dat werkt alleen voor
+// "Komende Autos" en de verplaatsing raakt er nog twee.
+function bladPad(entries, naam){
+  const pak = n => { const e = entries.find(x => x.naam === n); return e ? uitpakken(e).toString('utf8') : null; };
+  const wb = pak('xl/workbook.xml'), rels = pak('xl/_rels/workbook.xml.rels');
+  if (!wb || !rels) throw new Error('workbook.xml of de rels ontbreekt');
+  const doelen = Object.fromEntries([...rels.matchAll(/Id="([^"]+)"[^>]*Target="([^"]+)"/g)].map(m => [m[1], m[2]]));
+  for (const m of wb.matchAll(/<sheet[^>]*name="([^"]*)"[^>]*r:id="([^"]*)"/g)) {
+    if (m[1] !== naam) continue;
+    let d = (doelen[m[2]] || '').replace(/^\//, '');
+    if (!d.startsWith('xl/')) d = 'xl/' + d;
+    return d;
+  }
+  throw new Error(`tabblad "${naam}" niet gevonden`);
+}
+
+// Rijen van een blad als {nr, heel, gevuld}. Een rij telt als gevuld zodra er een <v> of <is> in staat;
+// een blad heeft honderden rijen die alleen opmaak dragen.
+function rijenUit(xml){
+  return [...xml.matchAll(/<row r="(\d+)"[^>]*>([\s\S]*?)<\/row>|<row r="(\d+)"[^>]*\/>/g)]
+    .map(m => ({ nr: Number(m[1] || m[3]), heel: m[0], binnen: m[2] || '', gevuld: /<v>|<is>/.test(m[2] || '') }));
+}
 
 // De opmaak NIET hardcoderen. Excel hernummert bij elke keer opslaan zijn hele stijltabel; een vast
 // nummer wijst daarna naar iets anders — datums worden kale getallen, kilometers krijgen een euroteken.
@@ -149,7 +174,8 @@ function stijlenUit(rijXml) {
 }
 
 function maakRij(nr, waarden, stijl) {
-  const cellen = KOL.map((letter, i) => {
+  const cellen = waarden.map((_, i) => {
+    const letter = kolLetter(i);
     const w = waarden[i];
     const s = stijl[letter] !== undefined ? ` s="${stijl[letter]}"` : '';
     if (w === undefined || w === null || w === '') return `<c r="${letter}${nr}"${s}/>`;
@@ -159,10 +185,63 @@ function maakRij(nr, waarden, stijl) {
   return `<row r="${nr}">${cellen.join('')}</row>`;
 }
 
+/* ---------- een rij verwijderen, mét renummering ----------
+   Excel-gedrag: de rijen eronder schuiven één op. Dat betekent dat álles wat naar een rijnummer
+   verwijst mee moet: de <row>-elementen zelf, de r= van elke cel daarin, en de bereiken buiten
+   sheetData (samengevoegde cellen, voorwaardelijke opmaak, het autofilter). Wordt daar iets vergeten,
+   dan staat de opmaak straks een regel verkeerd of weigert Excel het bestand.
+   Alleen gebruiken op een blad waarvan je die verwijzingen hebt nagekeken. */
+function verschuifBereik(ref, weg) {
+  // "E39:F39", "C2:C10 C12", "$P$1:$P$723" — elk celadres apart bijstellen.
+  return ref.replace(/(\$?[A-Z]+\$?)(\d+)/g, (heel, kol, nr) => {
+    const n = Number(nr);
+    return n > weg ? kol + (n - 1) : heel;
+  });
+}
+
+function verwijderRij(xml, weg) {
+  const i = xml.indexOf('<sheetData'), j = xml.indexOf('</sheetData>');
+  if (i < 0 || j < 0) throw new Error('sheetData niet gevonden');
+  const kop = xml.slice(0, i), data = xml.slice(i, j), staart = xml.slice(j);
+
+  const rijen = rijenUit(data);
+  const doel = rijen.find(r => r.nr === weg);
+  if (!doel) throw new Error('rij ' + weg + ' bestaat niet');
+
+  let nieuw = data.replace(doel.heel, '');
+  // Rijen eronder één omhoog. Van hoog naar laag zou hier niet uitmaken (elk element wordt één keer
+  // vervangen), maar we doen het per element om nooit een half aangepaste rij te krijgen.
+  for (const r of rijen.filter(r => r.nr > weg).sort((a, b) => a.nr - b.nr)) {
+    const op = r.heel
+      .replace(/^<row r="\d+"/, `<row r="${r.nr - 1}"`)
+      .replace(/<c r="([A-Z]+)\d+"/g, (_, kol) => `<c r="${kol}${r.nr - 1}"`);
+    nieuw = nieuw.replace(r.heel, op);
+  }
+
+  // Buiten sheetData: bereiken die naar rijnummers wijzen.
+  let staart2 = staart
+    .replace(/<mergeCell ref="([^"]+)"\/>/g, (heel, ref) => {
+      // Een samenvoeging die alléén de verwijderde rij besloeg, verdwijnt met die rij mee.
+      const rijnrs = [...ref.matchAll(/[A-Z]+(\d+)/g)].map(m => Number(m[1]));
+      if (rijnrs.every(n => n === weg)) return '';
+      return `<mergeCell ref="${verschuifBereik(ref, weg)}"/>`;
+    })
+    .replace(/(<conditionalFormatting[^>]*sqref=")([^"]+)(")/g, (_, a, ref, b) => a + verschuifBereik(ref, weg) + b)
+    .replace(/(<autoFilter[^>]*ref=")([^"]+)(")/g, (_, a, ref, b) => a + verschuifBereik(ref, weg) + b);
+
+  // count van mergeCells bijwerken als er een verdween.
+  const nu = (staart2.match(/<mergeCell /g) || []).length;
+  staart2 = staart2.replace(/<mergeCells count="\d+">/, nu ? `<mergeCells count="${nu}">` : '<mergeCells count="0">');
+  if (!nu) staart2 = staart2.replace(/<mergeCells count="0">\s*<\/mergeCells>/, '');
+
+  return kop + nieuw + staart2;
+}
+
 function voegToe(pad, uitPad, auto) {
   const entries = leesZip(fs.readFileSync(pad));
-  const blad = entries.find(e => e.naam === 'xl/worksheets/sheet1.xml');
-  if (!blad) throw new Error('sheet1.xml niet gevonden');
+  const pad2 = bladPad(entries, 'Komende Autos');
+  const blad = entries.find(e => e.naam === pad2);
+  if (!blad) throw new Error(pad2 + ' niet gevonden');
   let xml = uitpakken(blad).toString('utf8');
 
   // De eerstvolgende LEGE regel zoeken, niet de eerstvolgende ontbrekende. Een blad heeft meestal al
@@ -220,4 +299,4 @@ if (require.main === module) {
   });
   console.log('regel toegevoegd op rij', nr);
 }
-module.exports = { voegToe, leesZip, uitpakken, serie, merkNotatie };
+module.exports = { voegToe, verwijderRij, verschuifBereik, leesZip, uitpakken, schrijfZip, vervang, stijlenUit, maakRij, rijenUit, bladPad, kolLetter, serie, merkNotatie };

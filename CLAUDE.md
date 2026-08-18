@@ -62,13 +62,20 @@ node /opt/pvp-api/setpw.js <gebruiker> <team|admin|foto|taxateur> "<wachtwoord>"
 
 ## API-endpoints (in server.js)
 `/api/login`, `/api/logout`, `/api/me`, `/api/health`, `/api/state` (team+admin GET/PUT),
-`/api/status` (elke rol), `/api/vehicles` (elke rol, alleen-lezen catalogus — nog niet gebruikt door de
-frontend; haak voor Fase 3), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
+`/api/status` (elke rol), `/api/vehicles` (elke rol, alleen-lezen catalogus — de frontend laadt hier `V`
+uit), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
 `/api/adphotos-set`, `/api/taxstate` (taxateur+team+admin), `/api/bpmreports`, `/api/bpmreport`,
 `/api/bpmnotif-seen`, `/api/bpmreport-del`, `/api/vehicle` (team+admin, nieuwe auto),
 `/api/vehicle-del` (**alleen admin**), `/api/vehicledoc`, `/api/uitlezen`, `/api/autoboek-retry`,
-`/uploads/*` (auth).
+`/api/verkoop-bevestigen` (**alleen admin**), `/uploads/*` (auth).
 Auth = HMAC-ondertekende cookie (stateless).
+
+**Uitzondering: `/api/verkocht`** gebruikt géén cookie maar een **bearer-token** uit
+`/var/pvp/verkoop.env` (`PVP_VERKOOP_TOKEN`, chmod 600, **niet committen**). Bedoeld voor een ander
+systeem (straks Mobilox). Zonder token ingesteld geeft het endpoint **503** — uit staan is nooit
+hetzelfde als vrije toegang. Het zet een auto op `gemeld verkocht`; een beheerder bevestigt daarna in
+de app, en pas dán verhuist de regel in het Autoboek. Elke melding, ook een mislukte, komt in de tabel
+`verkoop_meldingen`.
 
 ## Lokaal testen (voordat je deployt)
 Er staat een testdatabase `pvp_test` klaar (zelfde rol `pvp_app`; `pg_hba` staat beide toe). De backend
@@ -278,23 +285,30 @@ kwaliteit als 0–1 (browserconventie), `toBuffer` als 0–100 — dat verschil 
   haalt hem op uit `GET /api/vehicles` en vervangt `V` **in place** (`V` is `const` en wordt op ~39
   plekken bij naam gebruikt — nooit herwijzen). Auto's toevoegen of wijzigen doe je dus in de tabel
   `vehicles`, niet in `index.html`. De lijst `const V = [...]` staat er nog als **terugvallijst** voor
-  als de API wegvalt of de app zonder backend draait; die is bevroren op 12-08-2026 en loopt dus
-  achter. Er is nog géén automatische koppeling met het Autoboek (dat is Fase 3).
+  als de API wegvalt of de app zonder backend draait; die is bevroren op 12-08-2026 en loopt dus achter.
 - **`loadVehicles()` moet vóór `loadState()`/`loadTaxState()`/`loadStatusFoto()` draaien** — die
   mappen hun gegevens op bestaande rijen in `V`. Daarom staat `await loadVehicles()` bovenaan
   `startFor()`, boven de rolsplitsing.
+- **De statussen zijn `komende`, `lopende`, `gemeld verkocht` en `verkocht`.** `putState()` schrijft de
+  statuskolom **niet** zolang de database een van de laatste twee zegt. Zonder dat slot zet een tabblad
+  dat nog openstond van vóór de melding de auto met de eerstvolgende klik terug op `lopende` — de
+  frontend stuurt namelijk zijn hele geheugen op. `stateOk` helpt daar niet tegen: dat inlezen ging
+  goed, de gegevens zijn alleen verouderd.
 - **`stateOk` bewaakt het opslaan.** `scheduleSave()` schrijft pas als `loadState()` gelukt is. Zonder
   dat slot zou een mislukte `GET /api/state` (backend-herstart, nginx-hik) ertoe leiden dat de
   eerstvolgende klik de beginwaarden van `V` over de database heen zet: alle lopende auto's terug naar
   komende, keuringsfoto's en subtaken weg. Haal die controle er dus niet uit.
-- **Verwijderen raakt het Autoboek niet.** `/api/vehicle-del` haalt de auto uit PVP en geeft het
-  rijnummer terug; die regel haal je met de hand uit het Autoboek. De koppeling blijft alleen-toevoegen
-  — dat is juist waarom hij veilig is op een bestand waar Power BI op draait.
+- **Een auto verwijderen raakt het Autoboek niet.** `/api/vehicle-del` haalt de auto uit PVP en geeft
+  het rijnummer terug; die regel haal je met de hand weg. Bewust: verwijderen is een correctie op een
+  vergissing, geen stap in het proces. Een auto die écht verkocht is loopt via de verkoopbevestiging,
+  en dáár verplaatst PVP de regel wél zelf.
 - **Het Autoboek: kolomstructuur nooit wijzigen.** `Autoboek PRIEVA.xlsx` (Drive, map `Autoboek`,
   bestands-ID `1MnSN9PJjzJTEp4aLwhyjKeH-h4-wb3if`) voedt een Power BI-rapportage. Verandert er een
   kolom, een kop of de volgorde, dan loopt die vast. Het moet ook een **.xlsx blijven** — omzetten
-  naar een Google Sheet is daarom uitgesloten. Schrijven mag alleen **toevoegend**, alleen op het
-  tabblad *Komende Autos*. De koppeling zit in `autoboek/` (draait mee in `/opt/pvp-api/autoboek/`);
+  naar een Google Sheet is daarom uitgesloten. **Regels toevoegen én verwijderen mag** (18-08-2026,
+  overlegd met de bouwer van de rapportage); alleen de kolommen zijn onaantastbaar. PVP schrijft nu op
+  *Komende Autos* (nieuwe auto) en verplaatst bij een bevestigde verkoop een regel van *Lopende Autos*
+  naar *Verkochte Autos*. De koppeling zit in `autoboek/` (draait mee in `/opt/pvp-api/autoboek/`);
   instellingen in `/var/pvp/autoboek.env` (chmod 600, **niet committen**), sleutel in
   `/var/pvp/autoboek-sleutel.json`. `AUTOBOEK_FILE_ID` leeg = koppeling uit. Staat sinds 17-08-2026 op
   de **kopie**; overgaan op het echte boek is die ene regel wijzigen plus `systemctl restart pvp-api`.

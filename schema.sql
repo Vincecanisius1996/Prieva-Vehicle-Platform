@@ -108,3 +108,34 @@ CREATE TABLE IF NOT EXISTS meta (
 
 CREATE INDEX IF NOT EXISTS bpm_reports_vehicle_idx ON bpm_reports (vehicle_id);
 CREATE INDEX IF NOT EXISTS vehicles_sort_idx       ON vehicles (sort_order, id);
+
+-- Verkoop (deel 1, 18-08-2026). De status krijgt er twee waarden bij: 'gemeld verkocht' (binnengekomen
+-- via POST /api/verkocht) en 'verkocht' (door een beheerder bevestigd). Bewust GEEN check-constraint op
+-- status: putState() zou dan bij een onverwachte waarde een 500 geven in plaats van de auto met rust te
+-- laten. Bewaken gebeurt in de code.
+--
+-- Let op de naamgeving: `factuurnr` bestond al en is het pro-formanummer van de INKOOP. Deze kolommen
+-- gaan over de verkoop en krijgen daarom het voorvoegsel `verkoop_`; zonder dat verschil verwisselt
+-- iemand ze een keer.
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS verkoop_factuurdatum    text;            -- dd-mm-jjjj
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS verkoopprijs            numeric(12,2);
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS verkoop_factuurnr       text;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS verkocht_gemeld_ts      bigint;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS verkocht_bevestigd_ts   bigint;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS verkocht_bevestigd_door text;
+
+-- Spoor van elke melding, ook de mislukte. Bewust een eigen tabel en niet activity_log: putState() gooit
+-- die tabel leeg en vult hem opnieuw uit wat de frontend stuurt, dus een regel van de server zou bij de
+-- eerstvolgende klik verdwijnen. Een machinekoppeling heeft een spoor nodig dat blijft staan.
+CREATE TABLE IF NOT EXISTS verkoop_meldingen (
+  id           bigserial PRIMARY KEY,
+  ts           bigint,
+  vehicle_id   text,
+  bron         text,           -- vrij veld: straks 'mobilox', nu 'handmatig'/'test'
+  factuurnr    text,
+  factuurdatum text,
+  verkoopprijs numeric(12,2),
+  uitkomst     text,           -- gemeld | ongewijzigd | conflict | onbekend voertuig | ongeldig
+  payload      jsonb
+);
+CREATE INDEX IF NOT EXISTS verkoop_meldingen_vehicle_idx ON verkoop_meldingen (vehicle_id, ts);

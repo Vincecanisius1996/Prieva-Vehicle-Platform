@@ -53,4 +53,4 @@ function lees(buf, bladNaam) {
 // Excel-serienummer terug naar dd-mm-jjjj (epoch 1899-12-30 vanwege de schrikkeljaarfout van 1900).
 const datum = n => { const d = new Date(Date.UTC(1899, 11, 30) + Number(n) * 86400000); return isNaN(d) ? n : `${String(d.getUTCDate()).padStart(2, '0')}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${d.getUTCFullYear()}`; };
 
-module.exports = { lees, datum };
+module.exports = { lees, datum, tekstUit, ontsnap, kolIndex };

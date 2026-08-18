@@ -9,6 +9,8 @@ secret
 # Google service-account-sleutel voor het Autoboek. Staat in /var/pvp/ en dus buiten de repo; deze
 # regels zijn de tweede grendel, voor als iemand hem hierheen kopieert om "even iets te proberen".
 autoboek-sleutel.json
+verkoop.env
+ai.env
 *-sleutel.json
 *service-account*.json
 *credentials*.json

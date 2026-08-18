@@ -9,8 +9,10 @@
 // Waarom het bestand niet omgezet wordt naar een Google Sheet: er draait een Power BI-rapportage op.
 // De kolomstructuur mag daarom nooit veranderen. Zie LEESMIJ.md en PVP-autoboek-koppeling-voorstel.md.
 const drive = require('./drive.js');
-const { voegToe } = require('./xlsx-append.js');
-const { lees } = require('./xlsx-lees.js');
+const bouw = require('./xlsx-append.js');
+const { voegToe } = bouw;
+const xlsx = require('./xlsx-lees.js');
+const { lees } = xlsx;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -119,4 +121,146 @@ async function schrijfAuto(v) {
   }
 }
 
-module.exports = { schrijfAuto, aan, BLAD };
+/* ===== Verkoop: de regel verhuist van "Lopende Autos" naar "Verkochte Autos" =====
+   Mag sinds 18-08-2026: regels verwijderen is besproken met de bouwer van de rapportage, kolommen
+   blijven onaantastbaar.
+
+   De twee bladen zijn positioneel uitgelijnd: 38 kolommen hebben letterlijk dezelfde kop en de rest
+   verschilt alleen in naam op dezelfde plek (VIN/Chassisnummer, Garantie/Autotrust). Verplaatsen is
+   dus kolom A t/m AV overnemen; de zeven stapkolommen die alleen Lopende heeft (AW-BC, RDW Foto's …
+   Mobilox Online) vallen weg.  */
+const VAN_BLAD = 'Lopende Autos';
+const NAAR_BLAD = 'Verkochte Autos';
+const KOL_TOT = 48;          // A t/m AV
+const K_FACTUUR = 3;         // D  Fact. Nr.
+const K_VERKOOPDATUM = 17;   // R  (kop is leeg op Verkochte; in Lopende heet die kolom Datum verkoop)
+const K_VERKOOPPRIJS = 20;   // U  (sub)totaal
+const K_VIN = 4, K_KENTEKEN = 5;
+
+const plat = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+// Cellen van één rij mét hun soort. Waarden overnemen zonder het onderscheid tekst/getal zou datums en
+// bedragen als tekst in het boek zetten; dan rekent er niets meer mee.
+function celsUit(rijXml, gedeeld) {
+  const uit = {};
+  for (const c of rijXml.matchAll(/<c r="([A-Z]+)\d+"([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    const kol = xlsx.kolIndex(c[1]), attr = c[2] || '', inh = c[3] || '';
+    const t = (/t="([^"]+)"/.exec(attr) || [])[1];
+    if (t === 's') { const v = /<v>([\s\S]*?)<\/v>/.exec(inh); if (v) uit[kol] = { soort: 'tekst', w: gedeeld[Number(v[1])] }; }
+    else if (t === 'inlineStr') { const w = [...inh.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map(m => xlsx.ontsnap(m[1])).join(''); if (w) uit[kol] = { soort: 'tekst', w }; }
+    else { const v = /<v>([\s\S]*?)<\/v>/.exec(inh); if (v) uit[kol] = { soort: 'getal', w: v[1] }; }
+  }
+  return uit;
+}
+
+async function verplaatsNaarVerkocht(v, verkoop) {
+  if (!aan()) throw new Error('koppeling staat uit (AUTOBOEK_FILE_ID ontbreekt)');
+  if (!plat(v.vin) && !plat(v.kenteken)) throw new Error('deze auto heeft geen VIN en geen kenteken — niet terug te vinden in het Autoboek');
+  const ID = process.env.AUTOBOEK_FILE_ID.trim();
+  const tok = await drive.token(SCOPE);
+
+  const voor = await drive.meta(tok, ID);
+  if (!voor.capabilities || !voor.capabilities.canEdit) throw new Error('geen schrijfrecht op het Autoboek');
+  const buf = await drive.download(tok, ID);
+
+  const entries = bouw.leesZip(buf);
+  const pakXml = pad => { const e = entries.find(x => x.naam === pad); if (!e) throw new Error(pad + ' ontbreekt'); return { e, xml: bouw.uitpakken(e).toString('utf8') }; };
+  const gedeeldE = entries.find(x => x.naam === 'xl/sharedStrings.xml');
+  const gedeeld = gedeeldE ? xlsx.tekstUit(bouw.uitpakken(gedeeldE).toString('utf8')) : [];
+
+  const van = pakXml(bouw.bladPad(entries, VAN_BLAD));
+  const naar = pakXml(bouw.bladPad(entries, NAAR_BLAD));
+
+  // 1. De auto zoeken in Lopende Autos, op VIN of kenteken.
+  const sleutels = [plat(v.vin), plat(v.kenteken)].filter(Boolean);
+  const vanRijen = bouw.rijenUit(van.xml);
+  let bron = null;
+  for (const r of vanRijen) {
+    if (r.nr < 2 || !r.gevuld) continue;
+    const c = celsUit(r.binnen, gedeeld);
+    for (const k of [K_VIN, K_KENTEKEN]) {
+      const w = plat(c[k] && c[k].w);
+      if (w && sleutels.includes(w)) { bron = { rij: r.nr, cellen: c }; break; }
+    }
+    if (bron) break;
+  }
+  if (!bron) throw new Error(`auto staat niet in "${VAN_BLAD}" — niets verplaatst`);
+
+  // 2. De regel voor Verkochte Autos: A t/m AV overnemen, de drie verkoopvelden invullen.
+  const waarden = [];
+  for (let i = 0; i < KOL_TOT; i++) {
+    const c = bron.cellen[i];
+    waarden.push(!c ? '' : (c.soort === 'getal' ? { v: c.w } : c.w));
+  }
+  if (verkoop.factuurnr) {
+    const n = Number(String(verkoop.factuurnr).replace(/[^0-9.]/g, ''));
+    waarden[K_FACTUUR] = Number.isFinite(n) && String(verkoop.factuurnr).trim() !== '' ? { v: n } : String(verkoop.factuurnr);
+  }
+  const dserie = bouw.serie(verkoop.factuurdatum);
+  if (dserie) waarden[K_VERKOOPDATUM] = { v: dserie };
+  if (verkoop.verkoopprijs !== null && verkoop.verkoopprijs !== undefined && Number.isFinite(Number(verkoop.verkoopprijs))) {
+    waarden[K_VERKOOPPRIJS] = { v: Number(verkoop.verkoopprijs) };
+  }
+
+  // 3. Toevoegen op de eerste vrije regel van Verkochte, met de opmaak van de regel erboven.
+  const naarRijen = bouw.rijenUit(naar.xml);
+  const gevuld = naarRijen.filter(r => r.gevuld).map(r => r.nr);
+  if (!gevuld.length) throw new Error(`geen gevulde regels in "${NAAR_BLAD}" — verkeerd blad?`);
+  const laatste = Math.max(...gevuld);
+  const doelNr = laatste + 1;
+  const bestaand = naarRijen.find(r => r.nr === doelNr);
+  if (bestaand && bestaand.gevuld) throw new Error(`rij ${doelNr} in "${NAAR_BLAD}" is niet leeg`);
+  const stijl = bouw.stijlenUit((naarRijen.find(r => r.nr === laatste) || {}).heel || '');
+  if (Object.keys(stijl).length < 10) throw new Error(`kon de opmaak van rij ${laatste} niet aflezen`);
+  const nieuweRij = bouw.maakRij(doelNr, waarden, stijl);
+
+  let naarXml = naar.xml;
+  if (bestaand) naarXml = naarXml.replace(bestaand.heel, nieuweRij);
+  else {
+    const hoger = naarRijen.map(r => r.nr).filter(n => n > doelNr).sort((a, b) => a - b)[0];
+    if (hoger === undefined) naarXml = naarXml.replace('</sheetData>', nieuweRij + '</sheetData>');
+    else { const pos = naarXml.indexOf(`<row r="${hoger}"`); naarXml = naarXml.slice(0, pos) + nieuweRij + naarXml.slice(pos); }
+  }
+
+  // 4. De regel uit Lopende verwijderen, mét renummering.
+  const vanXml = bouw.verwijderRij(van.xml, bron.rij);
+
+  // 5. Eén bestand, één upload. Twee uploads zouden een moment opleveren waarop de auto op twee
+  //    tabbladen staat of op geen enkel.
+  bouw.vervang(van.e, Buffer.from(vanXml, 'utf8'));
+  bouw.vervang(naar.e, Buffer.from(naarXml, 'utf8'));
+  const nieuw = bouw.schrijfZip(entries);
+
+  // 6. Vóór het uploaden nakijken. Faalt hier iets, dan gaat er niets naar Drive.
+  const boekVoor = lees(buf), boekNa = lees(nieuw);
+  const telling = o => Object.keys(o).filter(n => Object.keys(o[n]).length).length;
+  const breedte = o => Math.max(0, ...Object.values(o).map(r => Math.max(-1, ...Object.keys(r).map(Number)) + 1));
+  for (const naam of Object.keys(boekVoor)) {
+    const verwacht = naam === NAAR_BLAD ? telling(boekVoor[naam]) + 1
+                   : naam === VAN_BLAD  ? telling(boekVoor[naam]) - 1
+                   : telling(boekVoor[naam]);
+    if (telling(boekNa[naam]) !== verwacht) throw new Error(`controle: "${naam}" heeft ${telling(boekNa[naam])} regels, verwacht ${verwacht} — niet geschreven`);
+    if (breedte(boekVoor[naam]) !== breedte(boekNa[naam])) throw new Error(`controle: "${naam}" is van breedte veranderd — niet geschreven`);
+    if (JSON.stringify(boekVoor[naam][1]) !== JSON.stringify(boekNa[naam][1])) throw new Error(`controle: de koprij van "${naam}" is veranderd — niet geschreven`);
+  }
+  // Elke overgebleven regel in Lopende moet inhoudelijk gelijk zijn; alleen het rijnummer schuift op.
+  const rijNrs = o => Object.keys(o).map(Number).filter(n => n > 1 && Object.keys(o[n]).length).sort((a, b) => a - b);
+  const verwachtInhoud = rijNrs(boekVoor[VAN_BLAD]).filter(n => n !== bron.rij).map(n => JSON.stringify(boekVoor[VAN_BLAD][n]));
+  const feitelijkInhoud = rijNrs(boekNa[VAN_BLAD]).map(n => JSON.stringify(boekNa[VAN_BLAD][n]));
+  if (JSON.stringify(verwachtInhoud) !== JSON.stringify(feitelijkInhoud)) {
+    throw new Error(`controle: de overgebleven regels in "${VAN_BLAD}" zijn niet ongewijzigd — niet geschreven`);
+  }
+
+  // 7. Revisiecontrole vlak vóór het uploaden, en achteraf teruglezen.
+  const nu = await drive.meta(tok, ID);
+  if (nu.headRevisionId !== voor.headRevisionId) throw new Error('het Autoboek is intussen door iemand anders gewijzigd — niet geschreven, probeer het zo opnieuw');
+  await drive.upload(tok, ID, nieuw);
+
+  const terug = lees(await drive.download(tok, ID));
+  const staatErNog = Object.keys(terug[VAN_BLAD]).some(n => sleutels.includes(plat(terug[VAN_BLAD][n][K_VIN])) || sleutels.includes(plat(terug[VAN_BLAD][n][K_KENTEKEN])));
+  const staatErNu = Object.keys(terug[NAAR_BLAD]).some(n => sleutels.includes(plat(terug[NAAR_BLAD][n][K_VIN])) || sleutels.includes(plat(terug[NAAR_BLAD][n][K_KENTEKEN])));
+  if (staatErNog || !staatErNu) throw new Error('na het uploaden klopt het niet: de auto staat niet (alleen) bij Verkochte — nakijken');
+  return { rij: doelNr, vanRij: bron.rij };
+}
+
+module.exports = { schrijfAuto, verplaatsNaarVerkocht, aan, BLAD };

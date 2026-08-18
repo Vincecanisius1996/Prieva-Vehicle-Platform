@@ -63,6 +63,18 @@ function saveFile(dataUrl, id, prefix) {
   fs.writeFileSync(path.join(dir, fname), Buffer.from(m[2], 'base64'));
   return '/uploads/' + safeId + '/' + fname;
 }
+// Bedragen uit een ander systeem komen in Nederlandse notatie binnen: "2.950,00" is 2950, niet 2,95.
+// Zonder dit onderscheid weiger je een geldige prijs of boek je er een die duizend keer te laag is.
+function bedrag(x) {
+  if (x === undefined || x === null || String(x).trim() === '') return null;
+  if (typeof x === 'number') return Number.isFinite(x) ? x : NaN;
+  let t = String(x).replace(/[^0-9.,-]/g, '');
+  if (!/\d/.test(t)) return NaN;      // "abc" wordt anders 0, en dat boekt een verkoop van nul euro
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');          // komma is de decimaal
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');      // 2.950 = duizendtallen
+  const n = Number(t);
+  return Number.isFinite(n) ? n : NaN;
+}
 function sendJson(res, code, obj, headers) { res.writeHead(code, Object.assign({ 'Content-Type': 'application/json' }, headers || {})); res.end(JSON.stringify(obj)); }
 function readBody(req) {
   return new Promise((resolve) => {
@@ -141,6 +153,32 @@ async function naarAutoboek(id) {
   }
 }
 
+// De verkoop naar het Autoboek: de regel verhuist van "Lopende Autos" naar "Verkochte Autos".
+// Zelfde opzet als naarAutoboek(): gooit nooit, en wat er misging komt in de database en dus op het
+// scherm, met een knop om het opnieuw te proberen. Beter een auto die nog verplaatst moet worden dan
+// een stille mislukking.
+async function verkoopNaarAutoboek(id) {
+  const bewaar = async (status, rij, fout) => {
+    await pool.query('UPDATE vehicles SET autoboek_status=$2, autoboek_rij=$3, autoboek_ts=$4, autoboek_fout=$5 WHERE id=$1',
+      [id, status, rij, Date.now(), fout]);
+    return { status, rij: rij || null, fout: fout || null };
+  };
+  if (!autoboek || !autoboek.aan()) return { status: 'uit', rij: null, fout: null };
+  try {
+    const r = await pool.query('SELECT * FROM vehicles WHERE id=$1', [id]);
+    if (!r.rowCount) return { status: 'fout', rij: null, fout: 'auto niet gevonden' };
+    const v = r.rows[0];
+    const uit = await autoboek.verplaatsNaarVerkocht(
+      { vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model },
+      { factuurnr: v.verkoop_factuurnr, factuurdatum: v.verkoop_factuurdatum,
+        verkoopprijs: v.verkoopprijs === null ? null : Number(v.verkoopprijs) });
+    return await bewaar('ok', uit.rij, null);
+  } catch (e) {
+    console.error('autoboek verkoop:', id, e.message);
+    return await bewaar('fout', null, String(e.message).slice(0, 400));
+  }
+}
+
 // De frontend stuurt telkens de complete state op; dit is één transactie.
 // Voertuigen die niet in de payload zitten blijven staan (nodig voor de latere Autoboek-sync).
 async function putState(b) {
@@ -154,7 +192,13 @@ async function putState(b) {
         `INSERT INTO vehicles (id,status,klaar,route,owner,arrived_at,tax_at,photos,subtasks,updated_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now())
          ON CONFLICT (id) DO UPDATE SET
-           status=EXCLUDED.status, klaar=EXCLUDED.klaar, route=EXCLUDED.route, owner=EXCLUDED.owner,
+           -- Een gemelde of bevestigde verkoop niet laten terugdraaien. De frontend stuurt zijn hele
+           -- geheugen op; een tabblad dat nog openstond van vóór de melding zou de auto anders
+           -- terugzetten naar 'lopende'. stateOk beschermt hier niet tegen: dat inlezen ging goed,
+           -- de gegevens zijn alleen verouderd.
+           status=CASE WHEN vehicles.status IN ('gemeld verkocht','verkocht')
+                       THEN vehicles.status ELSE EXCLUDED.status END,
+           klaar=EXCLUDED.klaar, route=EXCLUDED.route, owner=EXCLUDED.owner,
            arrived_at=EXCLUDED.arrived_at, tax_at=EXCLUDED.tax_at,
            photos=EXCLUDED.photos, subtasks=EXCLUDED.subtasks, updated_at=now()`,
         [id, v.status || 'komende', Number(v.klaar) || 0, v.route || null, v.owner || null,
@@ -235,11 +279,14 @@ const server = http.createServer(async (req, res) => {
     // zijn auto's uit; de lijst in index.html is nog slechts terugval.
     if (url === '/api/vehicles' && method === 'GET') {
       const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
-      const r = await pool.query('SELECT id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,import_auto,batch,note,status,factuurnr,inkoopprijs,verkoopdatum,docs,autoboek_status,autoboek_rij,autoboek_fout FROM vehicles ORDER BY sort_order NULLS LAST, id');
+      const r = await pool.query('SELECT id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,import_auto,batch,note,status,factuurnr,inkoopprijs,verkoopdatum,docs,autoboek_status,autoboek_rij,autoboek_fout,verkoop_factuurnr,verkoop_factuurdatum,verkoopprijs,verkocht_gemeld_ts,verkocht_bevestigd_door FROM vehicles ORDER BY sort_order NULLS LAST, id');
       // inkoopprijs is numeric; die geeft pg als string terug. Hier omzetten en niet met een globale
       // type-parser, want dan raak je ook iedere toekomstige numeric elders in de app.
       return sendJson(res, 200, r.rows.map(v => ({ id: v.id, vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model, uitv: v.uitv, kleur: v.kleur, brandstof: v.brandstof, transm: v.transm, reg: v.reg, km: v.km, inkoopdatum: v.inkoopdatum, lev: v.lev, importAuto: v.import_auto, batch: v.batch, note: v.note, status: v.status, factuurnr: v.factuurnr, inkoopprijs: v.inkoopprijs === null ? null : Number(v.inkoopprijs), verkoopdatum: v.verkoopdatum, docs: Array.isArray(v.docs) ? v.docs : [],
-        autoboekStatus: v.autoboek_status, autoboekRij: v.autoboek_rij, autoboekFout: v.autoboek_fout })));
+        autoboekStatus: v.autoboek_status, autoboekRij: v.autoboek_rij, autoboekFout: v.autoboek_fout,
+        verkoopFactuurnr: v.verkoop_factuurnr, verkoopFactuurdatum: v.verkoop_factuurdatum,
+        verkoopprijs: v.verkoopprijs === null ? null : Number(v.verkoopprijs),
+        verkochtGemeldTs: v.verkocht_gemeld_ts, verkochtDoor: v.verkocht_bevestigd_door })));
     }
 
     // Nieuwe auto vastleggen (de plusknop). Alleen team/admin. Bewust een eigen endpoint en niet via
@@ -280,6 +327,93 @@ const server = http.createServer(async (req, res) => {
     //
     // De geüploade bestanden blijven op schijf staan. `pvp-uploads-opruimen` verplaatst wezen
     // vannacht naar /var/pvp/prullenbak, waar ze nog 30 dagen staan: het vangnet bij een vergissing.
+    /* ===== Verkoop =====
+       Twee stappen met opzet. Een melding komt straks van een ander systeem (Mobilox) en zet de auto
+       op 'gemeld verkocht'; pas als een beheerder bevestigt gaat hij op 'verkocht' en verhuist de regel
+       in het Autoboek. Zo kan een verkeerde of dubbele melding nooit ongemerkt een auto afsluiten. */
+
+    // Melding van buiten: bearer-token, geen sessiecookie. Token uit /var/pvp/verkoop.env.
+    if (url === '/api/verkocht' && method === 'POST') {
+      const token = (process.env.PVP_VERKOOP_TOKEN || '').trim();
+      // Geen token ingesteld = koppeling uit. Nooit "geen token dus vrije toegang".
+      if (!token) return sendJson(res, 503, { error: 'verkoopkoppeling staat uit' });
+      const kop = String(req.headers.authorization || '');
+      const gegeven = kop.startsWith('Bearer ') ? kop.slice(7).trim() : '';
+      const a = Buffer.from(gegeven), b = Buffer.from(token);
+      // Lengte eerst vergelijken: timingSafeEqual gooit bij ongelijke lengte.
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return sendJson(res, 401, { error: 'auth' });
+
+      const body = await readBody(req) || {};
+      const tekst = x => { const t = (x === undefined || x === null) ? '' : String(x).trim(); return t === '' ? null : t; };
+      const sleutel = tekst(body.voertuig);
+      const factuurnr = tekst(body.factuurnummer);
+      const factuurdatum = tekst(body.factuurdatum);
+      const prijsRuw = body.verkoopprijs;
+      const prijs = bedrag(prijsRuw);
+
+      const spoor = (vid, uitkomst) => pool.query(
+        'INSERT INTO verkoop_meldingen (ts,vehicle_id,bron,factuurnr,factuurdatum,verkoopprijs,uitkomst,payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [Date.now(), vid, tekst(body.bron) || 'onbekend', factuurnr, factuurdatum, Number.isFinite(prijs) ? prijs : null, uitkomst, JSON.stringify(body)]
+      ).catch(e => console.error('verkoopmelding niet gelogd:', e.message));
+
+      if (!sleutel || !factuurnr) { await spoor(null, 'ongeldig'); return sendJson(res, 400, { error: 'voertuig en factuurnummer zijn verplicht' }); }
+      if (prijs !== null && !Number.isFinite(prijs)) { await spoor(null, 'ongeldig'); return sendJson(res, 400, { error: 'verkoopprijs is geen getal' }); }
+
+      // Opzoeken op id, VIN of kenteken. Genormaliseerd, want een ander systeem schrijft JJ-285-K waar
+      // PVP JJ285K heeft. De lege sleutel mag nooit matchen op auto's met een kastlijntje in het veld.
+      const plat = String(sleutel).toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const gev = await pool.query(
+        `SELECT id,status,verkoop_factuurnr FROM vehicles
+          WHERE id=$1
+             OR ($2 <> '' AND upper(regexp_replace(coalesce(vin,''),      '[^A-Za-z0-9]', '', 'g')) = $2)
+             OR ($2 <> '' AND upper(regexp_replace(coalesce(kenteken,''), '[^A-Za-z0-9]', '', 'g')) = $2)
+          LIMIT 2`, [sleutel, plat]);
+      if (!gev.rowCount) { await spoor(null, 'onbekend voertuig'); return sendJson(res, 404, { error: 'onbekend voertuig', gezocht: sleutel }); }
+      if (gev.rowCount > 1) { await spoor(null, 'ongeldig'); return sendJson(res, 409, { error: 'sleutel past op meer dan één auto', gezocht: sleutel }); }
+      const v = gev.rows[0];
+
+      // Idempotent: dezelfde melding nog eens is goed, een andere melding op dezelfde auto niet.
+      if (v.status === 'gemeld verkocht' || v.status === 'verkocht') {
+        if ((v.verkoop_factuurnr || '') === factuurnr) {
+          await spoor(v.id, 'ongewijzigd');
+          return sendJson(res, 200, { ok: true, ongewijzigd: true, id: v.id, status: v.status });
+        }
+        await spoor(v.id, 'conflict');
+        return sendJson(res, 409, { error: 'auto staat al op een andere verkoop', id: v.id, status: v.status, bestaand: v.verkoop_factuurnr, gemeld: factuurnr });
+      }
+
+      await pool.query(
+        `UPDATE vehicles SET status='gemeld verkocht', verkoop_factuurnr=$2, verkoop_factuurdatum=$3,
+                verkoopprijs=$4, verkocht_gemeld_ts=$5, updated_at=now() WHERE id=$1`,
+        [v.id, factuurnr, factuurdatum, prijs, Date.now()]);
+      await spoor(v.id, 'gemeld');
+      console.log('verkoop gemeld:', v.id, 'factuur', factuurnr);
+      return sendJson(res, 200, { ok: true, id: v.id, status: 'gemeld verkocht' });
+    }
+
+    // Bevestigen door een beheerder: status 'verkocht' én de regel in het Autoboek verplaatsen.
+    if (url === '/api/verkoop-bevestigen' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'admin') return sendJson(res, 403, { error: 'alleen een beheerder kan een verkoop bevestigen' });
+      const b = await readBody(req) || {};
+      if (!b.id) return sendJson(res, 400, { error: 'missing' });
+      const r = await pool.query('SELECT * FROM vehicles WHERE id=$1', [b.id]);
+      if (!r.rowCount) return sendJson(res, 404, { error: 'onbekende auto' });
+      const v = r.rows[0];
+      if (v.status !== 'gemeld verkocht' && v.status !== 'verkocht') {
+        return sendJson(res, 409, { error: 'deze auto is niet gemeld als verkocht', status: v.status });
+      }
+      if (v.status !== 'verkocht') {
+        await pool.query(
+          `UPDATE vehicles SET status='verkocht', verkocht_bevestigd_ts=$2, verkocht_bevestigd_door=$3, updated_at=now() WHERE id=$1`,
+          [v.id, Date.now(), u.n || u.u || '?']);
+      }
+      // Het Autoboek is een aparte stap: mislukt dat, dan blijft de bevestiging in PVP wél staan en is
+      // de fout zichtbaar, net als bij het aanmaken van een auto.
+      const ab = await verkoopNaarAutoboek(v.id);
+      return sendJson(res, 200, { ok: true, id: v.id, status: 'verkocht', autoboek: ab });
+    }
+
     if (url === '/api/vehicle-del' && method === 'POST') {
       const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
       if (u.r !== 'admin') return sendJson(res, 403, { error: 'alleen een beheerder kan een auto verwijderen' });

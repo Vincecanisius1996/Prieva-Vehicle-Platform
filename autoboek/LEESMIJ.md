@@ -21,7 +21,15 @@ en er wordt alleen een regel aan toegevoegd.
 
 Vier kleppen, alle vier getest tegen de kopie van het Autoboek op 17-08-2026:
 
-1. **Alleen toevoegen**, alleen op het tabblad *Komende Autos*. Bestaande cellen worden nooit geraakt.
+1. **Toevoegen op *Komende Autos*; bij een bevestigde verkoop verhuist een regel van *Lopende Autos*
+   naar *Verkochte Autos*.** Bestaande cellen worden nooit overschreven. Regels verwijderen mag sinds
+   18-08-2026 (overlegd met de bouwer van de rapportage); kolommen blijven onaantastbaar.
+   De twee bladen zijn positioneel uitgelijnd — 38 kolommen hebben dezelfde kop — dus verplaatsen is
+   kolom A t/m AV overnemen; de zeven stapkolommen die alleen *Lopende* heeft (AW–BC) vallen weg.
+   Bij het verwijderen schuiven de rijen eronder op, inclusief de samengevoegde cel, de voorwaardelijke
+   opmaak en het autofilter. Vóór het uploaden wordt lokaal nagerekend dat élk ander blad even breed en
+   even lang bleef en dat alle overgebleven regels ongewijzigd zijn; klopt er iets niet, dan gaat er
+   niets naar Drive.
    PVP vult niet alle kolommen: **A (F), B (TO-DO), D (Fact. Nr.) en Q (Datum verkoop) blijven leeg** —
    dat is handwerk van kantoor (afspraak 17-08-2026). Het merk wordt genormaliseerd naar eerste letter
    hoofdletter, rest klein, met een uitzonderingslijst voor afkortingsmerken (BMW, VW, MG, DS, BYD, SEAT).
