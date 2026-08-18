@@ -63,6 +63,14 @@ Regels:
 - Vul een veld ALLEEN als je het echt in de stukken ziet. Verzin niets en leid niets af uit algemene kennis
   over het model. Weet je het niet: null. Een leeg veld is bruikbaar, een verzonnen veld is schadelijk.
 - Geef ELK veld terug, ook als het null is. Laat velden niet weg.
+- CIJFERS OVERTIKKEN, NIET SCHATTEN. Lees een kilometerstand, prijs, VIN of datum cijfer voor cijfer over
+  zoals hij er staat. "69.532 km" is 69532, niet 69533. Kun je een cijfer niet met zekerheid lezen, geef
+  dan null voor dat veld. Eén cijfer ernaast ziet er goed uit en gaat zo de administratie in; dat is
+  erger dan een leeg veld.
+- Op een veilingpagina staan de gegevens meestal onder koppen als "Age and mileage" (Mileage, First
+  registration), "Interior and type" (Color, Doors count, Body type), "Engine and performance"
+  (Propellant, Transmission, Maximum power) en "Priser"/"Price". De uitvoering staat als regel onder het
+  merk en model, bijvoorbeeld "1,2 PureTech Attraction m/Plus Pakke 83HK 5d". Loop die koppen langs.
 - Verzin geen precisie die er niet staat. Staat er alleen een bouwjaar ("Bouwjaar 2016") en geen volledige
   datum, laat "reg" dan LEEG — maak er geen 01-01-2016 van. Een verkeerde datum eerste toelating werkt door
   in de BPM en in de advertentie.
@@ -102,11 +110,29 @@ async function lees(docs) {
   if (!aan()) throw new Error('uitlezen staat uit (ANTHROPIC_API_KEY ontbreekt)');
   if (!Array.isArray(docs) || !docs.length) throw new Error('geen documenten meegegeven');
 
+  // Volgorde en aantal: pdf's zijn documenten en gaan er altijd in. Bij afbeeldingen komen
+  // screenshots eerst (png) en foto's daarna, en er gaan er hooguit MAX_BEELD mee. Bij de eerste
+  // echte auto werden tien veilingfoto's van 1,2 MB meegestuurd naast één screenshot; die verdrongen
+  // het enige stuk waar de gegevens op stonden, kostten 40.000 tokens en leverden niets op.
+  const isPdf = d => /^data:application\/pdf;/.test(d.dataUrl || '');
+  const isPng = d => /^data:image\/png;/.test(d.dataUrl || '');
+  const omvangVan = d => (d.dataUrl || '').length;
+  const gesorteerd = [
+    ...docs.filter(isPdf),
+    ...docs.filter(d => !isPdf(d) && isPng(d)).sort((a, b) => omvangVan(a) - omvangVan(b)),
+    ...docs.filter(d => !isPdf(d) && !isPng(d)).sort((a, b) => omvangVan(a) - omvangVan(b)),
+  ];
+  const MAX_BEELD = Number(process.env.UITLEZEN_MAX_BEELD) || 3;
+
   const inhoud = [], gebruikt = [], overgeslagen = [];
-  let bytes = 0;
-  for (const d of docs) {
+  let bytes = 0, beelden = 0;
+  for (const d of gesorteerd) {
     const b = blok(d);
     if (!b) { overgeslagen.push(d.name || 'naamloos'); continue; }
+    if (b.type === 'image') {
+      if (beelden >= MAX_BEELD) { overgeslagen.push((d.name || 'naamloos') + ' (meer dan ' + MAX_BEELD + ' afbeeldingen)'); continue; }
+      beelden++;
+    }
     const omvang = Math.ceil((b.source.data.length * 3) / 4);
     // Grens op de totale omvang: één keer per ongeluk een map vol foto's erin duwen mag niet meteen
     // een grote rekening opleveren.
@@ -128,6 +154,8 @@ async function lees(docs) {
     body: JSON.stringify({
       model: MODEL(),
       max_tokens: 2000,
+      // Geen `temperature`: die is op deze modelgeneratie verwijderd en geeft een 400. Sturen op
+      // nauwkeurigheid gaat via `effort` (en het model zelf), niet via sampling.
       tools: [{ name: 'velden', description: 'De gegevens van de auto uit de stukken', input_schema: SCHEMA }],
       tool_choice: { type: 'tool', name: 'velden' },
       messages: [{ role: 'user', content: inhoud }],
