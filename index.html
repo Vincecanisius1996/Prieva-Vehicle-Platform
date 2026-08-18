@@ -1191,7 +1191,12 @@ function openAutoModal(){
   nieuweDocs=[];
   let ov=document.getElementById('autoModal');
   if(!ov){ov=document.createElement('div'); ov.id='autoModal'; ov.className='modal-ov';
-    ov.addEventListener('click',e=>{if(e.target===ov)closeAutoModal();}); document.body.appendChild(ov);}
+    ov.addEventListener('click',e=>{if(e.target===ov)closeAutoModal();});
+    // Onthouden wat jij zelf hebt getypt. Een waarde die het uitlezen heeft neergezet mag een volgende,
+    // betere uitlezing overschrijven; wat jij intikt niet. Zonder dat onderscheid blijft de eerste,
+    // magere lezing staan zodra je er een document bij doet — precies hoe 69.532 km 69.533 werd.
+    ov.addEventListener('input',e=>{if(e.target.id&&e.target.id.indexOf('na-')===0)e.target.dataset.bron='hand';});
+    document.body.appendChild(ov);}
   const kies=(id,lijst)=>`<select id="${id}"><option value="">—</option>${lijst.map(x=>`<option value="${x}">${x}</option>`).join("")}</select>`;
   const veld=(id,label,extra="",type="text")=>`<div><label>${label}</label><input type="${type}" id="${id}" ${extra}></div>`;
   ov.innerHTML=`<div class="modal wide">
@@ -1303,13 +1308,18 @@ async function autoUitlezen(){
     const j=await r.json().catch(()=>null);
     if(!j){vak.innerHTML=`<div class="fout">Onverwacht antwoord van de server.</div>`; return;}
     if(j.uit||j.fout){vak.innerHTML=`<div class="fout">${j.fout||'automatisch uitlezen staat uit'}</div>`; return;}
-    const gevuld=[], leeg=[];
+    const gevuld=[], leeg=[], bijgewerkt=[], botst=[];
     for(const [veld,id] of UITLEES_VELDEN){
       const el=document.getElementById(id); if(!el)continue;
       const w=j.velden?j.velden[veld]:null;
       if(w===null||w===undefined||w===""){ if(!el.value)leeg.push(veld); continue; }
-      if(el.value&&el.value!==String(w)){ continue; }   // wat jij zelf hebt ingevuld blijft staan
-      el.value=String(w); gevuld.push(veld);
+      if(el.value===String(w)) continue;                       // stond er al zo
+      if(!el.value){ el.value=String(w); el.dataset.bron='uitlezen'; gevuld.push(veld); continue; }
+      if(el.dataset.bron==='uitlezen'){                        // van een vorige, mindere lezing
+        bijgewerkt.push([veld,el.value,String(w)]);
+        el.value=String(w); continue;
+      }
+      botst.push([veld,el.value,String(w)]);                   // door jou getypt: blijft staan
     }
     if(j.velden&&typeof j.velden.importAuto==='boolean'){
       const c=document.getElementById('na-import'); if(c){c.checked=j.velden.importAuto; c.dataset.hand="1";}
@@ -1320,6 +1330,8 @@ async function autoUitlezen(){
       <div style="font-size:12px;line-height:1.7">
         <div style="color:#1a7f37;font-weight:600">✓ ${gevuld.length} veld(en) ingevuld uit ${j.gebruikt.length} stuk(ken)</div>
         ${gevuld.length?`<div class="muted">${gevuld.map(v=>`${UITLEES_NAMEN[v]||v}${bron(v)}`).join(' · ')}</div>`:''}
+        ${bijgewerkt.length?`<div style="color:#1a7f37;margin-top:5px"><b>Bijgewerkt:</b> ${bijgewerkt.map(([v,o,n])=>`${UITLEES_NAMEN[v]||v} ${o} → ${n}`).join(' · ')}</div>`:''}
+        ${botst.length?`<div style="color:#c0392b;margin-top:5px"><b>Wijkt af van de stukken:</b> ${botst.map(([v,o,n])=>`${UITLEES_NAMEN[v]||v} — jij ${o}, de stukken ${n}`).join(' · ')}. Jouw invoer blijft staan; kijk na welke klopt.</div>`:''}
         ${j.onzeker&&j.onzeker.length?`<div style="color:#b26a00;margin-top:5px"><b>Nakijken:</b> ${j.onzeker.map(v=>UITLEES_NAMEN[v]||v).join(', ')} — de stukken spreken elkaar tegen</div>`:''}
         ${leeg.length?`<div style="color:#c0392b;margin-top:5px"><b>Niet gevonden:</b> ${leeg.map(v=>UITLEES_NAMEN[v]||v).join(', ')} — vul zelf aan of voeg een document toe</div>`:''}
         ${j.overgeslagen&&j.overgeslagen.length?`<div class="muted" style="margin-top:5px">Overgeslagen: ${j.overgeslagen.join(', ')}</div>`:''}
