@@ -117,6 +117,13 @@
   .fn .track{flex:1;height:22px;background:var(--slate-soft);border-radius:6px;overflow:hidden}
   .fn .fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--navy-2));border-radius:6px;display:flex;align-items:center;justify-content:flex-end;color:#fff;font-size:11px;font-weight:700;padding-right:7px;min-width:22px}
   .fn .fc{width:26px;text-align:right;font-weight:700;font-size:13px;flex:none}
+  /* Eindstand onder de stappen: geen fase meer, dus met een scheiding en in het groen van de
+     Verkoopklaar-badge, zodat je meteen ziet dat het geen knelpunt is maar afgerond werk. */
+  .fn-eind{margin-top:5px;padding-top:11px;border-top:1px dashed var(--line)}
+  .fn-eind .fl{color:var(--green)} .fn-eind .fc{color:var(--green)}
+  .fn-eind .fill{background:linear-gradient(90deg,#2aa06b,var(--green))}
+  .fn-gemeld .fl{color:var(--amber)} .fn-gemeld .fc{color:var(--amber)}
+  .fn-gemeld .fill{background:linear-gradient(90deg,#d99420,var(--amber))}
   .cols{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
   .person-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
   .person-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
@@ -658,8 +665,15 @@ function renderLopende(){
   const inLijst=v=>v.status==="lopende"||v.status==="gemeld verkocht";
   const lop=V.filter(v=>inLijst(v)&&match(v));
   const allLop=V.filter(inLijst);
-  const perCat=CATS.map(c=>allLop.filter(v=>catOf(v)===c).length);
-  const maxc=Math.max(1,...perCat);
+  // Elke lopende auto hoort érgens in dit paneel te staan. catOf() gaf null zodra alle stappen af
+  // waren én voor een auto die nog op de taxatiekeuze wacht; die vielen dus buiten elke balk — bij
+  // 64 lopende auto's waren er 38 onzichtbaar. De trechter telt nu uit currentAction(), dezelfde
+  // bron als de kolom Voortgang in de tabel hiernaast, en de eindstanden staan er los onder.
+  const catVan=v=>{const a=currentAction(v); return a?a.cat:null;};
+  const perCat=CATS.map(c=>allLop.filter(v=>catVan(v)===c).length);
+  const klaarAantal=allLop.filter(v=>v.status==='lopende'&&currentAction(v)===null).length;
+  const gemeldAantal=allLop.filter(v=>v.status==='gemeld verkocht').length;
+  const maxc=Math.max(1,...perCat,klaarAantal,gemeldAantal);
   if(!allLop.length){
     app.innerHTML=`<h1 class="page-title">Lopende auto's</h1><p class="page-sub">Auto's die binnen zijn en het traject doorlopen.</p>
       <div class="card"><div class="empty"><div class="eb">${ico("inbox",26)}</div><div style="font-weight:600;color:var(--ink);margin-bottom:4px">Nog geen auto's in traject</div>Zodra de batch van 13-08 binnenkomt, markeer je dat op <b onclick="go('komende')" style="cursor:pointer;color:var(--blue)">Komende</b> of <b onclick="go('vandaag')" style="cursor:pointer;color:var(--blue)">Vandaag</b> — dan verschijnen ze hier met stap 1 (RDW Foto's) open.</div></div>`;
@@ -680,7 +694,9 @@ function renderLopende(){
       <div class="card"><div class="card-body" style="padding:0 4px"><table><thead><tr><th>Voertuig</th><th>Voortgang</th><th>Route</th><th>Wie</th></tr></thead><tbody>${rows}</tbody></table></div></div>
       <div class="card"><h3>Waar staan ze?</h3><div class="card-body"><div class="funnel">
         ${CATS.map((c,i)=>`<div class="fn"><div class="fl">${c}</div><div class="track"><div class="fill" style="width:${Math.round(perCat[i]/maxc*100)}%;${perCat[i]===0?'background:transparent':''}">${perCat[i]||''}</div></div><div class="fc">${perCat[i]}</div></div>`).join("")}
-      </div><div style="margin-top:10px;font-size:12px;color:var(--muted)">Toont waar de lopende auto's nu staan in de flow — de langste balk is het knelpunt.</div></div></div>
+        <div class="fn fn-eind"><div class="fl">✓ Verkoopklaar</div><div class="track"><div class="fill" style="width:${Math.round(klaarAantal/maxc*100)}%;${klaarAantal===0?'background:transparent':''}">${klaarAantal||''}</div></div><div class="fc">${klaarAantal}</div></div>
+        ${gemeldAantal?`<div class="fn fn-gemeld"><div class="fl">Gemeld verkocht</div><div class="track"><div class="fill" style="width:${Math.round(gemeldAantal/maxc*100)}%">${gemeldAantal}</div></div><div class="fc">${gemeldAantal}</div></div>`:''}
+      </div><div style="margin-top:10px;font-size:12px;color:var(--muted)">Alle ${allLop.length} lopende auto's staan hierin — de langste balk tussen de stappen is het knelpunt.</div></div></div>
     </div>`;
 }
 
