@@ -4,6 +4,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
+const { execFile } = require('child_process');
 const pg = require('pg');
 
 pg.types.setTypeParser(20, v => (v === null ? null : parseInt(v, 10))); // bigint -> number i.p.v. string
@@ -39,30 +41,96 @@ function makeToken(u) { const p = Buffer.from(JSON.stringify({ u: u.username, r:
 function verifyToken(tok) { if (!tok || tok.indexOf('.') < 0) return null; const i = tok.lastIndexOf('.'); const p = tok.slice(0, i), sig = tok.slice(i + 1); if (sign(p) !== sig) return null; try { return JSON.parse(Buffer.from(p, 'base64').toString('utf8')); } catch (e) { return null; } }
 function parseCookies(req) { const h = req.headers.cookie || ''; const out = {}; h.split(';').forEach(c => { const i = c.indexOf('='); if (i > 0) out[c.slice(0, i).trim()] = decodeURIComponent(c.slice(i + 1).trim()); }); return out; }
 function userFromReq(req) { return verifyToken(parseCookies(req).pvp_session); }
-function saveDataUrl(dataUrl, id, prefix) {
-  const m = /^data:image\/(\w+);base64,(.+)$/.exec(dataUrl || '');
+/* HEIC is het standaardformaat van iPhone en Mac. Chrome en Firefox kunnen het niet tónen, dus een
+   foto die vanaf een Mac werd geüpload bleef in de app een leeg vak, en het uitlezen sloeg het bestand
+   over — de Claude API kent alleen jpeg/png/gif/webp. Op Windows speelt het niet (die camera's leveren
+   jpeg) en in Safari ook niet (die kan HEIC wél decoderen, waardoor verkleinFoto in de browser er al
+   jpeg van maakt). Vandaar dat het per computer verschilde en niemand er een patroon in zag.
+   We zetten HEIC daarom bij binnenkomst om naar JPEG, met heif-convert (libheif + libde265, systeem-
+   pakketten, geen npm). Mislukt dat, dan bewaren we het origineel onder .heic: net als bij het
+   verkleinen in de browser mag omzetten nooit een upload kosten.
+   Er wordt bewust niet verkleind — heif-convert kan dat niet en libvips ervoor installeren sleept
+   poppler en librsvg mee. Een omgezette foto is daardoor groter dan FOTO_MAX in index.html toestaat
+   (ruwweg 3 MB bij 4032 px), maar wel leesbaar, en juist bij kentekenbewijzen leest het model er
+   chassisnummers uit. */
+const HEIC_KWALITEIT = 90;
+
+// Op de inhoud kijken en niet op het opgegeven type: Firefox op de Mac geeft een .heic mee als
+// application/octet-stream, en dan mist een controle op de mime-tekst het bestand.
+function isHeic(buf) {
+  if (!buf || buf.length < 12) return false;
+  if (buf.toString('latin1', 4, 8) !== 'ftyp') return false;
+  return ['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'mif1', 'msf1', 'heif'].includes(buf.toString('latin1', 8, 12));
+}
+
+function heicNaarJpeg(buf) {
+  return new Promise(klaar => {
+    let map = null;
+    const opruimen = () => { if (map) { try { fs.rmSync(map, { recursive: true, force: true }); } catch (e) {} } };
+    try {
+      map = fs.mkdtempSync(path.join(os.tmpdir(), 'pvp-heic-'));
+      fs.writeFileSync(path.join(map, 'in.heic'), buf);
+    } catch (e) { opruimen(); return klaar(null); }
+    execFile('heif-convert', ['-q', String(HEIC_KWALITEIT), path.join(map, 'in.heic'), path.join(map, 'uit.jpg')],
+      { timeout: 30000 }, () => {
+        let uit = null;
+        try {
+          // Bij een bestand met meerdere beelden schrijft heif-convert 'uit-1.jpg' i.p.v. 'uit.jpg',
+          // dus we kijken wat er ligt in plaats van de naam aan te nemen.
+          const naam = fs.readdirSync(map).filter(n => n !== 'in.heic').sort()[0];
+          if (naam) {
+            const b = fs.readFileSync(path.join(map, naam));
+            if (b.length > 2 && b[0] === 0xFF && b[1] === 0xD8) uit = b;   // echt een jpeg
+          }
+        } catch (e) {}
+        opruimen(); klaar(uit);
+      });
+  });
+}
+
+// Een lege mime hoort erbij: bij een onbekend type levert FileReader `data:application/octet-stream`
+// of zelfs `data:;base64,`, en dat is precies het geval waar HEIC in valt.
+function ontleedDataUrl(dataUrl) {
+  const m = /^data:([\w.+-]+\/[\w.+-]+)?;base64,(.+)$/.exec(dataUrl || '');
   if (!m) return null;
-  const ext = m[1].toLowerCase() === 'jpeg' ? 'jpg' : m[1].toLowerCase();
+  let buf; try { buf = Buffer.from(m[2], 'base64'); } catch (e) { return null; }
+  if (!buf.length) return null;
+  return { mime: (m[1] || 'application/octet-stream').toLowerCase(), buf };
+}
+
+async function heicEruit(d) {
+  if (!isHeic(d.buf)) return d;
+  const jpeg = await heicNaarJpeg(d.buf);
+  if (jpeg) return { mime: 'image/jpeg', buf: jpeg };
+  console.error('heic: omzetten mislukt, origineel bewaard');
+  return { mime: 'image/heic', buf: d.buf };
+}
+
+const BEELD_EXT = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/heic': 'heic', 'image/heif': 'heic' };
+
+function schrijfUpload(buf, ext, id, prefix) {
   const safeId = String(id).replace(/[^A-Za-z0-9._-]/g, '_');
   const dir = path.join(UPLOAD_DIR, safeId);
   fs.mkdirSync(dir, { recursive: true });
   const fname = prefix + '_' + crypto.randomBytes(6).toString('hex') + '.' + ext;
-  fs.writeFileSync(path.join(dir, fname), Buffer.from(m[2], 'base64'));
+  fs.writeFileSync(path.join(dir, fname), buf);
   return '/uploads/' + safeId + '/' + fname;
 }
-function saveFile(dataUrl, id, prefix) {
-  const m = /^data:([\w.+-]+\/[\w.+-]+);base64,(.+)$/.exec(dataUrl || '');
-  if (!m) return null;
-  const mime = m[1].toLowerCase();
-  const extMap = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/gif': 'gif' };
-  const ext = extMap[mime]; if (!ext) return null;
-  const safeId = String(id).replace(/[^A-Za-z0-9._-]/g, '_');
-  const dir = path.join(UPLOAD_DIR, safeId);
-  fs.mkdirSync(dir, { recursive: true });
-  const fname = prefix + '_' + crypto.randomBytes(6).toString('hex') + '.' + ext;
-  fs.writeFileSync(path.join(dir, fname), Buffer.from(m[2], 'base64'));
-  return '/uploads/' + safeId + '/' + fname;
+
+async function saveDataUrl(dataUrl, id, prefix) {
+  const d = ontleedDataUrl(dataUrl); if (!d) return null;
+  const g = await heicEruit(d);
+  const ext = BEELD_EXT[g.mime]; if (!ext) return null;    // alleen afbeeldingen, geen svg
+  return schrijfUpload(g.buf, ext, id, prefix);
 }
+
+async function saveFile(dataUrl, id, prefix) {
+  const d = ontleedDataUrl(dataUrl); if (!d) return null;
+  const g = await heicEruit(d);
+  const ext = g.mime === 'application/pdf' ? 'pdf' : BEELD_EXT[g.mime]; if (!ext) return null;
+  return schrijfUpload(g.buf, ext, id, prefix);
+}
+
 // Bedragen uit een ander systeem komen in Nederlandse notatie binnen: "2.950,00" is 2950, niet 2,95.
 // Zonder dit onderscheid weiger je een geldige prijs of boek je er een die duizend keer te laag is.
 function bedrag(x) {
@@ -292,7 +360,7 @@ const server = http.createServer(async (req, res) => {
 
     if (url === '/api/state' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); return sendJson(res, 200, await getState()); }
     if (url === '/api/state' && method === 'PUT') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req); if (b === null) return sendJson(res, 400, { error: 'bad' }); await putState(b); return sendJson(res, 200, { ok: true }); }
-    if (url === '/api/photo' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.key || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = saveDataUrl(b.dataUrl, b.id, String(b.key).replace(/[^A-Za-z0-9._-]/g, '_')); if (!up) return sendJson(res, 400, { error: 'format' }); return sendJson(res, 200, { url: up }); }
+    if (url === '/api/photo' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.key || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = await saveDataUrl(b.dataUrl, b.id, String(b.key).replace(/[^A-Za-z0-9._-]/g, '_')); if (!up) return sendJson(res, 400, { error: 'format' }); return sendJson(res, 200, { url: up }); }
 
     if (url === '/api/status' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const r = await pool.query('SELECT id,status FROM vehicles ORDER BY sort_order NULLS LAST, id'); const out = {}; for (const row of r.rows) out[row.id] = { status: row.status }; return sendJson(res, 200, { vehicles: out }); }
 
@@ -524,8 +592,24 @@ const server = http.createServer(async (req, res) => {
       if (!uitlezen || !uitlezen.aan()) return sendJson(res, 200, { uit: true, fout: 'automatisch uitlezen staat uit' });
       const b = await readBody(req) || {};
       if (!Array.isArray(b.docs) || !b.docs.length) return sendJson(res, 400, { error: 'geen documenten' });
+      // De stukken komen hier rechtstreeks uit de browser, niet van schijf, dus de omzetting bij het
+      // opslaan helpt hier niet. Een HEIC-bestand kent de Claude API niet en zou stil overgeslagen
+      // worden — precies het geval van een foto van een kentekenbewijs, gemaakt met een iPhone.
+      const docs = [];
+      for (const doc of b.docs) {
+        const d = ontleedDataUrl(doc && doc.dataUrl);
+        if (d && isHeic(d.buf)) {
+          const g = await heicEruit(d);
+          if (g.mime === 'image/jpeg') {
+            docs.push({ name: String(doc.name || 'foto').replace(/\.hei[cf]$/i, '') + '.jpg',
+                        dataUrl: 'data:image/jpeg;base64,' + g.buf.toString('base64') });
+            continue;
+          }
+        }
+        docs.push(doc);
+      }
       try {
-        const r = await uitlezen.lees(b.docs);
+        const r = await uitlezen.lees(docs);
         // Namen erbij, niet alleen een aantal: bij een tegenvallende uitlezing is de eerste vraag
         // altijd "welke stukken kreeg het model eigenlijk te zien?", en die was zo niet te beantwoorden.
         const gevuld = Object.entries(r.velden || {}).filter(([, w]) => w !== null && w !== undefined && w !== '').map(([k]) => k);
@@ -559,7 +643,7 @@ const server = http.createServer(async (req, res) => {
       if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
       const b = await readBody(req) || {};
       if (!b.id || !b.dataUrl) return sendJson(res, 400, { error: 'missing' });
-      const up = saveFile(b.dataUrl, b.id, 'doc'); if (!up) return sendJson(res, 400, { error: 'format' });
+      const up = await saveFile(b.dataUrl, b.id, 'doc'); if (!up) return sendJson(res, 400, { error: 'format' });
       const naam = String(b.name || 'document').slice(0, 200);
       await pool.query(
         `INSERT INTO vehicles (id, docs) VALUES ($1, jsonb_build_array($2::jsonb))
@@ -569,12 +653,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url === '/api/adphotos' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const r = await pool.query(`SELECT id, ad_photos FROM vehicles WHERE ad_photos <> '[]'::jsonb ORDER BY sort_order NULLS LAST, id`); const out = {}; for (const row of r.rows) out[row.id] = row.ad_photos; return sendJson(res, 200, out); }
-    if (url === '/api/adphoto' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const b = await readBody(req) || {}; if (!b.id || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = saveDataUrl(b.dataUrl, b.id, 'ad'); if (!up) return sendJson(res, 400, { error: 'format' }); await pool.query(`INSERT INTO vehicles (id, ad_photos) VALUES ($1, jsonb_build_array($2::text)) ON CONFLICT (id) DO UPDATE SET ad_photos = vehicles.ad_photos || jsonb_build_array($2::text), updated_at=now()`, [b.id, up]); return sendJson(res, 200, { url: up }); }
+    if (url === '/api/adphoto' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const b = await readBody(req) || {}; if (!b.id || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = await saveDataUrl(b.dataUrl, b.id, 'ad'); if (!up) return sendJson(res, 400, { error: 'format' }); await pool.query(`INSERT INTO vehicles (id, ad_photos) VALUES ($1, jsonb_build_array($2::text)) ON CONFLICT (id) DO UPDATE SET ad_photos = vehicles.ad_photos || jsonb_build_array($2::text), updated_at=now()`, [b.id, up]); return sendJson(res, 200, { url: up }); }
     if (url === '/api/adphotos-set' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const b = await readBody(req) || {}; if (!b.id || !Array.isArray(b.urls)) return sendJson(res, 400, { error: 'missing' }); await pool.query(`INSERT INTO vehicles (id, ad_photos) VALUES ($1,$2::jsonb) ON CONFLICT (id) DO UPDATE SET ad_photos=EXCLUDED.ad_photos, updated_at=now()`, [b.id, JSON.stringify(b.urls)]); return sendJson(res, 200, { ok: true }); }
 
     if (url === '/api/taxstate' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const r = await pool.query('SELECT id,status,route,photos FROM vehicles ORDER BY sort_order NULLS LAST, id'); const out = {}; for (const row of r.rows) out[row.id] = { status: row.status, route: row.route || null, photos: row.photos || {} }; return sendJson(res, 200, { vehicles: out }); }
     if (url === '/api/bpmreports' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); return sendJson(res, 200, await getBpm()); }
-    if (url === '/api/bpmreport' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = saveFile(b.dataUrl, b.id, 'bpm'); if (!up) return sendJson(res, 400, { error: 'format' }); const rec = { url: up, name: String(b.name || 'BPM-rapport').slice(0, 120), ts: Date.now(), by: u.n || u.u }; const client = await pool.connect(); try { await client.query('BEGIN'); await client.query('INSERT INTO bpm_reports (vehicle_id,url,name,ts,by_name) VALUES ($1,$2,$3,$4,$5)', [b.id, rec.url, rec.name, rec.ts, rec.by]); await client.query('INSERT INTO bpm_notifs (vehicle_id,name,ts,by_name,seen) VALUES ($1,$2,$3,$4,false)', [b.id, rec.name, rec.ts, rec.by]); await client.query('COMMIT'); } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); } return sendJson(res, 200, { url: up }); }
+    if (url === '/api/bpmreport' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = await saveFile(b.dataUrl, b.id, 'bpm'); if (!up) return sendJson(res, 400, { error: 'format' }); const rec = { url: up, name: String(b.name || 'BPM-rapport').slice(0, 120), ts: Date.now(), by: u.n || u.u }; const client = await pool.connect(); try { await client.query('BEGIN'); await client.query('INSERT INTO bpm_reports (vehicle_id,url,name,ts,by_name) VALUES ($1,$2,$3,$4,$5)', [b.id, rec.url, rec.name, rec.ts, rec.by]); await client.query('INSERT INTO bpm_notifs (vehicle_id,name,ts,by_name,seen) VALUES ($1,$2,$3,$4,false)', [b.id, rec.name, rec.ts, rec.by]); await client.query('COMMIT'); } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); } return sendJson(res, 200, { url: up }); }
     if (url === '/api/bpmnotif-seen' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); await pool.query('UPDATE bpm_notifs SET seen=true WHERE seen=false'); return sendJson(res, 200, { ok: true }); }
     if (url === '/api/bpmreport-del' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.url) return sendJson(res, 400, { error: 'missing' }); await pool.query('DELETE FROM bpm_reports WHERE vehicle_id=$1 AND url=$2', [b.id, b.url]); try { const rel = decodeURIComponent(String(b.url).replace(/^\/uploads\//, '')); if (rel.indexOf('..') < 0) fs.unlink(path.join(UPLOAD_DIR, rel), () => {}); } catch (_) {} return sendJson(res, 200, { ok: true }); }
 

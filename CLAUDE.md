@@ -269,6 +269,40 @@ Testen zonder browser (er staat er geen op de droplet, en Chrome-afhankelijkhede
 blok uit `index.html` en draai het met `@napi-rs/canvas` in de scratchpad. Let op: `toDataURL` neemt
 kwaliteit als 0–1 (browserconventie), `toBuffer` als 0–100 — dat verschil kost je een meting.
 
+## HEIC-foto's (Mac en iPhone)
+Sinds 19-08-2026 zet `server.js` HEIC bij binnenkomst om naar JPEG. Zonder dat bleef een foto die
+vanaf een Mac werd geüpload een **leeg vak** in de app, en het uitlezen sloeg het bestand stil over.
+
+Waarom het per computer verschilde, en dus lang op een spookfout leek:
+- **Windows** levert jpeg — daar speelt het niet.
+- **Safari** kan HEIC decoderen, dus `verkleinFoto()` in de browser maakte er al jpeg van.
+- **Chrome en Firefox op de Mac** kunnen het niet. `verkleinFoto()` valt dan terug op het origineel
+  (zo bedoeld: verkleinen mag nooit een upload kosten), en het HEIC-bestand belandde ongewijzigd op
+  schijf. Chrome kan het vervolgens ook niet **tonen** — vandaar het lege vak. nginx maakte het erger:
+  `.heic` staat niet in `mime.types`, dus het ging als `application/octet-stream` de deur uit.
+- De Claude API kent alleen jpeg/png/gif/webp, dus `blok()` in `uitlezen/` gaf `null` en het stuk
+  verdween in `overgeslagen` — precies een kentekenbewijs waar de gegevens op staan.
+
+Hoe het nu werkt:
+- Herkennen gebeurt op de **inhoud** (`ftyp`-merk in de eerste 12 bytes), niet op het opgegeven type:
+  Firefox op de Mac geeft een `.heic` mee als `application/octet-stream` of zonder type.
+- Omzetten met **`heif-convert`** (systeempakketten `libheif-examples` + `libheif-plugin-libde265`,
+  geen npm). Zonder die plug-in geeft libheif "Unsupported codec" en gebeurt er niets.
+- Drie plekken delen dezelfde omzetting: `saveDataUrl` (foto's), `saveFile` (documenten, BPM) en
+  **`/api/uitlezen`** — dat laatste is nodig omdat de stukken daar rechtstreeks uit de browser komen
+  en niet van schijf, dus de omzetting bij het opslaan helpt er niet.
+- **Mislukt de omzetting, dan wordt het origineel bewaard** als `.heic`, met een regel in het logboek.
+  Zelfde regel als bij het verkleinen: een upload mag er nooit door verloren gaan.
+- Er wordt bewust **niet verkleind**: `heif-convert` kan dat niet, en libvips ervoor installeren sleept
+  poppler en librsvg mee. Een omgezette foto is daardoor groter dan `FOTO_MAX` toestaat (~3 MB bij
+  4032 px). Kwaliteit 90 is gekozen omdat het model er chassisnummers uit moet lezen.
+- De twee HEIC-bestanden die er al lagen zijn omgezet en de URL's in `photos` bijgewerkt; de originelen
+  blijven als wees liggen tot de nachtelijke opruimer ze naar de prullenbak verplaatst.
+
+**Blijft staan:** in de bak "Meerdere foto's tegelijk" en bij de documentenlijst toont de browser het
+bestand vóór het uploaden uit zijn eigen geheugen. Een HEIC is daar nog steeds een leeg miniatuurtje —
+de server heeft het dan nog niet gezien. Na het uploaden klopt het beeld wel.
+
 ## Regels & valkuilen (belangrijk)
 - **Houd PVP strikt gescheiden van CRP.** Op dezelfde droplet draait een aparte reporting-tool (CRP)
   op `reporting.prieva.nl` (Docker-container `crp`, eigen nginx-blok, gedeelde PostgreSQL). **Raak nooit**
