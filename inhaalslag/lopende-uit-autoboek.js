@@ -18,10 +18,15 @@ const dag = n => { const d = new Date(Date.UTC(1899, 11, 30) + Number(n) * 86400
 // Het Autoboek schrijft in afkortingen en wisselende hoofdletters; PVP kent één schrijfwijze per
 // waarde. Zonder dit worden 'VW', 'opel' en 'Citroen' drie merken die in geen enkel overzicht
 // bij elkaar optellen.
-const MERK = { VW:'Volkswagen', PEU:'Peugeot', CITR:'Citroën', CITROEN:'Citroën', NISS:'Nissan',
-  ALFA:'Alfa Romeo', MERC:'Mercedes', 'MERCEDES-BENZ':'Mercedes', MG:'MG', MINI:'Mini', BMW:'BMW' };
-const merk = s => { const t = leeg(s); if (!t) return null; const b = MERK[t.toUpperCase()];
-  return b || t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); };
+// Eén bron voor merknamen: autoboek/merken.js. Zelf een tabelletje bijhouden liep meteen mis —
+// 'Alfa Romeo' werd 'Alfa romeo' omdat alles na de eerste letter naar kleine letters ging.
+const { volledigMerk } = require('/opt/pvp-api/autoboek/merken.js');
+// merken.js geeft de schrijfwijze van het Autoboek terug; PVP houdt op zijn eigen scherm de
+// correcte Nederlandse spelling aan. Alleen daar waar die twee verschillen staat hier een uitzondering.
+const PVP_SPELLING = { Citroen: 'Citroën' };
+const merk = s => { const t = leeg(s); if (!t) return null;
+  const v = volledigMerk(t) || t.charAt(0).toUpperCase() + t.slice(1);
+  return PVP_SPELLING[v] || v; };
 const BRAND = { BENZ:'Benzine', BENZINE:'Benzine', ELEC:'Elektrisch', ELEKTRISCH:'Elektrisch',
   PHEV:'PHEV', DIESEL:'Diesel', HYBRIDE:'Hybride' };
 const TRANS = { AUT:'Automaat', AUTOMAAT:'Automaat', HAND:'Handgeschakeld', 'HAND.':'Handgeschakeld',
@@ -38,7 +43,7 @@ function model(s) {
 const uitvoering = s => { const t = leeg(s); if (!t) return null; return /^\d+\.0$/.test(t) ? t.slice(0, -2) : t; };
 const titel = s => { const t = leeg(s); return t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : null; };
 
-(async () => {
+async function hoofd() {
   const tok = await drive.token(SCOPE);
   const boek = lees(await drive.download(tok, process.env.AUTOBOEK_FILE_ID));
   const blad = boek['Lopende Autos'];
@@ -123,4 +128,10 @@ const titel = s => { const t = leeg(s); return t ? t.charAt(0).toUpperCase() + t
     console.log(`\n${A.length} auto's toegevoegd, sorteervolgorde ${Number(max)+1} t/m ${n}.`);
   } catch (e) { await client.query('ROLLBACK'); console.error('TERUGGEDRAAID:', e.message); process.exitCode = 1; }
   finally { client.release(); await pool.end(); }
-})().catch(e => { console.error('MISLUKT:', e.message); process.exit(1); });
+}
+
+// Alleen draaien als het script zelf wordt aangeroepen; bij require() zijn we uit op de
+// vertaalfuncties hieronder. Zonder deze grens haalt een require() het hele Autoboek op.
+if (require.main === module) hoofd().catch(e => { console.error('MISLUKT:', e.message); process.exit(1); });
+
+module.exports = { leeg, dag, merk, model, uitvoering, titel, BRAND, TRANS, norm };

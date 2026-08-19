@@ -15,8 +15,18 @@ rechtstreeks de database in, met de koppeling erbuiten.
 | | | |
 |---|---|---|
 | **A** | 32 | mét kenteken, ingekocht vanaf april — **geïmporteerd** |
-| **B** | 15 | zónder kenteken — fase niet vast te stellen, met de hand |
-| **C** | 5 | ingekocht vóór april (oudste: 11-06-2021) — voorraadvraag, niet geïmporteerd |
+| **B** | 15 | zónder kenteken — fase niet vast te stellen |
+| **C** | 5 | ingekocht vóór april (oudste: 11-06-2021) — voorraadvraag |
+
+Groep B en C zijn later dezelfde dag alsnog geïmporteerd met
+`rest-uit-autoboek.js`: Vince heeft per rij opgegeven waar de auto staat, en die twintig omschrijvingen
+staan in dat script als tabel `FASE`. Vijf ervan bleken **Verkoopklaar** (rij 2, 3, 12, 35 en 44), dus
+de voorraadvraag bij groep C is beantwoord met "ja, allemaal nog in traject".
+
+Let op bij het lezen van zo'n omschrijving: die noemt óf de stap die nu **openstaat** ("RDW
+importeren", "RDW goedkeuring afwachting") óf een stap die net **af** is ("papieren compleet", "BPM
+rapport verstuurd"). Dat scheelt precies één in `klaar`, en `klaarUit()` maakt dat onderscheid
+expliciet in plaats van het aan de lezer over te laten.
 
 **De zeven stapkolommen AW–BC (*RDW Foto's* … *Mobilox Online*) zijn leeg** — 61 van de 66 rijen
 hebben er niets in staan, en de vijf gevulde cellen bevatten losse aantekeningen ('Motorblok',
