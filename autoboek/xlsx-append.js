@@ -123,20 +123,15 @@ const serie = iso => {
 // en "Vw" in het boek komen te staan.
 const MERK_AFKORTINGEN = ['BMW', 'VW', 'MG', 'DS', 'BYD', 'SEAT'];
 
-// Het Autoboek is jarenlang met de hand gevuld en telt 73 schrijfwijzen voor ruim twintig merken
-// ('PEU' 48x naast 'Peugeot' 12x, 'CITR' 22x naast 'Citroen' 15x). Die berg is niet meer op te
-// ruimen — maar PVP hoeft er ook geen nieuwe schrijfwijze aan toe te voegen. Deze tabel zet de
-// schrijfwijze van PVP om naar de vorm die in het boek al gangbaar is, vlak vóór het wegschrijven.
-// Alleen op het schrijfpad: in PVP zelf blijft het merk staan zoals het hoort.
-// Verschil in hoofdletters staat hier bewust NIET in ('OPEL' naast 'Opel'): tekstvergelijking in
-// Power BI is hoofdletterongevoelig, dus dat telt al als hetzelfde merk. Een trema is wel degelijk
-// een ander teken, en daarmee een tweede merk in elke draaitabel.
-const MERK_IN_BOEK = { 'CITROËN': 'Citroen' };
+// Elk merk gaat als volledige merknaam het Autoboek in — zie merken.js voor de tabel en de
+// afweging. Alleen op het schrijfpad: in PVP zelf blijft het merk staan zoals het daar hoort.
+const { volledigMerk } = require('./merken.js');
 function merkNotatie(s){
   s = String(s || '').trim().replace(/\s+/g, ' ');
   if (!s) return '';
-  const inBoek = MERK_IN_BOEK[s.toUpperCase()];
-  if (inBoek) return inBoek;
+  const vol = volledigMerk(s);
+  if (vol) return vol;
+  // Onbekend merk: niet raden, gewoon netjes weergeven zoals voorheen.
   // Ook na een koppelteken een hoofdletter, anders wordt het "Mercedes-benz".
   return s.split(' ').map(w => {
     const boven = w.toUpperCase();

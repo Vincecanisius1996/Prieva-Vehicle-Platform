@@ -339,6 +339,22 @@ de server heeft het dan nog niet gezien. Na het uploaden klopt het beeld wel.
   het rijnummer terug; die regel haal je met de hand weg. Bewust: verwijderen is een correctie op een
   vergissing, geen stap in het proces. Een auto die écht verkocht is loopt via de verkoopbevestiging,
   en dáár verplaatst PVP de regel wél zelf.
+- **Merken in het Autoboek: één schrijfwijze per merk** (19-08-2026). Het boek was met de hand gevuld
+  en telde **73 schrijfwijzen voor 31 merken** — `PEU` 48× naast `Peugeot` 12×, `CITR` 22× naast
+  `Citroen` 15×, en zestien cellen met een spatie erachter (`"Peugeot "` is voor een draaitabel een
+  ander merk dan `Peugeot`). In 307 cellen gelijkgetrokken naar de volledige merknaam; nu 31 vormen.
+  De tabel staat in **`autoboek/merken.js`** en zit op het schrijfpad via `merkNotatie()`, dus alles
+  wat PVP voortaan wegschrijft is meteen goed. Onbekend merk = met rust laten, niet raden.
+  - **`Citroen` en `Skoda` blijven zonder trema en háček.** Die tekens zijn voor een tekstvergelijking
+    een ánder teken en zouden precies het probleem terugbrengen; het boek schrijft ze al jaren zo.
+    In PVP zelf staat wél `Citroën` — de omzetting zit alleen op het schrijfpad naar het boek.
+  - Verschil in hóófdletters is voor Power BI onschuldig (tekstvergelijking is daar
+    hoofdletterongevoelig), maar is meegenomen omdat half opruimen slechter leest.
+  - **`Bandenlijst` blijft erbuiten:** daar is kolom G de profieldiepte en staat het bandenmerk in
+    kolom A. `Blad5` doet wél mee — dat heeft dezelfde kolomindeling en 45 regels met merken.
+  - Vooraf gecontroleerd dat geen enkele van de 16 formules in het werkboek op een merknaam als tekst
+    matcht, en achteraf dat alleen kolom G veranderde. Script: `inhaalslag/merken-gelijktrekken.js`,
+    kopie van vóór de wijziging in `/var/backups/pvp/autoboek/`.
 - **Het Autoboek: kolomstructuur nooit wijzigen.** `Autoboek PRIEVA.xlsx` (Drive, map `Autoboek`,
   bestands-ID `1MnSN9PJjzJTEp4aLwhyjKeH-h4-wb3if`) voedt een Power BI-rapportage. Verandert er een
   kolom, een kop of de volgorde, dan loopt die vast. Het moet ook een **.xlsx blijven** — omzetten
