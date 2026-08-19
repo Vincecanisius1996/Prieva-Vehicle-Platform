@@ -671,4 +671,13 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 404, { error: 'notfound' });
   } catch (e) { console.error('Fout bij ' + method + ' ' + url + ': ' + e.message); return sendJson(res, 500, { error: 'server' }); }
 });
+// Bij het opstarten één keer nagaan of heif-convert er is. Ontbreekt het — bijvoorbeeld op een
+// verse server waar libheif-examples en libheif-plugin-libde265 nog niet geïnstalleerd zijn — dan
+// vallen HEIC-uploads terug op het oude gedrag: onzichtbaar in Chrome en overgeslagen bij het
+// uitlezen. Dat is precies het soort stille terugval waar niemand aan denkt, dus staat het in het log.
+execFile('heif-convert', ['--version'], { timeout: 5000 }, err => {
+  if (err) console.error('LET OP: heif-convert ontbreekt — HEIC-foto\'s (Mac, iPhone) worden niet omgezet. '
+    + 'Herstellen met: apt-get install -y libheif-examples libheif-plugin-libde265');
+});
+
 server.listen(PORT, '127.0.0.1', () => console.log('PVP API (node + postgres) op 127.0.0.1:' + PORT));
