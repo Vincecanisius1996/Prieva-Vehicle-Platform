@@ -349,8 +349,10 @@ de server heeft het dan nog niet gezien. Na het uploaden klopt het beeld wel.
   ongeluk bevestigd). Alle drie via dezelfde functie met dezelfde controles; de kolomindeling per paar
   staat in `autoboek/index.js` bij `RICHTING`. De koppeling zit in `autoboek/` (draait mee in `/opt/pvp-api/autoboek/`);
   instellingen in `/var/pvp/autoboek.env` (chmod 600, **niet committen**), sleutel in
-  `/var/pvp/autoboek-sleutel.json`. `AUTOBOEK_FILE_ID` leeg = koppeling uit. Staat sinds 17-08-2026 op
-  de **kopie**; overgaan op het echte boek is die ene regel wijzigen plus `systemctl restart pvp-api`.
+  `/var/pvp/autoboek-sleutel.json`. `AUTOBOEK_FILE_ID` leeg = koppeling uit. Staat sinds 19-08-2026 op
+  het **echte boek**. Let op: in `autoboek.env` staan **twee** regels `AUTOBOEK_FILE_ID` — die van de
+  kopie en die van het echte boek — en de láátste wint. Dat werkt, maar wie ooit de verkeerde regel
+  weghaalt, laat PVP stil naar de kopie schrijven zonder dat er iets zichtbaar misgaat.
   Zie `autoboek/LEESMIJ.md` en `PVP-autoboek-koppeling-voorstel.md`.
 - **Geen npm-afhankelijkheden in de backend** toevoegen tenzij expliciet afgesproken. `pg` is de enige
   toegestane uitzondering (een DB-driver kan niet puur-Node).
@@ -395,6 +397,11 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
   auto in PVP wordt afgevinkt als binnen. Hij hoort dan van *Komende Autos* naar *Lopende Autos*, maar
   dat betekent dat PVP regels zou moeten kunnen verwijderen — nu is de koppeling strikt
   alleen-toevoegen. Drie richtingen en de afweging staan in `PVP-autoboek-koppeling-voorstel.md`.
+- ~~Inhaalslag: de auto's van *Lopende Autos* overnemen in PVP.~~ **Grotendeels klaar 19-08-2026** —
+  32 van de 52 ontbrekende auto's zijn geïmporteerd; zie `inhaalslag/LEESMIJ.md`. Belangrijkste
+  bevinding: **de zeven stapkolommen AW–BC in het Autoboek zijn leeg**, dus de fase is daar niet uit
+  over te nemen. Alleen het kenteken is een hard signaal — dat bestaat niet vóór RDW-goedkeuring en
+  BIN. **Nog te doen:** 15 auto's zonder kenteken en 5 regels van vóór april, met de hand.
 - Bekend gat: **PVP schrijft alleen bij het aanmaken naar het Autoboek.** Latere wijzigingen aan een
   auto komen daar niet in terecht.
 - **Zwaarder geworden op 17-08-2026: `/uploads/` staat open.** nginx serveert die map rechtstreeks met
