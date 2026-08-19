@@ -350,9 +350,8 @@ de server heeft het dan nog niet gezien. Na het uploaden klopt het beeld wel.
   staat in `autoboek/index.js` bij `RICHTING`. De koppeling zit in `autoboek/` (draait mee in `/opt/pvp-api/autoboek/`);
   instellingen in `/var/pvp/autoboek.env` (chmod 600, **niet committen**), sleutel in
   `/var/pvp/autoboek-sleutel.json`. `AUTOBOEK_FILE_ID` leeg = koppeling uit. Staat sinds 19-08-2026 op
-  het **echte boek**. Let op: in `autoboek.env` staan **twee** regels `AUTOBOEK_FILE_ID` — die van de
-  kopie en die van het echte boek — en de láátste wint. Dat werkt, maar wie ooit de verkeerde regel
-  weghaalt, laat PVP stil naar de kopie schrijven zonder dat er iets zichtbaar misgaat.
+  het **echte boek**. Het ID van de kopie staat er nog als commentaarregel boven, zodat terugzetten
+  naar de kopie een kwestie is van die twee regels omwisselen plus `systemctl restart pvp-api`.
   Zie `autoboek/LEESMIJ.md` en `PVP-autoboek-koppeling-voorstel.md`.
 - **Geen npm-afhankelijkheden in de backend** toevoegen tenzij expliciet afgesproken. `pg` is de enige
   toegestane uitzondering (een DB-driver kan niet puur-Node).
