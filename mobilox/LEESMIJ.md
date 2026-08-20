@@ -125,3 +125,38 @@ handledBy                        wie het opmaakte
 - De sessie komt uit de browserlogin en staat in `/var/pvp/mobilox-sessie.json`. Zodra die er is kan
   het ophalen met een gewone `fetch` vanuit Node; de browser is dan alleen nog nodig om opnieuw in te
   loggen als de sessie verloopt.
+
+## agent.js
+
+Haalt overeenkomsten en facturen op, legt ze naast PVP en meldt wat er verkocht is. Zonder `--echt`
+wordt er niets geschreven.
+
+```
+set -a; . /var/pvp/pg.env; set +a
+node agent.js            # proefdraai
+cd /root/pvp/mobilox && node agent.js --echt
+```
+
+### Wat hij doet
+1. **Koppelt op VIN.** Eerste echte ronde (20-08-2026): 298 regels, 15 gekoppeld op VIN, 0 op
+   kenteken, 0 misgekoppeld. De 283 zonder auto zijn ouder dan de huidige voorraad — Mobilox houdt
+   het hele jaar, PVP alleen wat er nu staat.
+2. **Een factuur wint van een overeenkomst.** Staan ze allebei voor dezelfde auto, dan telt de
+   factuur: die heeft het definitieve nummer, de datum en het bedrag. De verliezer wordt wél als
+   gezien vastgelegd (`uitkomst = overgeslagen`) — anders blijft hij elke ronde "nieuw" en botst hij
+   tegen het factuurnummer dat er al staat. Dat ging de eerste keer mis: drie botsingen per ronde.
+3. **Meldt via `POST /api/verkocht`** met het token uit `/var/pvp/verkoop.env`. Status wordt
+   `gemeld verkocht`; **een beheerder bevestigt**. De agent maakt nooit zelf een verkoop definitief.
+4. **Zet de afleverdatum bij Carport**, maar alleen als die datum nog moet komen. Een aflevering uit
+   april is geschiedenis, geen planning.
+5. **Legt inruilauto's vast als voorstel** in `mobilox_inruil`. Nooit zelf toevoegen aan de
+   catalogus: een verkeerde regel daar werkt door in het Autoboek en in de rapportage. Van de 125
+   voorstellen heeft er **0 een VIN en 124 een kenteken** — koppelen gaat daar dus op kenteken.
+
+### Geheugen
+`mobilox_gezien` (soort + extern_id) zorgt dat een verkoop niet elke ronde opnieuw gemeld wordt.
+Getoetst: tweede en derde ronde melden niets.
+
+### Wat er niet wordt bewaard
+Het blok `customer` uit de API — naam, adres, telefoonnummer, e-mailadres van de koper. Alleen datum,
+bedrag, VIN/kenteken en de inruilvelden.

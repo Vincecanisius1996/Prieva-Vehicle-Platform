@@ -210,3 +210,32 @@ CREATE TABLE IF NOT EXISTS garantie_gevallen (
   updated_at        timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS garantie_status_idx ON garantie_gevallen (status);
+
+-- ===== Mobilox-agent (20-08-2026) =====
+-- Wat de agent al gezien heeft, zodat hij niet elke ronde dezelfde verkoop opnieuw meldt.
+CREATE TABLE IF NOT EXISTS mobilox_gezien (
+  soort        text   NOT NULL,          -- 'overeenkomst' | 'factuur'
+  extern_id    bigint NOT NULL,
+  nummer       integer,
+  vin          text,
+  vehicle_id   text,
+  uitkomst     text,                     -- gemeld | ongewijzigd | botsing | geen-auto | overgeslagen
+  verwerkt_ts  bigint,
+  PRIMARY KEY (soort, extern_id)
+);
+
+-- Inruilauto's uit een factuur. Bewust een VOORSTEL: de agent voegt nooit zelf een auto toe aan PVP,
+-- want een verkeerde regel in de catalogus werkt door in het Autoboek en in de rapportage.
+CREATE TABLE IF NOT EXISTS mobilox_inruil (
+  id            bigserial PRIMARY KEY,
+  extern_id     bigint,
+  vin           text,
+  kenteken      text,
+  omschrijving  text,
+  prijs         numeric(12,2),
+  km            bigint,
+  bpm           numeric(12,2),
+  status        text NOT NULL DEFAULT 'voorstel',   -- voorstel | overgenomen | genegeerd
+  gezien_ts     bigint
+);
+CREATE INDEX IF NOT EXISTS mobilox_inruil_status_idx ON mobilox_inruil (status);
