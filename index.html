@@ -100,18 +100,18 @@
   /* Spiegel van het Autoboek: kolom E t/m P naast elkaar. Dertien kolommen passen op geen enkel
      scherm, dus de pagina mag breder én de tabel scrolt binnen zijn eigen kader — nooit de pagina
      zelf, want dan raak je de navigatie kwijt. */
-  main.breed{max-width:1560px}
+  main.breed{max-width:1680px}
+  /* De tabel moet in één keer passen: geen horizontaal schuiven. Daarom table-layout:fixed met
+     vaste kolombreedtes, en waarden die AFBREKEN in plaats van afgekapt worden — een tekst met
+     een beletselteken erachter is net zo goed onzichtbaar. De wrap blijft als vangnet staan voor
+     een heel smal scherm; op een laptop komt hij niet in beeld. */
   .tabelwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  table.boek{min-width:1180px}
-  table.boek thead th{padding:9px 11px}
-  table.boek tbody td{padding:8px 11px;font-size:12.5px;white-space:nowrap}
-  table.boek .mono{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;letter-spacing:-.2px}
+  table.boek{table-layout:fixed;width:100%}
+  table.boek thead th{padding:8px 9px;font-size:10px;letter-spacing:.3px}
+  table.boek tbody td{padding:7px 9px;font-size:12px;line-height:1.35;white-space:normal;vertical-align:top;overflow-wrap:anywhere}
+  table.boek .mono{font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:-.3px}
   table.boek .num{text-align:right;font-variant-numeric:tabular-nums}
-  table.boek .knip{max-width:230px;overflow:hidden;text-overflow:ellipsis;display:block}
   table.boek .leeg{color:var(--muted)}
-  table.boek td.vast{position:sticky;left:0;background:var(--card);z-index:1}
-  table.boek tbody tr:hover td.vast{background:#f7fafd}
-  table.boek th.vast{position:sticky;left:0;background:#fafbfc;z-index:2}
   .filterbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px}
   .filterbar .fl{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-right:2px}
   .fchip{font-size:12px;font-weight:600;padding:4px 11px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;white-space:nowrap}
@@ -474,26 +474,34 @@ const km = n => (n==null?"—":n.toLocaleString("nl-NL")+" km");
 // esc() is nieuw: deze cellen zetten waarden ook in een title-attribuut, en een apostrof in een
 // uitvoering ("1.0 T'GDI") zou dat attribuut anders openbreken.
 const esc = w => String(w==null?"":w).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+// De breedtes zijn gekozen op de langst voorkomende waarde per kolom (gemeten 20-08-2026). Alleen
+// Uitvoering is bewust krapper dan zijn uitschieter van 90 tekens: 61 van de 78 blijven onder de 30,
+// en die ene lange breekt netjes af over een paar regels.
 const BOEK_KOLOMMEN=[
-  {kop:"VIN",          uit:v=>v.vin,        klasse:"mono"},
-  {kop:"Kenteken",     uit:v=>v.kenteken,   klasse:"mono"},
-  {kop:"Merk",         uit:v=>v.merk},
-  {kop:"Type",         uit:v=>v.model},
-  {kop:"Kleur",        uit:v=>v.kleur},
-  {kop:"Leverancier",  uit:v=>v.lev},
-  {kop:"Uitvoering",   uit:v=>v.uitv, knip:true},
-  {kop:"Brandstof",    uit:v=>v.brandstof},
-  {kop:"Transmissie",  uit:v=>v.transm},
-  {kop:"1e reg.",      uit:v=>v.reg},
-  {kop:"KM",           uit:v=>v.km==null?null:Number(v.km).toLocaleString("nl-NL"), klasse:"num"},
-  {kop:"Datum inkoop", uit:v=>v.inkoopdatum},
+  {kop:"VIN",          br:112, uit:v=>v.vin,        klasse:"mono"},
+  {kop:"Kenteken",     br: 76, uit:v=>v.kenteken,   klasse:"mono"},
+  {kop:"Merk",         br: 84, uit:v=>v.merk},
+  {kop:"Type",         br: 80, uit:v=>v.model},
+  {kop:"Kleur",        br: 58, uit:v=>v.kleur},
+  {kop:"Leverancier",  br: 76, uit:v=>v.lev},
+  {kop:"Uitvoering",   br:150, uit:v=>v.uitv},
+  {kop:"Brandstof",    br: 72, uit:v=>v.brandstof},
+  {kop:"Transmissie",  br: 84, uit:v=>v.transm},
+  {kop:"1e reg.",      br: 74, uit:v=>v.reg},
+  {kop:"KM",           br: 64, uit:v=>v.km==null?null:Number(v.km).toLocaleString("nl-NL"), klasse:"num"},
+  {kop:"Datum inkoop", br: 80, uit:v=>v.inkoopdatum},
 ];
 function boekKoppen(){ return BOEK_KOLOMMEN.map(k=>`<th>${k.kop}</th>`).join(""); }
+// <col> hoort bij table-layout:fixed: zonder vastgelegde breedtes verdeelt de browser zelf en dan
+// krijgt Uitvoering alsnog de ruimte van VIN. `voor` en `na` zijn de kolommen per pagina eromheen.
+function boekColgroup(voor,na){
+  return `<colgroup>${(voor||[]).concat(BOEK_KOLOMMEN.map(k=>k.br),na||[])
+    .map(b=>`<col style="width:${b}px">`).join("")}</colgroup>`;
+}
 function boekCellen(v){
   return BOEK_KOLOMMEN.map(k=>{ const w=k.uit(v);
     const leeg = w===null||w===undefined||w===""||w==="—";
-    const inhoud = leeg?`<span class="leeg">—</span>`:esc(w);
-    return `<td class="${k.klasse||""}">${k.knip&&!leeg?`<span class="knip" title="${esc(w)}">${inhoud}</span>`:inhoud}</td>`;
+    return `<td class="${k.klasse||""}">${leeg?`<span class="leeg">—</span>`:esc(w)}</td>`;
   }).join("");
 }
 // Sorteren op "meest recent". Datum inkoop is tekst (dd-mm-jjjj), dus eerst omdraaien naar iets
@@ -707,12 +715,12 @@ function komTable(list){
   if(!list.length) return `<div class="empty">Geen auto's.</div>`;
   // Klikken op de regel opent de auto; de vinkjescel houdt de klik tegen, anders opent de auto
   // telkens als je iemand binnen meldt.
-  return `<div class="tabelwrap"><table class="boek"><thead><tr>
-    <th class="vast" style="width:52px">Binnen</th>${boekKoppen()}<th>Status</th>
+  return `<div class="tabelwrap"><table class="boek">${boekColgroup([46],[168])}<thead><tr>
+    <th>Binnen</th>${boekKoppen()}<th>Status</th>
   </tr></thead><tbody>${list.slice().sort(nieuwsteEerst).map(v=>{
     const arrived=v.status==='lopende';
     return `<tr class="${arrived?'row-arrived':''}" onclick="openVeh('${v.id}')" style="cursor:pointer">
-      <td class="vast" onclick="event.stopPropagation()"><label class="chk" title="Aanvinken zodra binnen"><input type="checkbox" ${arrived?'checked':''} onchange="arrive('${v.id}',this.checked)"><span class="box"></span></label></td>
+      <td onclick="event.stopPropagation()"><label class="chk" title="Aanvinken zodra binnen"><input type="checkbox" ${arrived?'checked':''} onchange="arrive('${v.id}',this.checked)"><span class="box"></span></label></td>
       ${boekCellen(v)}
       <td>${arrived?`<span class="arr-lab">✓ Binnen — stap 1 loopt</span>`
                    :`<span class="tag ${v.importAuto?'tag-imp':'tag-nl'}">${v.importAuto?'Import':'NL / inruil'}</span>${v.autoboekStatus==='fout'?` <span class="tag" style="background:var(--red-soft);color:var(--red)">Autoboek mislukt</span>`:''}`}</td>
@@ -796,9 +804,9 @@ function renderLopende(){
   app.innerHTML=`
     <h1 class="page-title">Lopende auto's</h1><p class="page-sub">Binnengekomen auto's met hun stap in de import/BPM-flow.</p>
     ${filterBalk('lopende',groepen)}
-    <div style="display:grid;grid-template-columns:minmax(0,2.4fr) minmax(280px,1fr);gap:18px;align-items:start">
-      <div class="card"><div class="card-body" style="padding:0 4px"><div class="tabelwrap"><table class="boek"><thead><tr>${boekKoppen()}<th>Status</th><th>Route</th><th>Wie</th></tr></thead><tbody>${rows}</tbody></table></div>${zicht.length?'':`<div class="empty">Geen auto's in deze fase.</div>`}</div></div>
-      <div class="card"><h3>Waar staan ze?</h3><div class="card-body"><div class="funnel">
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div class="card"><div class="card-body" style="padding:0 4px"><div class="tabelwrap"><table class="boek">${boekColgroup([],[186,62,46])}<thead><tr>${boekKoppen()}<th>Status</th><th>Route</th><th>Wie</th></tr></thead><tbody>${rows}</tbody></table></div>${zicht.length?'':`<div class="empty">Geen auto's in deze fase.</div>`}</div></div>
+      <div class="card" style="max-width:820px"><h3>Waar staan ze?</h3><div class="card-body"><div class="funnel">
         ${CATS.map((c,i)=>`<div class="fn"><div class="fl">${c}</div><div class="track"><div class="fill" style="width:${Math.round(perCat[i]/maxc*100)}%;${perCat[i]===0?'background:transparent':''}">${perCat[i]||''}</div></div><div class="fc">${perCat[i]}</div></div>`).join("")}
         <div class="fn fn-eind"><div class="fl">✓ Verkoopklaar</div><div class="track"><div class="fill" style="width:${Math.round(klaarAantal/maxc*100)}%;${klaarAantal===0?'background:transparent':''}">${klaarAantal||''}</div></div><div class="fc">${klaarAantal}</div></div>
         ${gemeldAantal?`<div class="fn fn-gemeld"><div class="fl">Gemeld verkocht</div><div class="track"><div class="fill" style="width:${Math.round(gemeldAantal/maxc*100)}%">${gemeldAantal}</div></div><div class="fc">${gemeldAantal}</div></div>`:''}
@@ -1022,7 +1030,7 @@ function renderVerkocht(){
       Per ongeluk bevestigd? Open de auto — een beheerder kan hem terugzetten naar Lopende.</p>
     ${lijst.length?`<div class="grp"><div class="grp-head">
         <span class="gt">Verkocht</span><span class="gcount">${lijst.length}</span>
-      </div><div style="padding:0 4px"><div class="tabelwrap"><table class="boek"><thead><tr>
+      </div><div style="padding:0 4px"><div class="tabelwrap"><table class="boek">${boekColgroup([],[74,86,92,110])}<thead><tr>
         ${boekKoppen()}<th>Factuur</th><th>Datum verkoop</th><th>Verkoopprijs</th><th>&nbsp;</th>
       </tr></thead><tbody>${lijst.map(rij).join('')}</tbody></table></div></div></div>`
       :`<div class="empty"><div class="eb">${ico("inbox",26)}</div>${state.q?`Geen verkochte auto's die op “${state.q}” passen.`:`Nog geen verkochte auto's.`}</div>`}`;
