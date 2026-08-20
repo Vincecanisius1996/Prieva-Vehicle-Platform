@@ -53,8 +53,14 @@ Draait live op **https://pvp.prieva.nl**. Meerdere gebruikers, met rollen en log
 - `team` — volledige app.
 - `admin` — team + 📜 Logboek (activiteitenlog). Accounts: `vince`, `floris`.
 - `foto` — alleen advertentiefoto's uploaden. Account: `fotograaf`.
-- `taxateur` — eigen S-TAX-portaal: alleen auto's op taxatie (route=JA), RDW/papieren-foto's
-  bekijken/downloaden, BPM-taxatierapport uploaden/verwijderen. Account: `s-tax`.
+- `taxateur` — eigen S-TAX-portaal: alleen auto's op taxatie (route=JA) **zonder kenteken**,
+  RDW/papieren-foto's bekijken/downloaden, BPM-taxatierapport uploaden/verwijderen. Account: `s-tax`.
+  **Een auto met een kenteken kan niet meer getaxeerd worden** — dat kenteken bestaat pas na
+  RDW-goedkeuring en BIN, en dan is de BPM afgehandeld. Sinds 20-08-2026 filtert **`/api/taxstate`
+  die auto's er serverzijdig uit** voor de rol taxateur (team en admin krijgen nog alles). Alleen in
+  beeld verbergen was niet genoeg: dan gingen de foto's nog steeds over de lijn. Op de dag van die
+  wijziging scheelde dat 31 → 14 auto's; de 17 die eruit vielen stonden alle zeventien al op
+  Verkoopklaar, zonder één taxatierapport.
 Accounts aanmaken (de DSN moet in de omgeving staan):
 ```
 set -a; . /var/pvp/pg.env; set +a

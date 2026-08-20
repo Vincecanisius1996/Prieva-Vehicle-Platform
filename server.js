@@ -722,7 +722,23 @@ const server = http.createServer(async (req, res) => {
     if (url === '/api/adphoto' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const b = await readBody(req) || {}; if (!b.id || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = await saveDataUrl(b.dataUrl, b.id, 'ad'); if (!up) return sendJson(res, 400, { error: 'format' }); await pool.query(`INSERT INTO vehicles (id, ad_photos) VALUES ($1, jsonb_build_array($2::text)) ON CONFLICT (id) DO UPDATE SET ad_photos = vehicles.ad_photos || jsonb_build_array($2::text), updated_at=now()`, [b.id, up]); return sendJson(res, 200, { url: up }); }
     if (url === '/api/adphotos-set' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const b = await readBody(req) || {}; if (!b.id || !Array.isArray(b.urls)) return sendJson(res, 400, { error: 'missing' }); await pool.query(`INSERT INTO vehicles (id, ad_photos) VALUES ($1,$2::jsonb) ON CONFLICT (id) DO UPDATE SET ad_photos=EXCLUDED.ad_photos, updated_at=now()`, [b.id, JSON.stringify(b.urls)]); return sendJson(res, 200, { ok: true }); }
 
-    if (url === '/api/taxstate' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const r = await pool.query('SELECT id,status,route,photos FROM vehicles ORDER BY sort_order NULLS LAST, id'); const out = {}; for (const row of r.rows) out[row.id] = { status: row.status, route: row.route || null, photos: row.photos || {} }; return sendJson(res, 200, { vehicles: out }); }
+    // Een auto met een kenteken is niet meer te taxeren: het kenteken bestaat pas na RDW-goedkeuring
+    // en BIN, en dan is de BPM afgehandeld. Zulke auto's horen niet in de omgeving van de taxateur,
+    // en ze gaan er ook niet meer naartoe. Alleen in beeld verbergen zou de foto's nog steeds over
+    // de lijn sturen; een taxateur hoort de stukken van een afgeronde auto niet te kunnen ophalen.
+    if (url === '/api/taxstate' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const r = u.r === 'taxateur'
+        ? await pool.query(`SELECT id,status,route,photos FROM vehicles
+             WHERE status='lopende' AND route='JA'
+               AND (kenteken IS NULL OR btrim(kenteken) IN ('', '-', '—'))
+             ORDER BY sort_order NULLS LAST, id`)
+        : await pool.query('SELECT id,status,route,photos FROM vehicles ORDER BY sort_order NULLS LAST, id');
+      const out = {};
+      for (const row of r.rows) out[row.id] = { status: row.status, route: row.route || null, photos: row.photos || {} };
+      return sendJson(res, 200, { vehicles: out });
+    }
     if (url === '/api/bpmreports' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); return sendJson(res, 200, await getBpm()); }
     // Eén rapport bij één auto (de bestaande weg: je zit al op de pagina van die auto).
     if (url === '/api/bpmreport' && method === 'POST') {

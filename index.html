@@ -1620,7 +1620,11 @@ async function markBpmSeen(){ if(apiOk){ try{ await fetch("/api/bpmnotif-seen",{
 async function delBpm(id,url){ if(!window.confirm("Dit taxatierapport verwijderen?"))return; if(apiOk){ try{ const r=await fetch("/api/bpmreport-del",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,url})}); if(r.ok){ await loadBpm(); showToast("Rapport verwijderd",false); rerenderCurrent(); return; } }catch(_){} showToast("Verwijderen mislukt — probeer opnieuw",false); } }
 /* ===== Taxateur-weergave (rol taxateur, login S-tax) ===== */
 function renderTax(){ if(taxState.car)renderTaxCar(); else renderTaxList(); syncHistory(); }
-function taxCars(){ return V.filter(v=>v.status==='lopende'&&v.route==='JA'); }
+// Een auto met een kenteken kan niet meer getaxeerd worden: het kenteken bestaat pas na
+// RDW-goedkeuring en BIN, en dan is de BPM al afgehandeld. De server stuurt zulke auto's niet meer
+// mee, maar we filteren hier ook: het scherm moet kloppen, ook als er ooit meer binnenkomt.
+const heeftKenteken=v=>{ const k=String(v.kenteken||'').trim(); return k!=='' && k!=='—' && k!=='-'; };
+function taxCars(){ return V.filter(v=>v.status==='lopende'&&v.route==='JA'&&!heeftKenteken(v)); }
 function renderTaxList(){
   const list=taxCars();
   const rows=list.length? list.map(v=>{ const nfoto=Object.keys(v.photos||{}).length; const reps=bpmList(v.id);
