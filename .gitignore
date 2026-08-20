@@ -29,3 +29,5 @@ uploads/
 *.sql.gz
 *~
 .DS_Store
+mobilox/node_modules/
+mobilox/verkenning.txt

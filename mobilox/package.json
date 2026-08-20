@@ -1,0 +1,7 @@
+{
+  "name": "pvp-mobilox",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Leest Mobilox uit met een browser. Draait LOS van de API: server.js blijft puur Node + pg.",
+  "dependencies": { "playwright": "^1.47.0" }
+}
