@@ -802,6 +802,71 @@ const server = http.createServer(async (req, res) => {
       for (const row of r.rows) out[row.id] = { status: row.status, route: row.route || null, photos: row.photos || {} };
       return sendJson(res, 200, { vehicles: out });
     }
+    /* ===== Garantiegevallen ===== */
+    if (url === '/api/garantie' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const r = await pool.query(`SELECT g.*, v.merk, v.model FROM garantie_gevallen g
+                                   LEFT JOIN vehicles v ON v.id = g.vehicle_id ORDER BY g.id DESC`);
+      return sendJson(res, 200, {
+        gevallen: r.rows.map(x => ({
+          id: x.id, vehicleId: x.vehicle_id, kenteken: x.kenteken, omschrijving: x.omschrijving,
+          melding: x.melding, status: x.status, owner: x.owner, ts: x.aangemaakt_ts, door: x.aangemaakt_door,
+          afTs: x.afgehandeld_ts, afDoor: x.afgehandeld_door, notities: x.notities || [],
+          auto: x.merk ? { merk: x.merk, model: x.model } : null }))
+      });
+    }
+
+    if (url === '/api/garantie' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+
+      if (b.actie === 'nieuw') {
+        if (!String(b.omschrijving || '').trim()) return sendJson(res, 400, { error: 'missing', melding: 'omschrijving is verplicht' });
+        const kent = String(b.kenteken || '').toUpperCase().trim() || null;
+        // De auto erbij zoeken op kenteken of VIN, maar niet eisen: een garantiegeval gaat vaak over
+        // een auto die allang verkocht is en niet meer in de lijst staat.
+        let vid = null;
+        if (kent) {
+          const sleutel = kent.replace(/[^A-Z0-9]/g, '');
+          const r = await pool.query(`SELECT id FROM vehicles WHERE upper(regexp_replace(coalesce(kenteken,''),'[^A-Za-z0-9]','','g'))=$1 OR upper(id)=$1`, [sleutel]);
+          if (r.rows.length) vid = r.rows[0].id;
+        }
+        const r = await pool.query(
+          `INSERT INTO garantie_gevallen (vehicle_id,kenteken,omschrijving,melding,owner,aangemaakt_ts,aangemaakt_door)
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+          [vid, kent, String(b.omschrijving).trim().slice(0, 500), String(b.melding || '').slice(0, 20000) || null,
+           b.owner || null, Date.now(), u.n || u.u]);
+        console.log('garantie:', u.u, 'nieuw geval', r.rows[0].id, kent || '(geen kenteken)', vid ? '-> ' + vid : '(auto niet gevonden)');
+        return sendJson(res, 200, { ok: true, id: r.rows[0].id, gekoppeld: !!vid });
+      }
+      if (!b.id) return sendJson(res, 400, { error: 'missing' });
+      if (b.actie === 'toewijzen') {
+        await pool.query('UPDATE garantie_gevallen SET owner=$2, updated_at=now() WHERE id=$1', [b.id, b.owner || null]);
+        return sendJson(res, 200, { ok: true });
+      }
+      if (b.actie === 'afhandelen') {
+        const af = b.af !== false;
+        await pool.query(`UPDATE garantie_gevallen SET status=$2, afgehandeld_ts=$3, afgehandeld_door=$4, updated_at=now() WHERE id=$1`,
+          [b.id, af ? 'afgehandeld' : 'open', af ? Date.now() : null, af ? (u.n || u.u) : null]);
+        return sendJson(res, 200, { ok: true });
+      }
+      if (b.actie === 'notitie') {
+        if (!String(b.tekst || '').trim()) return sendJson(res, 400, { error: 'missing' });
+        const n = { ts: Date.now(), door: u.n || u.u, tekst: String(b.tekst).trim().slice(0, 2000) };
+        await pool.query('UPDATE garantie_gevallen SET notities = notities || $2::jsonb, updated_at=now() WHERE id=$1',
+          [b.id, JSON.stringify([n])]);
+        return sendJson(res, 200, { ok: true, notitie: n });
+      }
+      if (b.actie === 'weg') {
+        if (u.r !== 'admin') return sendJson(res, 403, { error: 'alleen admin' });
+        await pool.query('DELETE FROM garantie_gevallen WHERE id=$1', [b.id]);
+        return sendJson(res, 200, { ok: true });
+      }
+      return sendJson(res, 400, { error: 'actie' });
+    }
+
     /* ===== Carport ===== */
     if (url === '/api/carport' && method === 'GET') {
       const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });

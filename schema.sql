@@ -187,3 +187,26 @@ CREATE TABLE IF NOT EXISTS carport_taken (
   aangemaakt_ts  bigint
 );
 CREATE INDEX IF NOT EXISTS carport_taken_bon_idx ON carport_taken (bon_id);
+
+-- ===== Garantiegevallen (20-08-2026) =====
+-- Meldingen die per mail binnenkomen over een auto die al geleverd is. Ze horen op de pagina Vandaag,
+-- want anders raken ze uit beeld. De auto staat vaak niet meer in `vehicles` (verkocht), dus
+-- vehicle_id mag leeg zijn en het kenteken is het houvast.
+CREATE TABLE IF NOT EXISTS garantie_gevallen (
+  id                bigserial PRIMARY KEY,
+  vehicle_id        text,
+  kenteken          text,
+  omschrijving      text NOT NULL,
+  -- De melding zoals binnengekomen, ongewijzigd. Bij een discussie over wat er precies gemeld is,
+  -- wil je de oorspronkelijke tekst kunnen teruglezen en niet iemands samenvatting.
+  melding           text,
+  status            text NOT NULL DEFAULT 'open',      -- 'open' | 'afgehandeld'
+  owner             text,
+  aangemaakt_ts     bigint,
+  aangemaakt_door   text,
+  afgehandeld_ts    bigint,
+  afgehandeld_door  text,
+  notities          jsonb NOT NULL DEFAULT '[]'::jsonb,
+  updated_at        timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS garantie_status_idx ON garantie_gevallen (status);

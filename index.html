@@ -711,6 +711,7 @@ function renderVandaag(){
     </div>
     ${(lop.length||gopen.length)? `<div class="cols">${personCard("Leonie",groups["Leonie"])}${personCard("Sjoerd",groups["Sjoerd"])}${personCard("Vince",groups["Vince"])}${personCard("Floris",groups["Floris"])}</div>${groups["_"].length?`<div style="margin-top:16px">${personCard("_",groups["_"])}</div>`:""}`
       : `<div class="card"><div class="empty"><div class="eb">${ico("inbox",26)}</div>Nog geen open taken. Vink onderaan een auto op binnen, of voeg met <b>${ico("plus")} To-do</b> rechtsboven een losse taak toe.</div></div>`}
+    <div style="margin-top:22px">${garantiePaneel()}</div>
     <div class="kpis" style="margin-top:22px">
       <div class="kpi"><div class="bar" style="background:var(--blue)"></div><div class="lab">Komende</div><div class="val">${kom.length}</div><div class="sub">nog niet binnen</div></div>
       <div class="kpi"><div class="bar" style="background:var(--green)"></div><div class="lab">Binnengekomen</div><div class="val">${lop.length}</div><div class="sub">aangevinkt</div></div>
@@ -1596,6 +1597,79 @@ function rerenderCurrent(){ if(currentUser&&currentUser.role==='carport')renderC
 /* ===== BPM-taxatierapporten (S-TAX) ===== */
 let bpmData={vehicles:{},notifs:[]};
 async function loadBpm(){ if(!apiOk)return; try{ const r=await fetch("/api/bpmreports",{cache:"no-store"}); if(r.ok){ bpmData=await r.json()||{vehicles:{},notifs:[]}; if(!bpmData.vehicles)bpmData.vehicles={}; if(!Array.isArray(bpmData.notifs))bpmData.notifs=[]; } }catch(_){} }
+/* ===== Garantiegevallen =====
+   Meldingen over een auto die al geleverd is. Ze staan op Vandaag omdat ze anders uit beeld raken:
+   ze horen bij geen enkele fase van het traject en er is geen lijst waar ze vanzelf in belanden. */
+let garantie=[];
+async function loadGarantie(){ if(!apiOk)return;
+  try{ const r=await fetch("/api/garantie",{cache:"no-store"}); if(r.ok){ const d=await r.json(); if(d&&Array.isArray(d.gevallen))garantie=d.gevallen; } }catch(_){}
+}
+async function garantieDoe(body,melding){
+  try{
+    const r=await fetch("/api/garantie",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ showToast(j.melding||j.error||"Actie mislukt",false); return null; }
+    await loadGarantie(); rerender();
+    if(melding)showToast(melding,true);
+    return j;
+  }catch(_){ showToast("Geen verbinding met de server",false); return null; }
+}
+function garantieOpen(){ return garantie.filter(g=>g.status==='open'); }
+function garantieKaart(g){
+  const auto=g.auto?`${esc(g.auto.merk)} ${esc(g.auto.model)}`:'';
+  const opts=['<option value="">— niemand —</option>'].concat(PEOPLE.map(pp=>`<option value="${pp}" ${g.owner===pp?'selected':''}>${pp}</option>`)).join("");
+  return `<div class="bon" data-gar="${g.id}">
+    <div class="bon-kop">
+      <div class="bon-auto"><div class="nm">${esc(g.omschrijving)}</div>
+        <div class="id">${g.kenteken?esc(g.kenteken):'geen kenteken'}${auto?' · '+auto:(g.kenteken?' · auto niet in PVP gevonden':'')} · gemeld ${fmtDate(g.ts)} door ${esc(g.door||'')}</div></div>
+      <select class="assign" onchange="garantieDoe({actie:'toewijzen',id:${g.id},owner:this.value})">${opts}</select>
+      <button class="btn btn-primary btn-sm" onclick="garantieDoe({actie:'afhandelen',id:${g.id},af:true},'Afgehandeld')">Afgehandeld</button>
+    </div>
+    <div class="bon-body">
+      ${g.melding?`<details><summary class="note" style="cursor:pointer;margin:0 0 8px">De melding zoals binnengekomen</summary><div class="notitie technisch" style="white-space:pre-wrap">${esc(g.melding)}</div></details>`:''}
+      ${g.notities.map(n=>`<div class="notitie klant">${esc(n.tekst)}<div class="wie">${esc(n.door)} · ${fmtDate(n.ts)}</div></div>`).join("")}
+      <div style="display:flex;gap:7px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        <input id="gnot-${g.id}" class="inp" style="flex:1;min-width:200px" placeholder="Notitie…" onkeydown="if(event.key==='Enter')garantieNotitie(${g.id})">
+        <button class="btn btn-ghost btn-sm" onclick="garantieNotitie(${g.id})">Notitie</button>
+        ${g.vehicleId?`<button class="btn btn-ghost btn-sm" onclick="openVeh('${g.vehicleId}')">Naar de auto</button>`:''}
+      </div>
+    </div></div>`;
+}
+function garantieNotitie(id){
+  const el=document.getElementById('gnot-'+id); const tekst=(el&&el.value||'').trim();
+  if(!tekst){ if(el)el.focus(); return; }
+  garantieDoe({actie:'notitie',id,tekst});
+}
+function garantieToevoegen(){
+  const k=document.getElementById('gar-kenteken'), o=document.getElementById('gar-oms'), m=document.getElementById('gar-mail'), w=document.getElementById('gar-wie');
+  const oms=(o&&o.value||'').trim();
+  if(!oms){ showToast("Vul kort in waar het over gaat",false); if(o)o.focus(); return; }
+  garantieDoe({actie:'nieuw',kenteken:(k&&k.value||'').trim(),omschrijving:oms,melding:(m&&m.value||'').trim(),owner:(w&&w.value)||null},
+    "Garantiegeval toegevoegd").then(j=>{
+      if(!j)return;
+      [k,o,m].forEach(e=>{ if(e)e.value=''; });
+      if(j.gekoppeld===false&&(k&&k.value===''))showToast("Toegevoegd. Zonder kenteken kon de auto niet gekoppeld worden.",false);
+    });
+}
+function garantiePaneel(){
+  const open=garantieOpen(), af=garantie.filter(g=>g.status!=='open');
+  return `<div class="card"><h3>Garantiegevallen <span class="gcount">${open.length}</span></h3><div class="card-body">
+    <div class="note" style="margin-top:0">Meldingen over auto's die al geleverd zijn. Ze staan hier omdat ze bij geen enkele fase horen en anders uit beeld raken.</div>
+    ${open.length?open.map(garantieKaart).join(""):`<div class="empty" style="padding:18px">Geen lopende garantiegevallen.</div>`}
+    <details style="margin-top:10px"><summary class="note" style="cursor:pointer">Nieuw garantiegeval toevoegen</summary>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px">
+        <input id="gar-kenteken" class="inp" style="width:150px" placeholder="Kenteken">
+        <input id="gar-oms" class="inp" style="flex:1;min-width:220px" placeholder="Waar gaat het over? (bijv. koppeling slipt)">
+        <select id="gar-wie" class="assign">${['<option value="">— niemand —</option>'].concat(PEOPLE.map(pp=>`<option value="${pp}">${pp}</option>`)).join("")}</select>
+      </div>
+      <textarea id="gar-mail" class="inp" rows="4" style="width:100%;margin-top:8px" placeholder="Plak hier de mail zoals je hem kreeg — die wordt ongewijzigd bewaard."></textarea>
+      <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="garantieToevoegen()">Toevoegen</button>
+    </details>
+    ${af.length?`<details style="margin-top:10px"><summary class="note" style="cursor:pointer">Afgehandeld (${af.length})</summary>
+      <div style="margin-top:8px">${af.map(g=>`<div class="taak af"><span class="tk">${esc(g.omschrijving)} · ${esc(g.kenteken||'')} — afgehandeld ${g.afTs?fmtDate(g.afTs):''} door ${esc(g.afDoor||'')}</span>
+        <button class="btn btn-ghost btn-sm" onclick="garantieDoe({actie:'afhandelen',id:${g.id},af:false},'Weer op open gezet')">Heropenen</button></div>`).join("")}</div></details>`:''}
+  </div></div>`;
+}
 /* ===== Carport: werkbonnen en planning =====
    De deadline is de gewenste afleverdatum min de marge (standaard 2 dagen), zodat de auto daarna nog
    naar de poetser kan. De server rekent hem uit en stuurt hem mee; hier tonen we alleen. */
@@ -1663,8 +1737,9 @@ function bonKaart(bon,sleepbaar){
 function renderCarport(){
   const p=carportData.planning, af=carportData.afgeleverd;
   const eigenVolgorde=p.some(b=>b.volgorde!==null&&b.volgorde!==undefined);
+  const gek=p.filter(b=>heeftKenteken(b.auto||{})), ong=p.filter(b=>!heeftKenteken(b.auto||{}));
   const kop=isCarport()
-    ? `<h1 class="page-title">Planning</h1><p class="page-sub">Auto's die bij Carport staan, de eerste deadline bovenaan. Sleep om je eigen volgorde te bepalen. Meld een auto af zodra hij klaarstaat.</p>`
+    ? `<h1 class="page-title">Planning</h1><p class="page-sub">Auto's die bij Carport staan, de eerste deadline bovenaan. Sleep om je eigen volgorde te bepalen. Meld een auto af zodra hij klaarstaat. Gekentekend kan compleet af; ongekentekend is voorwerk.</p>`
     : `<h1 class="page-title">Carport</h1><p class="page-sub">Werkbonnen bij Carport. De deadline is ${carportData.marge} dagen vóór de gewenste aflevering, zodat de auto nog naar de poetser kan.</p>`;
   app.innerHTML=kop
     + (magPlannen()?`<div class="card"><h3>Auto op de planning zetten</h3><div class="card-body">
@@ -1677,8 +1752,16 @@ function renderCarport(){
         </div>
         <div class="note" style="margin-top:8px">De gewenste afleverdatum komt uit de verkoopovereenkomst in Mobilox. Zolang die koppeling er niet is, vul je hem hier in.</div>
       </div></div>`:'')
-    + `<div class="card"><h3>Planning <span class="gcount">${p.length}</span>${eigenVolgorde?` <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="carportVolgordeTerug()">Terug naar deadlinevolgorde</button>`:''}</h3><div class="card-body">
-        ${p.length?p.map(b=>bonKaart(b,true)).join(""):`<div class="empty"><div class="eb">${ico("inbox",26)}</div>Geen auto's op de planning.</div>`}
+    // Twee bakken. Een auto met kenteken kan compleet af: alle werk plus APK, en dan in één keer
+    // afleveren. Zonder kenteken kan de APK niet, dus daar is alleen voorwerk mogelijk — werk om op
+    // te pakken als het rustig is, zodat de auto later sneller de deur uit kan.
+    + `<div class="card"><h3>Gekentekend <span class="gcount">${gek.length}</span>${eigenVolgorde?` <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="carportVolgordeTerug()">Terug naar deadlinevolgorde</button>`:''}</h3><div class="card-body">
+        <div class="note" style="margin-top:0">Compleet af te maken: al het werk plus APK, zodat de auto in één keer afgeleverd kan worden.</div>
+        ${gek.length?gek.map(b=>bonKaart(b,true)).join(""):`<div class="empty"><div class="eb">${ico("inbox",26)}</div>Geen gekentekende auto's op de planning.</div>`}
+      </div></div>`
+    + `<div class="card"><h3>Ongekentekend <span class="gcount">${ong.length}</span></h3><div class="card-body">
+        <div class="note" style="margin-top:0">Nog geen kenteken, dus geen APK. Voorwerk dat vast opgepakt kan worden als het rustig is — groot werk hier eerst weghalen scheelt straks doorlooptijd.</div>
+        ${ong.length?ong.map(b=>bonKaart(b,true)).join(""):`<div class="empty">Geen ongekentekende auto's op de planning.</div>`}
       </div></div>`
     + `<div class="card"><h3>Afgeleverd <span class="gcount">${af.length}</span></h3><div class="card-body" style="padding:0 4px">
         ${af.length?`<div class="tabelwrap"><table><thead><tr><th>Voertuig</th><th>Aflevering gewenst</th><th>Afgemeld</th><th>Door</th><th>Werk</th></tr></thead><tbody>
@@ -2068,7 +2151,7 @@ async function startFor(){
   if(foto){ state.view='foto'; loadAdphotos().then(loadStatusFoto).then(renderFoto); }
   else if(tax){ state.view='tax'; loadTaxState().then(loadBpm).then(renderTax); }
   else if(cp){ state.view='carport'; loadCarport().then(renderCarport); }
-  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport()]).then(()=>go('vandaag')); }
+  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie()]).then(()=>go('vandaag')); }
 }
 async function boot(){
   try{ const r=await fetch("/api/me",{cache:"no-store"});
