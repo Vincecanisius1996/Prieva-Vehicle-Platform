@@ -76,3 +76,52 @@ bruto BPM. Daarmee is de koppeling met PVP hard te maken op het chassisnummer.
 
 **Nog uit te zoeken:** waar de inruil in de factuur staat, en of de verkoopprijs in/in op de
 factuurdetailpagina te vinden is of alleen als *Totaal* in de lijst.
+
+## Er is tóch een API (20-08-2026)
+
+Bij het meekijken met het netwerkverkeer bleek de webomgeving zelf te praten met
+**`https://api.mobilox.nl/api/v2/`**. Mobilox biedt geen API aan voor administratie, maar hun eigen
+portaal gebruikt er een — en die is met dezelfde sessie te bereiken:
+
+```
+GET https://api.mobilox.nl/api/v2/quotations?type=<n>&year=<jjjj>
+```
+
+| type | wat | aantal (2026) |
+|---|---|---|
+| 1 | offertes | 80 |
+| 2 | verkoopovereenkomsten | 109 |
+| 3 | facturen | 189 |
+
+**Daarmee vervalt het uitlezen van schermen.** Geen selectors die breken bij een opmaakwijziging, geen
+doorklikken per regel: één verzoek levert alles als JSON. De verkenners in deze map (`verken.js`,
+`menu.js`, `klap.js`, `schermen.js`, `factuur.js`, `factuurdetail.js`, `knoppen.js`, `api.js`,
+`product.js`) blijven staan als gereedschap om dit opnieuw uit te zoeken als Mobilox iets wijzigt.
+
+### Wat één regel bevat
+```
+id, number                       overeenkomst-/factuurnummer
+createdAt                        datum (dd-mm-jjjj)
+deliveryDate                     GEWENSTE AFLEVERDATUM  <- waar Carport op wacht
+price, amountToPay, bpm, taxType bedragen en Marge/BTW
+product.id                       leidt naar #vehicles/{id}
+product.attributeValues.VIN      chassisnummer, 17 tekens
+product.attributeValues.LICEN    kenteken
+product.attributeValues.REPORTING_CODE   meldcode
+tradeVehicleText/Price/License/Vin/Milage/Bpm   de INRUIL, als losse velden
+customer{...}                    persoonsgegevens van de koper
+handledBy                        wie het opmaakte
+```
+
+### Regels voor de agent
+- **Koppelen op `VIN`**, niet op de omschrijving. `product.title` is vrije tekst ("BMW 2-serie Active
+  Tourer 218i Sport") en daar valt geen auto mee terug te vinden.
+- **`customer` wordt niet bewaard.** Naam, adres, telefoon en e-mail van de koper horen niet in PVP —
+  zelfde regel als in `uitlezen/`. Alleen datum, bedrag, VIN/kenteken en de inruilvelden.
+- **`deliveryDate` vult de afleverdatum van de Carport-werkbon.** Die werd tot nu toe met de hand
+  ingevuld; 158 van de 189 facturen hebben hem.
+- **De agent bevestigt nooit zelf een verkoop**: melden via `POST /api/verkocht` (status
+  `gemeld verkocht`), een beheerder bevestigt.
+- De sessie komt uit de browserlogin en staat in `/var/pvp/mobilox-sessie.json`. Zodra die er is kan
+  het ophalen met een gewone `fetch` vanuit Node; de browser is dan alleen nog nodig om opnieuw in te
+  loggen als de sessie verloopt.
