@@ -44,3 +44,35 @@ e-mailadres van de koper** — zelfde regel als in `uitlezen/`.
 Een agent die een scherm leest, breekt zodra Mobilox dat scherm wijzigt. Daarom: hij moet **luid
 falen** (melding in het logboek en zichtbaar in PVP), nooit stil een lege uitkomst opleveren. Een
 lege oogst is verdacht, geen resultaat.
+
+## Verkenning (20-08-2026)
+
+**Inloggen** gaat op `https://members.mobilox.nl/` — niet op `www.mobilox.nl/pro/`, dat is de
+reclamesite. Velden: `#_username` (e-mail) en `#_password`. Geen tweestapsverificatie.
+
+**Het is een SPA met hash-routes.** Een volledige paginalading met `#agreements` erachter valt terug
+op het dashboard; navigeren moet dus via **klikken** in het menu. Het menu *Administratie* is
+ingeklapt en levert zijn routes pas na een klik:
+
+```
+#customers  #quotations  #agreements  #invoices  #creditinvoices  #purchases
+```
+
+Na het klikken wordt het adres `#administration/agreements` respectievelijk `.../invoices`.
+
+**Lijstweergave** (overeenkomsten én facturen), 15 regels per keer:
+
+| Datum | Nummer | Naam | Voertuig | Totaal |
+|---|---|---|---|---|
+| dd-mm-jjjj | 999 | klantnaam | omschrijving, géén kenteken | € 9.999,99 |
+
+Filters: `search`, `year`, en bij facturen ook `startDate`/`endDate` — bruikbaar om alleen nieuwe op
+te halen.
+
+**De sleutel zit in de doorklik.** De kolom *Voertuig* bevat alleen een omschrijving, waarmee een
+auto niet terug te vinden is in PVP. Maar een regel aanklikken springt door naar `#vehicles/{id}`, en
+op die pagina staan **Kenteken, Meldcode en VIN** — plus merk, model, tellerstand, inkoopprijs en
+bruto BPM. Daarmee is de koppeling met PVP hard te maken op het chassisnummer.
+
+**Nog uit te zoeken:** waar de inruil in de factuur staat, en of de verkoopprijs in/in op de
+factuurdetailpagina te vinden is of alleen als *Totaal* in de lijst.

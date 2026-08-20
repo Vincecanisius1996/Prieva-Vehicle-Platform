@@ -28,8 +28,26 @@ function env() {
   return o;
 }
 
-// Beschrijf een pagina zonder de inhoud prijs te geven.
-async function beschrijf(page, naam) {
+// Wachten tot de pagina klaar is met doorsturen. members.mobilox.nl stuurt na het laden door naar
+// het inlogscherm; beschrijf je te vroeg, dan wordt de context onder je vandaan gehaald.
+async function bedaard(page) {
+  await page.waitForLoadState('domcontentloaded').catch(() => {});
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForTimeout(1200);
+}
+
+// Beschrijf een pagina zonder de inhoud prijs te geven. Wordt er tijdens het kijken alsnog
+// genavigeerd, dan is dat geen fout maar een herkansing waard.
+async function beschrijf(page, naam, poging = 1) {
+  try { return await beschrijfEcht(page, naam); }
+  catch (e) {
+    if (poging < 3 && /context was destroyed|Execution context/i.test(e.message)) {
+      await bedaard(page); return beschrijf(page, naam, poging + 1);
+    }
+    return `\n===== ${naam} =====\nadres: ${page.url()}\nBESCHRIJVEN MISLUKT: ${e.message}`;
+  }
+}
+async function beschrijfEcht(page, naam) {
   const uit = [`\n===== ${naam} =====`, 'adres: ' + page.url(), 'titel: ' + await page.title()];
   const velden = await page.$$eval('input,select,textarea', els => els.map(e => ({
     tag: e.tagName.toLowerCase(), type: e.type || '', naam: e.name || '', id: e.id || '',
@@ -62,6 +80,7 @@ async function beschrijf(page, naam) {
   const stukken = [];
   try {
     await page.goto(e.MOBILOX_URL, { waitUntil: 'domcontentloaded' });
+    await bedaard(page);
     stukken.push(await beschrijf(page, 'startpagina (voor inloggen)'));
 
     // Inloggen als er een wachtwoordveld staat. Staat het er niet, dan werkte de bewaarde sessie nog.
@@ -75,12 +94,18 @@ async function beschrijf(page, naam) {
         page.waitForLoadState('networkidle').catch(() => {}),
         pw.press('Enter'),
       ]);
-      await page.waitForTimeout(4000);
+      await bedaard(page);
+      await page.waitForTimeout(2500);
       stukken.push(await beschrijf(page, 'na inloggen'));
       if (await page.$('input[type=password]'))
         stukken.push('\nLET OP: er staat nog een wachtwoordveld. Inloggen is niet gelukt, of er is een tweede stap (code).');
     } else {
-      stukken.push('\n(geen wachtwoordveld: de bewaarde sessie werkte nog)');
+      // Geen wachtwoordveld betekent niet automatisch "ingelogd" — op een reclamepagina staat er ook
+      // geen. Daarom eerst kijken of we werkelijk binnen zijn: een uitlogknop of een menu.
+      const binnen = await page.$('a[href*=logout i], a[href*=uitlog i], [class*=dashboard i], nav[class*=menu i]');
+      stukken.push(binnen
+        ? '\n(al ingelogd: de bewaarde sessie werkte nog)'
+        : '\nLET OP: geen inlogformulier en geen teken dat we ingelogd zijn. Wijst MOBILOX_URL wel naar de inlogomgeving?');
     }
     await context.storageState({ path: SESSIE });
     fs.chmodSync(SESSIE, 0o600);
