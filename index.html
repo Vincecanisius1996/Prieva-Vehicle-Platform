@@ -589,10 +589,24 @@ async function loadVehicles(){ if(!apiOk)return;
     if(!Array.isArray(rows)||!rows.length)return;
     if(!rows.every(x=>x&&typeof x.id==="string"&&x.id))return;
     // In place vervangen, niet herwijzen: V is const en wordt overal bij naam gebruikt.
-    V.length=0; rows.forEach(r2=>{ V.push(r2); initVeh(r2); });
+    //
+    // De voortgang van een auto die we al kenden gaat MEE. Eerder kreeg elke rij initVeh(), en dan
+    // stond alles in het geheugen op leeg tot loadState() eroverheen kwam. Werd loadVehicles() ergens
+    // aangeroepen zonder loadState() erachter — dat gebeurde in arrive() — dan schreef de
+    // eerstvolgende klik die lege waarden over de database. Op 20-08-2026 kostte dat de fase, foto's,
+    // subtaken en eigenaren van 64 auto's. Eén vergeten aanroep mag dat niet kunnen doen.
+    const vorige={}; V.forEach(v=>{ vorige[v.id]={owner:v.owner,klaar:v.klaar,route:v.route,
+      photos:v.photos,subtasks:v.subtasks,arrivedAt:v.arrivedAt,taxAt:v.taxAt}; });
+    V.length=0; rows.forEach(r2=>{ V.push(r2); const p=vorige[r2.id]; if(p)Object.assign(r2,p); else initVeh(r2); });
   }catch(_){ /* geen backend of onleesbaar antwoord: terugvallijst blijft staan */ }
 }
-function scheduleSave(){ if(!apiOk||!stateOk)return; clearTimeout(saveT); saveT=setTimeout(()=>{ fetch("/api/state",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(buildState())}).catch(()=>{}); },400); }
+// Weigert de server de opslag (vangrail tegen massale wissing), dan mag dat niet stil gebeuren:
+// je zit dan met een browser waarvan het geheugen niet klopt en je wijzigingen komen niet aan.
+function scheduleSave(){ if(!apiOk||!stateOk)return; clearTimeout(saveT); saveT=setTimeout(()=>{
+  fetch("/api/state",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(buildState())})
+    .then(r=>{ if(r.status===409){ stateOk=false;
+      showToast("Opslaan geweigerd — deze pagina loopt niet meer gelijk met de server. Ververs de pagina (⌘R) voordat je verder werkt.",false); } })
+    .catch(()=>{}); },400); }
 function match(v){const q=state.q.toLowerCase(); return !q || (v.merk+" "+v.model+" "+v.uitv+" "+v.kenteken+" "+v.id).toLowerCase().includes(q);}
 
 /* ===== Ongedaan maken (undo) ===== */
@@ -864,7 +878,8 @@ function arrive(id,checked){const v=V.find(x=>x.id===id); if(!v)return;
       .then(r=>r.ok?r.json():null).then(j=>{
         if(!j)return; const ab=j.autoboek||{};
         if(ab.status==='fout'){ showToast("Autoboek niet bijgewerkt — zie de auto",false); }
-        loadVehicles().then(()=>{ if(state.view!=='veh:'+id)rerenderCurrent(); });
+        // Altijd in dit paar: loadVehicles() gevolgd door loadState(). Zie loadVehicles().
+        loadVehicles().then(loadState).then(()=>{ if(state.view!=='veh:'+id)rerenderCurrent(); });
       }).catch(()=>{});
   }}
 function assign(id,val){const v=V.find(x=>x.id===id); if(!v)return;
@@ -1600,11 +1615,14 @@ function renderTax(){ if(taxState.car)renderTaxCar(); else renderTaxList(); sync
 function taxCars(){ return V.filter(v=>v.status==='lopende'&&v.route==='JA'); }
 function renderTaxList(){
   const list=taxCars();
-  const rows=list.length? list.map(v=>{ const nfoto=Object.keys(v.photos||{}).length; const nrep=bpmList(v.id).length;
+  const rows=list.length? list.map(v=>{ const nfoto=Object.keys(v.photos||{}).length; const reps=bpmList(v.id);
+    // Bij meerdere rapporten telt het jongste: dat is het rapport dat je zou insturen.
+    const jongste=reps.slice().sort((a,b)=>(b.ts||0)-(a.ts||0))[0];
     return `<div class="fotocar" onclick="openTaxCar('${v.id}')"><div class="thumb">${carIcon()}</div>
       <div style="flex:1;min-width:0"><div class="nm">${v.merk} ${v.model}</div><div class="id">${v.kenteken!=='—'?v.kenteken:v.vin}</div></div>
       <div class="fotocount ${nfoto?'has':''}">${nfoto?nfoto+" foto"+(nfoto===1?'':"'s"):'nog geen foto'}</div>
-      ${nrep?`<span class="fotocount has">✓ rapport</span>`:''}
+      ${reps.length?`<span class="fotocount has">✓ ${reps.length===1?'rapport':reps.length+' rapporten'}</span>${bpmTeller(jongste.opname)}`
+                   :`<span class="bpmteller onbekend" title="Voor deze auto is nog geen taxatierapport ingeleverd.">nog geen rapport</span>`}
       <span style="color:var(--muted);font-size:21px">›</span></div>`;
   }).join("") : `<div class="empty"><div class="eb">${ico("zoek",26)}</div>Er staan nu geen auto's op taxatie.</div>`;
   app.innerHTML=`<h1 class="page-title">Te taxeren</h1><p class="page-sub">Auto's die Prieva heeft aangemeld voor BPM-taxatie. Bekijk en download de foto's en lever de taxatierapporten in.</p>

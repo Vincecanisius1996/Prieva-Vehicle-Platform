@@ -274,11 +274,42 @@ async function autoboekVerplaats(id, wat) {
 
 // De frontend stuurt telkens de complete state op; dit is één transactie.
 // Voertuigen die niet in de payload zitten blijven staan (nodig voor de latere Autoboek-sync).
+// Vangrail tegen een massale wissing. De frontend stuurt bij elke opslag zijn hele geheugen op; is
+// dat geheugen leeggelopen, dan wist één klik de administratie van álle auto's. Op 20-08-2026 gebeurde
+// dat: 64 auto's verloren hun fase, foto's, subtaken en eigenaar doordat loadVehicles() ergens zonder
+// loadState() werd aangeroepen. Die fout is gerepareerd, maar de server hoort er niet van afhankelijk
+// te zijn dat de frontend het goed doet.
+//
+// De regel: een auto die in de database een traject heeft (klaar>0 of een route) en in deze opslag
+// helemaal leeg terugkomt, telt als 'gewist'. Bij meer dan MAX_WISSEN daarvan tegelijk klopt er iets
+// niet — dat is geen handeling die iemand met de hand doet — en schrijven we niets.
+const MAX_WISSEN = 3;
+async function controleerWissing(client, vs) {
+  const ids = Object.keys(vs);
+  if (!ids.length) return null;
+  const { rows } = await client.query(
+    'SELECT id, klaar, route FROM vehicles WHERE id = ANY($1) AND (klaar > 0 OR route IS NOT NULL)', [ids]);
+  const gewist = rows.filter(r => {
+    const v = vs[r.id] || {};
+    return (Number(v.klaar) || 0) === 0 && !v.route;
+  });
+  return gewist.length > MAX_WISSEN ? gewist : null;
+}
+
 async function putState(b) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const vs = (b && b.vehicles) || {};
+    const gewist = await controleerWissing(client, vs);
+    if (gewist) {
+      await client.query('ROLLBACK');
+      console.error('putState GEWEIGERD: ' + gewist.length + ' auto\'s zouden hun traject verliezen ('
+        + gewist.slice(0, 5).map(r => r.id).join(', ') + (gewist.length > 5 ? ', …' : '') + ')');
+      const fout = new Error('geweigerd: dit zou het traject van ' + gewist.length + " auto's wissen");
+      fout.code = 'wissing';
+      throw fout;
+    }
     for (const id of Object.keys(vs)) {
       const v = vs[id] || {};
       await client.query(
@@ -392,7 +423,9 @@ const server = http.createServer(async (req, res) => {
     if (method === 'GET' && url.indexOf('/uploads/') === 0) return serveUpload(req, res, url);
 
     if (url === '/api/state' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); return sendJson(res, 200, await getState()); }
-    if (url === '/api/state' && method === 'PUT') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req); if (b === null) return sendJson(res, 400, { error: 'bad' }); await putState(b); return sendJson(res, 200, { ok: true }); }
+    if (url === '/api/state' && method === 'PUT') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req); if (b === null) return sendJson(res, 400, { error: 'bad' });
+      try { await putState(b); } catch (e) { if (e.code === 'wissing') return sendJson(res, 409, { error: 'wissing', melding: e.message }); throw e; }
+      return sendJson(res, 200, { ok: true }); }
     if (url === '/api/photo' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.key || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = await saveDataUrl(b.dataUrl, b.id, String(b.key).replace(/[^A-Za-z0-9._-]/g, '_')); if (!up) return sendJson(res, 400, { error: 'format' }); return sendJson(res, 200, { url: up }); }
 
     if (url === '/api/status' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const r = await pool.query('SELECT id,status FROM vehicles ORDER BY sort_order NULLS LAST, id'); const out = {}; for (const row of r.rows) out[row.id] = { status: row.status }; return sendJson(res, 200, { vehicles: out }); }

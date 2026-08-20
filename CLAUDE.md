@@ -361,6 +361,20 @@ uit bij de auto waar het rapport al aan hing.
   dat nog openstond van vóór de melding de auto met de eerstvolgende klik terug op `lopende` — de
   frontend stuurt namelijk zijn hele geheugen op. `stateOk` helpt daar niet tegen: dat inlezen ging
   goed, de gegevens zijn alleen verouderd.
+- **`loadVehicles()` bewaart de voortgang van auto's die het al kende** (sinds 20-08-2026). Daarvóór
+  kreeg elke rij `initVeh()` en stond alles in het geheugen op leeg tot `loadState()` eroverheen kwam.
+  Werd `loadVehicles()` ergens aangeroepen **zonder** `loadState()` erachter — dat gebeurde in
+  `arrive()`, sinds 18-08 — dan schreef de eerstvolgende klik die lege waarden over de database.
+  **Op 20-08-2026 om 12:32 kostte dat de fase, foto's, subtaken en eigenaren van 64 auto's**, hersteld
+  uit de nachtelijke `pg_dump` met `inhaalslag/herstel-statusvelden.js` (alleen de statusvelden, niet
+  de hele tabel — anders verlies je wat er ná de back-up echt gebeurd is).
+  De regel blijft: roep ze aan als paar. Maar één vergeten aanroep mag geen administratie meer kosten.
+- **`putState()` weigert een massale wissing** (`MAX_WISSEN`, sinds 20-08-2026). Komt een auto die in
+  de database een traject heeft (`klaar>0` of een route) helemaal leeg terug, dan telt dat als gewist;
+  bij meer dan drie tegelijk wordt er **niets** geschreven en geeft het endpoint **409**. De frontend
+  zet dan `stateOk=false` en vraagt om te verversen. Dat is geen handeling die iemand met de hand doet,
+  dus een terechte weigering kost niemand werk — en de server hoort niet afhankelijk te zijn van een
+  frontend die het goed doet.
 - **`stateOk` bewaakt het opslaan.** `scheduleSave()` schrijft pas als `loadState()` gelukt is. Zonder
   dat slot zou een mislukte `GET /api/state` (backend-herstart, nginx-hik) ertoe leiden dat de
   eerstvolgende klik de beginwaarden van `V` over de database heen zet: alle lopende auto's terug naar
