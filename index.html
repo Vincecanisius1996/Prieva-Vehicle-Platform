@@ -319,6 +319,24 @@
   .traythumb .premove{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(192,57,43,.94);color:#fff;border:0;font-size:12px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
   .ptile.drop{border-color:var(--brand)!important;border-style:solid!important;background:#e6f6fa}
   /* advertentiefoto: sleepzone + knoppen */
+  /* Sleepbak voor taxatierapporten: groot, want dit is de hoofdhandeling van de taxateur. */
+  .bpmbak{border:2px dashed var(--line);border-radius:14px;padding:26px 20px;text-align:center;background:#fbfdfe;transition:.12s;cursor:pointer}
+  .bpmbak:hover{border-color:var(--brand);background:#f4fbfd}
+  .bpmbak.drag{border-color:var(--brand);background:#eef8fb;border-style:solid}
+  .bpmbak .bt{font-weight:700;font-size:15px;color:var(--ink);margin:8px 0 3px}
+  .bpmbak .bs{font-size:13px;color:var(--muted);max-width:52ch;margin:0 auto}
+  .bpmuitslag{margin-top:12px;display:flex;flex-direction:column;gap:6px;text-align:left}
+  .bpmrij{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:7px 11px;border-radius:9px;border:1px solid var(--line);background:var(--card)}
+  .bpmrij.goed{border-color:#bfe6d1;background:var(--green-soft)}
+  .bpmrij.mis{border-color:#f0c9c4;background:var(--red-soft)}
+  .bpmrij .bn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* Geldigheidsteller: 29 dagen vanaf de fysieke opname. */
+  .bpmteller{font-weight:700;font-size:11px;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .bpmteller.ruim{background:var(--green-soft);color:var(--green)}
+  .bpmteller.krap{background:var(--amber-soft);color:var(--amber)}
+  .bpmteller.bijna{background:var(--red-soft);color:var(--red)}
+  .bpmteller.weg{background:var(--red);color:#fff}
+  .bpmteller.onbekend{background:var(--slate-soft);color:var(--slate)}
   .addrop{border-radius:14px;transition:.12s}
   .addrop.drag{outline:2px dashed var(--brand);outline-offset:3px;background:#eef8fb}
   .adtools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
@@ -882,7 +900,7 @@ function taxPanel(v){
         <button class="rb nee ${v.route==='NEE'?'active-nee':''}" onclick="choose('${v.id}','NEE')">NEE — zelf doen</button>
       </div>
       ${v.route==='JA'?`<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="mailTaxateurId('${v.id}')">${ico("mail")} S-TAX (opnieuw) mailen</button>`:''}
-      ${reps.length?`<div style="margin-top:12px"><div style="font-weight:600;font-size:13px;margin-bottom:6px">Taxatierapport ontvangen</div>${reps.map(rr=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px"><span class="docico">${ico("doc",18)}</span><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rr.name}</div><div class="note">${fmtDate(rr.ts)} · ${rr.by}</div></div><a class="btn btn-ghost btn-sm" href="${rr.url}" target="_blank" download>${ico("download")} Openen</a><button class="btn btn-danger-o btn-sm" title="Verwijderen" onclick="delBpm('${v.id}','${rr.url}')">×</button></div>`).join('')}</div>`:''}
+      ${reps.length?`<div style="margin-top:12px"><div style="font-weight:600;font-size:13px;margin-bottom:6px">Taxatierapport ontvangen</div>${reps.map(rr=>`<div style="margin-bottom:6px">${bpmRapportRegel(v.id,rr)}</div>`).join('')}</div>`:''}
     </div></div>`;
 }
 function setStep(id,i,checked){const v=V.find(x=>x.id===id); if(!v)return;
@@ -1525,6 +1543,48 @@ function rerenderCurrent(){ if(currentUser&&currentUser.role==='foto')renderFoto
 /* ===== BPM-taxatierapporten (S-TAX) ===== */
 let bpmData={vehicles:{},notifs:[]};
 async function loadBpm(){ if(!apiOk)return; try{ const r=await fetch("/api/bpmreports",{cache:"no-store"}); if(r.ok){ bpmData=await r.json()||{vehicles:{},notifs:[]}; if(!bpmData.vehicles)bpmData.vehicles={}; if(!Array.isArray(bpmData.notifs))bpmData.notifs=[]; } }catch(_){} }
+/* ===== Geldigheid van een taxatierapport =====
+   Een rapport is 29 dagen geldig vanaf de fysieke opname van de auto door de taxateur (opgave
+   Prieva, 19-08-2026: de verzenddagen zijn daar al vanaf getrokken). Op het formulier zelf staat
+   "niet meer dan 1 maand voor de datum van goedkeuring door de RDW"; 29 dagen is de strengere
+   praktijkregel. Verloopt het rapport, dan moet de auto opnieuw getaxeerd worden.
+   Het verloopmoment ligt aan het BEGIN van de dag, 29 dagen na de opname. Bewust niet aan het eind:
+   een teller die te veel tijd belooft is erger dan een die een halve dag tekortkomt. */
+const BPM_GELDIG_DAGEN=29;
+function bpmVerlooptOp(opname){ const m=/^(\d{2})-(\d{2})-(\d{4})$/.exec(String(opname||"")); 
+  return m?Date.UTC(+m[3],+m[2]-1,+m[1])+BPM_GELDIG_DAGEN*86400000:null; }
+function bpmTellerInhoud(opname){
+  const eind=bpmVerlooptOp(opname);
+  if(!eind) return {klasse:"onbekend",tekst:"opnamedatum onbekend",titel:"De datum van fysieke opname kon niet uit het rapport gelezen worden; de geldigheid is daarom niet te berekenen."};
+  const over=eind-Date.now();
+  const dag=n=>n===1?"1 dag":n+" dagen", uur=n=>n===1?"1 uur":n+" uur";
+  if(over<=0){ const d=Math.ceil(-over/86400000);
+    return {klasse:"weg",tekst:"verlopen — "+dag(d)+" te laat",titel:"Opname "+opname+", verlopen op "+new Date(eind).toLocaleDateString("nl-NL")+". De auto moet opnieuw getaxeerd worden."}; }
+  const d=Math.floor(over/86400000), u=Math.floor((over%86400000)/3600000);
+  const klasse=d>=7?"ruim":(d>=2?"krap":"bijna");
+  return {klasse,tekst:"nog "+dag(d)+" "+uur(u),titel:"Fysieke opname "+opname+" · geldig tot "+new Date(eind).toLocaleDateString("nl-NL")+" ("+BPM_GELDIG_DAGEN+" dagen)"};
+}
+// data-opname erbij, zodat de teller bijgewerkt kan worden zonder de pagina opnieuw op te bouwen —
+// dat zou een upload die op dat moment loopt onderbreken.
+function bpmTeller(opname){ const t=bpmTellerInhoud(opname);
+  return `<span class="bpmteller ${t.klasse}" data-opname="${esc(opname||"")}" title="${esc(t.titel)}">${t.tekst}</span>`; }
+setInterval(()=>{ document.querySelectorAll(".bpmteller").forEach(el=>{
+  const t=bpmTellerInhoud(el.dataset.opname); el.className="bpmteller "+t.klasse; el.textContent=t.tekst; el.title=t.titel; }); },60000);
+
+/* Eén regel per rapport, gedeeld door de pagina van het team en die van de taxateur — die stonden
+   los van elkaar en liepen daardoor uiteen. */
+function bpmRapportRegel(vid,rr){
+  return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px">
+    <span class="docico">${ico("doc",18)}</span>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(rr.name)}</div>
+      <div class="note">${fmtDate(rr.ts)} · ${esc(rr.by)}${rr.opname?` · opname ${esc(rr.opname)}`:""}${rr.taxateur?` · ${esc(rr.taxateur)}`:""}</div>
+    </div>
+    ${bpmTeller(rr.opname)}
+    <a class="btn btn-ghost btn-sm" href="${rr.url}" target="_blank" download>${ico("download")} Openen</a>
+    <button class="btn btn-danger-o btn-sm" title="Verwijderen" onclick="delBpm('${vid}','${rr.url}')">×</button>
+  </div>`;
+}
 function bpmList(id){ return (bpmData.vehicles&&Array.isArray(bpmData.vehicles[id]))?bpmData.vehicles[id]:[]; }
 async function loadTaxState(){ if(!apiOk)return; try{ const r=await fetch("/api/taxstate",{cache:"no-store"}); if(r.ok){ const s=await r.json(); if(s&&s.vehicles){ V.forEach(v=>{ const d=s.vehicles[v.id]; if(d){ if(d.status)v.status=d.status; v.route=d.route||null; v.photos=d.photos||{}; } }); } } }catch(_){} }
 async function uploadBpm(id,input){ const f=input.files&&input.files[0]; input.value=''; if(!f)return;
@@ -1547,8 +1607,64 @@ function renderTaxList(){
       ${nrep?`<span class="fotocount has">✓ rapport</span>`:''}
       <span style="color:var(--muted);font-size:21px">›</span></div>`;
   }).join("") : `<div class="empty"><div class="eb">${ico("zoek",26)}</div>Er staan nu geen auto's op taxatie.</div>`;
-  app.innerHTML=`<h1 class="page-title">Te taxeren</h1><p class="page-sub">Auto's die Prieva heeft aangemeld voor BPM-taxatie. Bekijk en download de foto's en upload het taxatierapport.</p>
-    <div class="card"><div style="padding:4px">${rows}</div></div>`;
+  app.innerHTML=`<h1 class="page-title">Te taxeren</h1><p class="page-sub">Auto's die Prieva heeft aangemeld voor BPM-taxatie. Bekijk en download de foto's en lever de taxatierapporten in.</p>
+    <div class="card"><h3>Rapporten in één keer inleveren</h3><div class="card-body">
+      <div class="bpmbak" id="bpmbak"
+        onclick="document.getElementById('bpmbestanden').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="event.preventDefault();this.classList.remove('drag');sorteerRapporten(event.dataTransfer.files)">
+        <input type="file" id="bpmbestanden" accept="application/pdf" multiple style="display:none"
+               onchange="sorteerRapporten(this.files); this.value='';">
+        ${ico("doc",30)}
+        <div class="bt">Sleep hier alle taxatierapporten tegelijk naartoe</div>
+        <div class="bs">PVP leest het chassisnummer uit veld <b>1a</b> op pagina 1 en zet elk rapport bij de juiste auto. Ook de datum van fysieke opname wordt gelezen; daar gaat de geldigheid van ${BPM_GELDIG_DAGEN} dagen vanaf lopen.</div>
+      </div>
+      <div class="bpmuitslag" id="bpmuitslag"></div>
+    </div></div>
+    <div class="card"><h3>Auto's op taxatie</h3><div style="padding:4px">${rows}</div></div>`;
+  if(bpmUitslag.length)toonBpmUitslag();
+}
+/* De rapporten gaan stuk voor stuk naar de server: zes pdf's van 10 MB in één verzoek loopt tegen
+   de 30 MB van nginx aan, en dan verlies je ze allemaal in plaats van één. */
+let bpmUitslag=[], bpmBezig=false;
+function toonBpmUitslag(){
+  const el=document.getElementById('bpmuitslag'); if(!el)return;
+  el.innerHTML=bpmUitslag.map(r=>{
+    if(r.status==='bezig')return `<div class="bpmrij"><span class="spin"></span><span class="bn">${esc(r.naam)}</span><span class="note">lezen…</span></div>`;
+    if(r.status==='geplaatst')return `<div class="bpmrij goed"><span>✓</span><span class="bn">${esc(r.naam)}</span><span class="note">→ ${esc(r.auto)}</span>${bpmTeller(r.opname)}</div>`;
+    return `<div class="bpmrij mis"><span>!</span><span class="bn">${esc(r.naam)}</span><span class="note">${esc(r.reden)}</span></div>`;
+  }).join('');
+}
+async function sorteerRapporten(files){
+  const alles=[...(files||[])];
+  const lijst=alles.filter(f=>f.type==='application/pdf'||/\.pdf$/i.test(f.name));
+  if(!lijst.length){ showToast(alles.length?"Alleen pdf-bestanden — er is niets geüpload":"Geen bestanden gekozen",false); return; }
+  if(bpmBezig){ showToast("Nog bezig met de vorige stapel — even geduld",false); return; }
+  bpmBezig=true; bpmUitslag=lijst.map(f=>({naam:f.name,status:'bezig'})); toonBpmUitslag();
+  for(let i=0;i<lijst.length;i++){
+    const f=lijst[i];
+    try{
+      const dataUrl=await leesBestand(f);
+      const res=await fetch('/api/bpmreport-sorteer',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:f.name,dataUrl})});
+      if(!res.ok){ bpmUitslag[i]={naam:f.name,status:'mis',reden:res.status===413?'bestand te groot voor de server':'uploaden mislukt ('+res.status+')'}; }
+      else{
+        const j=await res.json();
+        if(j.uitkomst==='geplaatst') bpmUitslag[i]={naam:f.name,status:'geplaatst',opname:j.opname,
+          auto:`${j.auto.merk} ${j.auto.model} · ${j.auto.kenteken&&j.auto.kenteken!=='—'?j.auto.kenteken:j.vin}`};
+        else if(j.uitkomst==='geen-vin') bpmUitslag[i]={naam:f.name,status:'mis',reden:'geen chassisnummer gevonden bij veld 1a — zet dit rapport met de hand bij de auto'};
+        else if(j.uitkomst==='onbekende-auto') bpmUitslag[i]={naam:f.name,status:'mis',reden:`chassisnummer ${j.vin} staat niet in PVP`};
+        else bpmUitslag[i]={naam:f.name,status:'mis',reden:j.reden||'onbekende fout'};
+      }
+    }catch(e){ bpmUitslag[i]={naam:f.name,status:'mis',reden:'lezen of versturen mislukt'}; }
+    toonBpmUitslag();
+  }
+  bpmBezig=false;
+  const goed=bpmUitslag.filter(r=>r.status==='geplaatst').length;
+  await loadBpm();
+  renderTax();
+  showToast(goed===lijst.length?`${goed} rapport${goed===1?'':'en'} geplaatst`:`${goed} van de ${lijst.length} geplaatst — kijk de rode regels na`, goed===lijst.length);
 }
 function openTaxCar(id){ taxState.car=id; renderTax(); window.scrollTo(0,0); }
 function taxBack(){ taxState.car=null; renderTax(); window.scrollTo(0,0); }
@@ -1561,7 +1677,7 @@ function renderTaxCar(){ const v=V.find(x=>x.id===taxState.car); if(!v){taxState
     ${PHOTO_GROUPS.map(g=>taxPhotoCard(v,g)).join('')}
     <div class="card"><h3>BPM-taxatierapport <span class="muted" style="font-weight:500;font-size:12px">${reps.length} geüpload</span></h3>
       <div class="card-body">
-        ${reps.length?`<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">${reps.map(rr=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px"><span class="docico">${ico("doc",18)}</span><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rr.name}</div><div class="note">${fmtDate(rr.ts)} · ${rr.by}</div></div><a class="btn btn-ghost btn-sm" href="${rr.url}" target="_blank" download>${ico("download")} Openen</a><button class="btn btn-danger-o btn-sm" title="Verwijderen" onclick="delBpm('${v.id}','${rr.url}')">×</button></div>`).join('')}</div>`:''}
+        ${reps.length?`<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">${reps.map(rr=>bpmRapportRegel(v.id,rr)).join('')}</div>`:''}
         <label class="btn btn-primary" style="cursor:pointer"><input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadBpm('${v.id}',this)">＋ Rapport uploaden (PDF)</label>
         <div class="note" style="margin-top:8px">Het Prieva-team krijgt automatisch een melding zodra je het rapport hebt geüpload.</div>
       </div></div>`;

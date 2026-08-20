@@ -303,6 +303,36 @@ Hoe het nu werkt:
 bestand vóór het uploaden uit zijn eigen geheugen. Een HEIC is daar nog steeds een leeg miniatuurtje —
 de server heeft het dan nog niet gezien. Na het uploaden klopt het beeld wel.
 
+## Taxatierapporten uitlezen (`bpmlezen/`)
+Sinds 19-08-2026 leest PVP een BPM-taxatierapport bij binnenkomst uit. Twee dingen komen eruit:
+
+- **het VIN uit veld 1a** op pagina 1 (staat daar in losse hokjes, dus als losse tekens met spaties);
+- **de datum van de fysieke opname** door de taxateur, twee regels onder die kop.
+
+Daarmee kan de taxateur al zijn rapporten in één sleepbak gooien: PVP zoekt zelf de auto erbij
+(`POST /api/bpmreport-sorteer`, één pdf per verzoek — zes van 10 MB tegelijk loopt tegen de 30 MB van
+nginx aan). Getest op de acht rapporten die er lagen: **8 van de 8**, VIN en datum, en elk VIN kwam
+uit bij de auto waar het rapport al aan hing.
+
+- **Bewust geen AI.** Beide velden staan op een vaste plek in een vast formulier van de
+  Belastingdienst. `pdftotext` is deterministisch, gratis en direct; een model dat een chassisnummer
+  moet overtypen maakt daar fouten in — zie de kilometerstand van 18-08.
+- **De pdf's zijn versleuteld** met een leeg wachtwoord (alleen rechtenbeperking). Zelf de streams
+  uitpakken lukt daardoor niet; `pdftotext` gaat er wel doorheen. Systeempakket **`poppler-utils`**,
+  geen npm. Ontbreekt het, dan zegt de service dat bij het opstarten en werkt uploaden gewoon door —
+  alleen sorteren en de teller vallen weg.
+- **Geldigheid: 29 dagen na de opname** (opgave Prieva 19-08-2026; de verzenddagen zijn er al vanaf
+  getrokken). Op het formulier zelf staat *"niet meer dan 1 maand voor de datum van goedkeuring door
+  de RDW"* — 29 dagen is de strengere praktijkregel. `BPM_GELDIG_DAGEN` staat in `index.html` en in
+  `bpmlezen/index.js`; wijzig je het, wijzig het dan op allebei.
+- Het verloopmoment ligt aan het **begin** van de dag, 29 dagen na de opname. Bewust niet aan het
+  eind: een teller die te veel tijd belooft is erger dan een die een halve dag tekortkomt.
+- Lukt het lezen niet, dan wordt het rapport **gewoon opgeslagen** met een lege opnamedatum en toont
+  de teller "opnamedatum onbekend" in plaats van een verzonnen termijn. Een rapport mag nooit
+  verloren gaan omdat het uitlezen faalt.
+- Een rapport wordt **niet geweigerd** als de auto inmiddels op route NEE staat: het hoort bij de auto
+  waar het VIN naar wijst. Weigeren zou het rapport laten verdwijnen.
+
 ## Regels & valkuilen (belangrijk)
 - **Houd PVP strikt gescheiden van CRP.** Op dezelfde droplet draait een aparte reporting-tool (CRP)
   op `reporting.prieva.nl` (Docker-container `crp`, eigen nginx-blok, gedeelde PostgreSQL). **Raak nooit**

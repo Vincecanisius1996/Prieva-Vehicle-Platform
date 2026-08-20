@@ -139,3 +139,8 @@ CREATE TABLE IF NOT EXISTS verkoop_meldingen (
   payload      jsonb
 );
 CREATE INDEX IF NOT EXISTS verkoop_meldingen_vehicle_idx ON verkoop_meldingen (vehicle_id, ts);
+
+-- Uit het taxatierapport gelezen bij het uploaden (zie bpmlezen/). opname_datum is de dag van de
+-- fysieke opname; daar loopt de geldigheidstermijn van 29 dagen vanaf.
+ALTER TABLE bpm_reports ADD COLUMN IF NOT EXISTS opname_datum text;
+ALTER TABLE bpm_reports ADD COLUMN IF NOT EXISTS taxateur     text;

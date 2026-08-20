@@ -18,6 +18,10 @@ try { autoboek = require('./autoboek'); } catch (e) { console.error('autoboek-ko
 // app gewoon door en vult de gebruiker het formulier met de hand.
 let uitlezen = null;
 try { uitlezen = require('./uitlezen'); } catch (e) { console.error('uitlezen niet geladen:', e.message); }
+// Taxatierapporten uitlezen (VIN + datum fysieke opname). Ontbreekt de module of pdftotext, dan
+// werkt uploaden gewoon door — alleen het automatisch sorteren en de geldigheidsteller vallen weg.
+let bpmlezen = null;
+try { bpmlezen = require('./bpmlezen'); } catch (e) { console.error('bpmlezen niet geladen:', e.message); }
 
 const DATA_DIR = process.env.PVP_DATA || '/var/pvp';
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
@@ -334,12 +338,41 @@ async function putState(b) {
 
 async function getBpm() {
   const [rep, nf] = await Promise.all([
-    pool.query('SELECT vehicle_id,url,name,ts,by_name FROM bpm_reports ORDER BY id'),
+    pool.query('SELECT vehicle_id,url,name,ts,by_name,opname_datum,taxateur FROM bpm_reports ORDER BY id'),
     pool.query('SELECT vehicle_id,name,ts,by_name,seen FROM bpm_notifs ORDER BY id')
   ]);
   const vehicles = {};
-  for (const r of rep.rows) { if (!vehicles[r.vehicle_id]) vehicles[r.vehicle_id] = []; vehicles[r.vehicle_id].push({ url: r.url, name: r.name, ts: r.ts, by: r.by_name }); }
+  for (const r of rep.rows) { if (!vehicles[r.vehicle_id]) vehicles[r.vehicle_id] = []; vehicles[r.vehicle_id].push({ url: r.url, name: r.name, ts: r.ts, by: r.by_name, opname: r.opname_datum, taxateur: r.taxateur }); }
   return { vehicles, notifs: nf.rows.map(n => ({ id: n.vehicle_id, name: n.name, ts: n.ts, by: n.by_name, seen: n.seen })) };
+}
+
+// Het rapport uitlezen vóór het opslaan. Mislukt dat — geen pdftotext, een scan zonder tekstlaag,
+// een ander formulier — dan gaat het uploaden gewoon door met lege velden. Zelfde regel als bij het
+// verkleinen van foto's: een upload mag er nooit door verloren gaan.
+async function leesRapport(dataUrl) {
+  const leeg = { vin: null, opname: null, taxateur: null };
+  if (!bpmlezen) return leeg;
+  const m = /^data:([\w.+-]+\/[\w.+-]+)?;base64,(.+)$/.exec(dataUrl || '');
+  if (!m || (m[1] || '').toLowerCase() !== 'application/pdf') return leeg;
+  try { return await bpmlezen.lees(Buffer.from(m[2], 'base64')); }
+  catch (e) { console.error('bpmlezen:', e.message); return leeg; }
+}
+
+// Rapport en melding horen bij elkaar: of allebei, of geen van beide. Anders krijgt het team een
+// melding over een rapport dat er niet is, of andersom.
+async function bewaarRapport(vehicleId, url, naam, u, gelezen) {
+  const rec = { naam: String(naam || 'BPM-rapport').slice(0, 120), ts: Date.now(), door: u.n || u.u };
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('INSERT INTO bpm_reports (vehicle_id,url,name,ts,by_name,opname_datum,taxateur) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [vehicleId, url, rec.naam, rec.ts, rec.door, gelezen.opname || null, gelezen.taxateur || null]);
+    await client.query('INSERT INTO bpm_notifs (vehicle_id,name,ts,by_name,seen) VALUES ($1,$2,$3,$4,false)',
+      [vehicleId, rec.naam, rec.ts, rec.door]);
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; }
+  finally { client.release(); }
+  return rec;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -658,7 +691,50 @@ const server = http.createServer(async (req, res) => {
 
     if (url === '/api/taxstate' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const r = await pool.query('SELECT id,status,route,photos FROM vehicles ORDER BY sort_order NULLS LAST, id'); const out = {}; for (const row of r.rows) out[row.id] = { status: row.status, route: row.route || null, photos: row.photos || {} }; return sendJson(res, 200, { vehicles: out }); }
     if (url === '/api/bpmreports' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); return sendJson(res, 200, await getBpm()); }
-    if (url === '/api/bpmreport' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = await saveFile(b.dataUrl, b.id, 'bpm'); if (!up) return sendJson(res, 400, { error: 'format' }); const rec = { url: up, name: String(b.name || 'BPM-rapport').slice(0, 120), ts: Date.now(), by: u.n || u.u }; const client = await pool.connect(); try { await client.query('BEGIN'); await client.query('INSERT INTO bpm_reports (vehicle_id,url,name,ts,by_name) VALUES ($1,$2,$3,$4,$5)', [b.id, rec.url, rec.name, rec.ts, rec.by]); await client.query('INSERT INTO bpm_notifs (vehicle_id,name,ts,by_name,seen) VALUES ($1,$2,$3,$4,false)', [b.id, rec.name, rec.ts, rec.by]); await client.query('COMMIT'); } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); } return sendJson(res, 200, { url: up }); }
+    // Eén rapport bij één auto (de bestaande weg: je zit al op de pagina van die auto).
+    if (url === '/api/bpmreport' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      if (!b.id || !b.dataUrl) return sendJson(res, 400, { error: 'missing' });
+      const gelezen = await leesRapport(b.dataUrl);
+      const up = await saveFile(b.dataUrl, b.id, 'bpm'); if (!up) return sendJson(res, 400, { error: 'format' });
+      await bewaarRapport(b.id, up, b.name, u, gelezen);
+      return sendJson(res, 200, { url: up, opname: gelezen.opname, vin: gelezen.vin });
+    }
+
+    // Sleepbak: één rapport zonder dat erbij staat over welke auto het gaat. PVP leest het VIN uit
+    // veld 1a en zoekt de auto er zelf bij. De browser stuurt ze stuk voor stuk — zes rapporten van
+    // 10 MB in één verzoek loopt tegen de 30 MB van nginx aan.
+    if (url === '/api/bpmreport-sorteer' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      if (!bpmlezen) return sendJson(res, 200, { uitkomst: 'onleesbaar', reden: 'rapporten uitlezen staat uit' });
+      const b = await readBody(req) || {};
+      if (!b.dataUrl) return sendJson(res, 400, { error: 'missing' });
+      const naam = String(b.name || 'BPM-rapport').slice(0, 120);
+      const gelezen = await leesRapport(b.dataUrl);
+      if (!gelezen.vin) {
+        console.log('bpm-sorteer:', u.u, naam, '-> geen VIN gevonden');
+        return sendJson(res, 200, { uitkomst: 'geen-vin', naam });
+      }
+      const sleutel = gelezen.vin.toUpperCase();
+      const r = await pool.query('SELECT id, merk, model, kenteken FROM vehicles WHERE upper(id)=$1 OR upper(vin)=$1', [sleutel]);
+      if (!r.rows.length) {
+        console.log('bpm-sorteer:', u.u, naam, '-> VIN', sleutel, 'onbekend in PVP');
+        return sendJson(res, 200, { uitkomst: 'onbekende-auto', naam, vin: gelezen.vin });
+      }
+      const v = r.rows[0];
+      // Bewust géén controle op status of route: een rapport dat binnenkomt hoort bij de auto waar
+      // het VIN naar wijst, ook als iemand de route intussen op NEE heeft gezet. Weigeren zou het
+      // rapport laten verdwijnen en dat is erger dan een rapport bij een auto die het niet verwachtte.
+      const up = await saveFile(b.dataUrl, v.id, 'bpm'); if (!up) return sendJson(res, 400, { error: 'format' });
+      await bewaarRapport(v.id, up, naam, u, gelezen);
+      console.log('bpm-sorteer:', u.u, naam, '->', v.id, gelezen.opname ? '| opname ' + gelezen.opname : '| GEEN opnamedatum');
+      return sendJson(res, 200, { uitkomst: 'geplaatst', naam, vin: gelezen.vin, opname: gelezen.opname,
+        auto: { id: v.id, merk: v.merk, model: v.model, kenteken: v.kenteken }, url: up });
+    }
+
     if (url === '/api/bpmnotif-seen' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); await pool.query('UPDATE bpm_notifs SET seen=true WHERE seen=false'); return sendJson(res, 200, { ok: true }); }
     if (url === '/api/bpmreport-del' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.url) return sendJson(res, 400, { error: 'missing' }); await pool.query('DELETE FROM bpm_reports WHERE vehicle_id=$1 AND url=$2', [b.id, b.url]); try { const rel = decodeURIComponent(String(b.url).replace(/^\/uploads\//, '')); if (rel.indexOf('..') < 0) fs.unlink(path.join(UPLOAD_DIR, rel), () => {}); } catch (_) {} return sendJson(res, 200, { ok: true }); }
 
@@ -675,6 +751,10 @@ const server = http.createServer(async (req, res) => {
 // verse server waar libheif-examples en libheif-plugin-libde265 nog niet geïnstalleerd zijn — dan
 // vallen HEIC-uploads terug op het oude gedrag: onzichtbaar in Chrome en overgeslagen bij het
 // uitlezen. Dat is precies het soort stille terugval waar niemand aan denkt, dus staat het in het log.
+execFile('pdftotext', ['-v'], { timeout: 5000 }, err => {
+  if (err) console.error('LET OP: pdftotext ontbreekt — taxatierapporten worden niet uitgelezen, dus '
+    + 'geen automatisch sorteren en geen geldigheidsteller. Herstellen met: apt-get install -y poppler-utils');
+});
 execFile('heif-convert', ['--version'], { timeout: 5000 }, err => {
   if (err) console.error('LET OP: heif-convert ontbreekt — HEIC-foto\'s (Mac, iPhone) worden niet omgezet. '
     + 'Herstellen met: apt-get install -y libheif-examples libheif-plugin-libde265');
