@@ -53,6 +53,9 @@ Draait live op **https://pvp.prieva.nl**. Meerdere gebruikers, met rollen en log
 - `team` — volledige app.
 - `admin` — team + 📜 Logboek (activiteitenlog). Accounts: `vince`, `floris`.
 - `foto` — alleen advertentiefoto's uploaden. Account: `fotograaf`.
+- `carport` — eigen planningsomgeving (sinds 20-08-2026). Account: `carport`. Ziet **alleen de auto's
+  op zijn eigen planning**: `/api/vehicles` is voor deze rol ingeperkt tot auto's met een werkbon, en
+  `/api/state`, `/api/taxstate` en `/api/bpmreports` zijn dicht.
 - `taxateur` — eigen S-TAX-portaal: alleen auto's op taxatie (route=JA) **zonder kenteken**,
   RDW/papieren-foto's bekijken/downloaden, BPM-taxatierapport uploaden/verwijderen. Account: `s-tax`.
   **Een auto met een kenteken kan niet meer getaxeerd worden** — dat kenteken bestaat pas na
@@ -338,6 +341,30 @@ uit bij de auto waar het rapport al aan hing.
   verloren gaan omdat het uitlezen faalt.
 - Een rapport wordt **niet geweigerd** als de auto inmiddels op route NEE staat: het hoort bij de auto
   waar het VIN naar wijst. Weigeren zou het rapport laten verdwijnen.
+
+## Carport: werkbonnen en planning
+Sinds 20-08-2026. Twee tabellen: `carport_bonnen` (één per auto die bij Carport staat) en
+`carport_taken` (de regels: reparatie, APK, beurt, onderdeel). Notities staan als jsonb op de bon.
+
+- **De deadline is afgeleid, niet ingevoerd:** gewenste afleverdatum min `CARPORT_MARGE_DAGEN` (2),
+  zodat de auto daarna nog naar de poetser kan. Die constante staat in `server.js`; de frontend krijgt
+  hem mee in het antwoord van `/api/carport` en rekent niet zelf.
+- **De afleverdatum komt uit Mobilox** — de gewenste afleverdatum uit de verkoopovereenkomst. Die
+  koppeling bestaat nog niet, dus hij wordt met de hand ingevuld. Gemeten op 20-08-2026: in het
+  Autoboek staat op *Lopende* bij 1 van de 66 auto's een verkoopdatum, en die ligt in het verleden —
+  er is dus geen bruikbare tweede bron.
+- **Sorteren:** op deadline, tenzij Carport zelf sleept. Dan krijgen álle open bonnen een nummer
+  (`volgorde`), zodat er geen gaten of dubbele nummers ontstaan als twee mensen tegelijk schuiven.
+  Een lege lijst naar `/api/carport-volgorde` zet alles terug op deadlinevolgorde.
+- **Wie mag wat:** Carport werkt de planning af, voegt zelf werk toe en meldt auto's af. Alleen Prieva
+  zet een auto óp de planning of haalt hem eraf. **Carport kan geen werk van Prieva weghalen** —
+  alleen wat ze zelf hebben toegevoegd; dat staat per regel vast in `door`.
+- **Afmelden is omkeerbaar.** Een afgemelde auto verdwijnt uit de planning en verschijnt onder
+  *Afgeleverd*; Prieva kan hem terugzetten. Dat logboek wordt nooit opgeschoond: het is voor beide
+  partijen de plek om terug te kijken wat er is gedaan.
+- **Notities zijn gescheiden in `technisch` en `klant`.** Carport schrijft de techniek, Prieva de
+  vertaling richting de koper. Bewust twee soorten: monteurstaal hoort niet ongefilterd bij een klant
+  terecht te komen.
 
 ## Regels & valkuilen (belangrijk)
 - **Houd PVP strikt gescheiden van CRP.** Op dezelfde droplet draait een aparte reporting-tool (CRP)

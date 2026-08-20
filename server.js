@@ -406,6 +406,64 @@ async function bewaarRapport(vehicleId, url, naam, u, gelezen) {
   return rec;
 }
 
+/* ===== Carport: werkbonnen en planning =====
+   De deadline is de gewenste afleverdatum min CARPORT_MARGE_DAGEN, zodat de auto daarna nog naar de
+   poetser kan. Eén plek, zodat die marge niet verspreid in de code komt te staan. */
+const CARPORT_MARGE_DAGEN = 2;
+
+function dagUitTekst(d) {                       // 'dd-mm-jjjj' -> epoch ms (UTC, begin van de dag)
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(String(d || ''));
+  return m ? Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null;
+}
+function deadlineVan(afleverdatum) {
+  const t = dagUitTekst(afleverdatum);
+  return t === null ? null : t - CARPORT_MARGE_DAGEN * 86400000;
+}
+
+// Sorteren: een eigen volgorde van Carport gaat vóór, daarna op deadline. Een bon zonder
+// afleverdatum zakt naar onderen — die kun je nog niet plannen, maar hij mag niet onzichtbaar zijn.
+function sorteerBonnen(a, b) {
+  if (a.volgorde !== null && b.volgorde !== null) return a.volgorde - b.volgorde;
+  if (a.volgorde !== null) return -1;
+  if (b.volgorde !== null) return 1;
+  const da = deadlineVan(a.afleverdatum), db = deadlineVan(b.afleverdatum);
+  if (da === null && db === null) return a.id - b.id;
+  if (da === null) return 1;
+  if (db === null) return -1;
+  return da - db || a.id - b.id;
+}
+
+async function getCarport() {
+  const [bon, taak] = await Promise.all([
+    pool.query(`SELECT b.*, v.merk, v.model, v.kenteken, v.vin, v.kleur, v.km, v.uitv
+                  FROM carport_bonnen b LEFT JOIN vehicles v ON v.id = b.vehicle_id`),
+    pool.query('SELECT * FROM carport_taken ORDER BY id')
+  ]);
+  const perBon = {};
+  for (const t of taak.rows) (perBon[t.bon_id] ||= []).push({
+    id: t.id, soort: t.soort, tekst: t.tekst, door: t.door,
+    klaar: t.klaar, klaarTs: t.klaar_ts, klaarDoor: t.klaar_door, ts: t.aangemaakt_ts });
+  const maak = r => ({
+    id: r.id, vehicleId: r.vehicle_id, afleverdatum: r.afleverdatum, deadline: deadlineVan(r.afleverdatum),
+    volgorde: r.volgorde, status: r.status, klaarTs: r.klaar_ts, klaarDoor: r.klaar_door,
+    ts: r.aangemaakt_ts, door: r.aangemaakt_door, notities: r.notities || [], taken: perBon[r.id] || [],
+    auto: { merk: r.merk, model: r.model, kenteken: r.kenteken, vin: r.vin, kleur: r.kleur, km: r.km, uitv: r.uitv }
+  });
+  const alles = bon.rows.map(maak);
+  return {
+    marge: CARPORT_MARGE_DAGEN,
+    planning: alles.filter(b => b.status === 'open').sort(sorteerBonnen),
+    // Afgeleverd: nieuwste bovenaan. Dit is het logboek waar beide partijen op terugkijken, dus er
+    // wordt niets weggegooid — ook niet na een maand.
+    afgeleverd: alles.filter(b => b.status !== 'open').sort((a, b) => (b.klaarTs || 0) - (a.klaarTs || 0))
+  };
+}
+
+// Wie mag wat: Carport werkt de planning af en mag werk toevoegen; alleen Prieva zet een auto op de
+// planning of haalt hem eraf.
+const magCarport = u => u && (u.r === 'carport' || u.r === 'team' || u.r === 'admin');
+const magPlannen = u => u && (u.r === 'team' || u.r === 'admin');
+
 const server = http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
   const method = req.method;
@@ -434,7 +492,12 @@ const server = http.createServer(async (req, res) => {
     // zijn auto's uit; de lijst in index.html is nog slechts terugval.
     if (url === '/api/vehicles' && method === 'GET') {
       const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
-      const r = await pool.query('SELECT id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,import_auto,batch,note,status,factuurnr,inkoopprijs,verkoopdatum,docs,autoboek_status,autoboek_rij,autoboek_fout,verkoop_factuurnr,verkoop_factuurdatum,verkoopprijs,verkocht_gemeld_ts,verkocht_bevestigd_door FROM vehicles ORDER BY sort_order NULLS LAST, id');
+      // Carport krijgt alleen de auto's die op hun eigen planning staan. Zelfde gedachte als bij de
+      // taxateur: een afgeschermde rol hoort de catalogus niet te kunnen ophalen.
+      const kolommen = 'id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,import_auto,batch,note,status,factuurnr,inkoopprijs,verkoopdatum,docs,autoboek_status,autoboek_rij,autoboek_fout,verkoop_factuurnr,verkoop_factuurdatum,verkoopprijs,verkocht_gemeld_ts,verkocht_bevestigd_door';
+      const r = u.r === 'carport'
+        ? await pool.query(`SELECT ${kolommen} FROM vehicles WHERE id IN (SELECT vehicle_id FROM carport_bonnen) ORDER BY sort_order NULLS LAST, id`)
+        : await pool.query(`SELECT ${kolommen} FROM vehicles ORDER BY sort_order NULLS LAST, id`);
       // inkoopprijs is numeric; die geeft pg als string terug. Hier omzetten en niet met een globale
       // type-parser, want dan raak je ook iedere toekomstige numeric elders in de app.
       return sendJson(res, 200, r.rows.map(v => ({ id: v.id, vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model, uitv: v.uitv, kleur: v.kleur, brandstof: v.brandstof, transm: v.transm, reg: v.reg, km: v.km, inkoopdatum: v.inkoopdatum, lev: v.lev, importAuto: v.import_auto, batch: v.batch, note: v.note, status: v.status, factuurnr: v.factuurnr, inkoopprijs: v.inkoopprijs === null ? null : Number(v.inkoopprijs), verkoopdatum: v.verkoopdatum, docs: Array.isArray(v.docs) ? v.docs : [],
@@ -739,7 +802,122 @@ const server = http.createServer(async (req, res) => {
       for (const row of r.rows) out[row.id] = { status: row.status, route: row.route || null, photos: row.photos || {} };
       return sendJson(res, 200, { vehicles: out });
     }
-    if (url === '/api/bpmreports' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); return sendJson(res, 200, await getBpm()); }
+    /* ===== Carport ===== */
+    if (url === '/api/carport' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (!magCarport(u)) return sendJson(res, 403, { error: 'forbidden' });
+      return sendJson(res, 200, await getCarport());
+    }
+
+    // Auto op de planning zetten of de afleverdatum wijzigen. Alleen Prieva.
+    if (url === '/api/carport-bon' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (!magPlannen(u)) return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const datum = b.afleverdatum ? String(b.afleverdatum).trim() : null;
+      if (datum && dagUitTekst(datum) === null) return sendJson(res, 400, { error: 'datum', melding: 'afleverdatum moet dd-mm-jjjj zijn' });
+      if (b.id) {
+        await pool.query('UPDATE carport_bonnen SET afleverdatum=$2, updated_at=now() WHERE id=$1', [b.id, datum]);
+        return sendJson(res, 200, { ok: true, id: Number(b.id) });
+      }
+      if (!b.vehicleId) return sendJson(res, 400, { error: 'missing' });
+      const auto = await pool.query('SELECT id FROM vehicles WHERE id=$1', [b.vehicleId]);
+      if (!auto.rows.length) return sendJson(res, 404, { error: 'onbekende auto' });
+      const al = await pool.query("SELECT id FROM carport_bonnen WHERE vehicle_id=$1 AND status='open'", [b.vehicleId]);
+      if (al.rows.length) return sendJson(res, 200, { ok: true, id: al.rows[0].id, alGepland: true });
+      const r = await pool.query(
+        `INSERT INTO carport_bonnen (vehicle_id, afleverdatum, aangemaakt_ts, aangemaakt_door)
+         VALUES ($1,$2,$3,$4) RETURNING id`, [b.vehicleId, datum, Date.now(), u.n || u.u]);
+      return sendJson(res, 200, { ok: true, id: r.rows[0].id });
+    }
+
+    // Een regel op de bon: toevoegen, afvinken of weghalen. Carport mag dit ook — zij vinden
+    // onderweg werk dat niet op de bon stond.
+    if (url === '/api/carport-taak' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (!magCarport(u)) return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const wie = u.r === 'carport' ? 'carport' : 'prieva';
+      if (b.actie === 'toevoegen') {
+        if (!b.bonId || !String(b.tekst || '').trim()) return sendJson(res, 400, { error: 'missing' });
+        const soort = ['reparatie', 'apk', 'beurt', 'onderdeel'].includes(b.soort) ? b.soort : 'reparatie';
+        const r = await pool.query(
+          `INSERT INTO carport_taken (bon_id, soort, tekst, door, aangemaakt_ts) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+          [b.bonId, soort, String(b.tekst).trim().slice(0, 400), wie, Date.now()]);
+        return sendJson(res, 200, { ok: true, id: r.rows[0].id });
+      }
+      if (b.actie === 'afvinken') {
+        if (!b.id) return sendJson(res, 400, { error: 'missing' });
+        await pool.query('UPDATE carport_taken SET klaar=$2, klaar_ts=$3, klaar_door=$4 WHERE id=$1',
+          [b.id, !!b.klaar, b.klaar ? Date.now() : null, b.klaar ? (u.n || u.u) : null]);
+        return sendJson(res, 200, { ok: true });
+      }
+      if (b.actie === 'weg') {
+        if (!b.id) return sendJson(res, 400, { error: 'missing' });
+        // Alleen weghalen wat je zelf hebt gezet: Carport mag geen werk van Prieva laten verdwijnen.
+        const r = await pool.query('SELECT door FROM carport_taken WHERE id=$1', [b.id]);
+        if (!r.rows.length) return sendJson(res, 404, { error: 'onbekend' });
+        if (u.r === 'carport' && r.rows[0].door !== 'carport') return sendJson(res, 403, { error: 'niet van jou' });
+        await pool.query('DELETE FROM carport_taken WHERE id=$1', [b.id]);
+        return sendJson(res, 200, { ok: true });
+      }
+      return sendJson(res, 400, { error: 'actie' });
+    }
+
+    // Notitie erbij. 'technisch' is de onderbouwing van Carport, 'klant' de vertaling van Prieva.
+    if (url === '/api/carport-notitie' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (!magCarport(u)) return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      if (!b.bonId || !String(b.tekst || '').trim()) return sendJson(res, 400, { error: 'missing' });
+      // Een klantnotitie is een vertaling die Prieva maakt; Carport schrijft de techniek.
+      const soort = u.r === 'carport' ? 'technisch' : (b.soort === 'technisch' ? 'technisch' : 'klant');
+      const notitie = { ts: Date.now(), door: u.n || u.u, rol: u.r === 'carport' ? 'carport' : 'prieva',
+                        soort, tekst: String(b.tekst).trim().slice(0, 2000) };
+      const r = await pool.query(
+        `UPDATE carport_bonnen SET notities = notities || $2::jsonb, updated_at=now() WHERE id=$1 RETURNING id`,
+        [b.bonId, JSON.stringify([notitie])]);
+      if (!r.rows.length) return sendJson(res, 404, { error: 'onbekende bon' });
+      return sendJson(res, 200, { ok: true, notitie });
+    }
+
+    // Eigen volgorde van Carport. De hele lijst komt mee, zodat er geen gaten of dubbele nummers
+    // kunnen ontstaan; een lege lijst zet alles terug op de deadlinevolgorde.
+    if (url === '/api/carport-volgorde' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (!magCarport(u)) return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      if (!Array.isArray(b.ids)) return sendJson(res, 400, { error: 'missing' });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        if (!b.ids.length) await client.query("UPDATE carport_bonnen SET volgorde=NULL WHERE status='open'");
+        else for (let i = 0; i < b.ids.length; i++)
+          await client.query('UPDATE carport_bonnen SET volgorde=$2, updated_at=now() WHERE id=$1', [b.ids[i], i]);
+        await client.query('COMMIT');
+      } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; }
+      finally { client.release(); }
+      return sendJson(res, 200, { ok: true });
+    }
+
+    // Afmelden als de auto klaarstaat — door Carport of door Prieva. Terugzetten kan ook, want een
+    // vergissing hier laat een auto uit de planning verdwijnen.
+    if (url === '/api/carport-klaar' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (!magCarport(u)) return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      if (!b.id) return sendJson(res, 400, { error: 'missing' });
+      const klaar = b.klaar !== false;
+      const r = await pool.query(
+        `UPDATE carport_bonnen SET status=$2, klaar_ts=$3, klaar_door=$4, volgorde=NULL, updated_at=now()
+         WHERE id=$1 RETURNING vehicle_id`,
+        [b.id, klaar ? 'klaar' : 'open', klaar ? Date.now() : null, klaar ? (u.n || u.u) : null]);
+      if (!r.rows.length) return sendJson(res, 404, { error: 'onbekende bon' });
+      console.log('carport:', u.u, klaar ? 'afgemeld' : 'teruggezet', r.rows[0].vehicle_id);
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (url === '/api/bpmreports' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r === 'carport') return sendJson(res, 403, { error: 'forbidden' }); return sendJson(res, 200, await getBpm()); }
     // Eén rapport bij één auto (de bestaande weg: je zit al op de pagina van die auto).
     if (url === '/api/bpmreport' && method === 'POST') {
       const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });

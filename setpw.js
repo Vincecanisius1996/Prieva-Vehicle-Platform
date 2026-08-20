@@ -1,15 +1,15 @@
 // Account aanmaken/wijzigen voor PVP (opslag: PostgreSQL, tabel `users`).
 // Gebruik: set -a; . /var/pvp/pg.env; set +a
-//          node setpw.js <gebruikersnaam> <rol: team|admin|foto|taxateur> <wachtwoord> [weergavenaam]
+//          node setpw.js <gebruikersnaam> <rol: team|admin|foto|taxateur|carport> <wachtwoord> [weergavenaam]
 const crypto = require('crypto');
 const pg = require('pg');
 
 const [, , username, role, password, ...nameParts] = process.argv;
 if (!username || !role || !password) {
-  console.log('Gebruik: node setpw.js <gebruikersnaam> <rol: team|admin|foto|taxateur> <wachtwoord> [weergavenaam]');
+  console.log('Gebruik: node setpw.js <gebruikersnaam> <rol: team|admin|foto|taxateur|carport> <wachtwoord> [weergavenaam]');
   process.exit(1);
 }
-if (!['team','admin','foto','taxateur'].includes(role)) { console.log("Rol moet 'team', 'admin', 'foto' of 'taxateur' zijn."); process.exit(1); }
+if (!['team','admin','foto','taxateur','carport'].includes(role)) { console.log("Rol moet 'team', 'admin', 'foto', 'taxateur' of 'carport' zijn."); process.exit(1); }
 if (!process.env.PVP_PG) { console.log('PVP_PG ontbreekt. Doe eerst: set -a; . /var/pvp/pg.env; set +a'); process.exit(1); }
 
 const name = nameParts.join(' ') || username;

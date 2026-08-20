@@ -144,3 +144,46 @@ CREATE INDEX IF NOT EXISTS verkoop_meldingen_vehicle_idx ON verkoop_meldingen (v
 -- fysieke opname; daar loopt de geldigheidstermijn van 29 dagen vanaf.
 ALTER TABLE bpm_reports ADD COLUMN IF NOT EXISTS opname_datum text;
 ALTER TABLE bpm_reports ADD COLUMN IF NOT EXISTS taxateur     text;
+
+-- ===== Carport: werkbonnen en planning (20-08-2026) =====
+-- Eén bon per auto die bij Carport staat. Niet elke lopende auto komt hier: Prieva zet een auto op
+-- de planning met wat er moet gebeuren.
+CREATE TABLE IF NOT EXISTS carport_bonnen (
+  id               bigserial PRIMARY KEY,
+  vehicle_id       text NOT NULL,
+  -- Gewenste afleverdatum (dd-mm-jjjj). Komt uit de verkoopovereenkomst in Mobilox; zolang die
+  -- koppeling er niet is, wordt hij met de hand ingevuld. De deadline is CARPORT_MARGE_DAGEN
+  -- eerder, zodat de auto nog naar de poetser kan.
+  afleverdatum     text,
+  -- Eigen volgorde van Carport. Leeg = sorteren op deadline. Zodra er gesleept wordt krijgen alle
+  -- open bonnen een nummer, zodat de volgorde daarna volledig van hen is.
+  volgorde         integer,
+  status           text NOT NULL DEFAULT 'open',       -- 'open' | 'klaar'
+  klaar_ts         bigint,
+  klaar_door       text,
+  aangemaakt_ts    bigint,
+  aangemaakt_door  text,
+  -- Notities: [{ts, door, soort:'technisch'|'klant', tekst}]. Technisch is van Carport, klant is
+  -- de vertaling van Prieva richting de koper. Bewust gescheiden: monteurstaal hoort niet
+  -- ongefilterd bij een klant terecht te komen.
+  notities         jsonb NOT NULL DEFAULT '[]'::jsonb,
+  updated_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS carport_bonnen_vehicle_idx ON carport_bonnen (vehicle_id);
+CREATE INDEX IF NOT EXISTS carport_bonnen_status_idx  ON carport_bonnen (status);
+
+-- De regels op een bon: reparatie, APK, beurt, onderdeel bestellen.
+CREATE TABLE IF NOT EXISTS carport_taken (
+  id             bigserial PRIMARY KEY,
+  bon_id         bigint NOT NULL REFERENCES carport_bonnen(id) ON DELETE CASCADE,
+  soort          text NOT NULL DEFAULT 'reparatie',    -- reparatie | apk | beurt | onderdeel
+  tekst          text NOT NULL,
+  -- Wie de regel toevoegde: 'prieva' of 'carport'. Carport vindt onderweg werk dat niet op de bon
+  -- stond; dat moet je later terug kunnen zien zonder erover te hoeven discussiëren.
+  door           text NOT NULL DEFAULT 'prieva',
+  klaar          boolean NOT NULL DEFAULT false,
+  klaar_ts       bigint,
+  klaar_door     text,
+  aangemaakt_ts  bigint
+);
+CREATE INDEX IF NOT EXISTS carport_taken_bon_idx ON carport_taken (bon_id);
