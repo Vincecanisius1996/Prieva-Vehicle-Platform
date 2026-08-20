@@ -160,3 +160,45 @@ Getoetst: tweede en derde ronde melden niets.
 ### Wat er niet wordt bewaard
 Het blok `customer` uit de API — naam, adres, telefoonnummer, e-mailadres van de koper. Alleen datum,
 bedrag, VIN/kenteken en de inruilvelden.
+
+## taken.js — afspraken uit een overeenkomst halen
+
+Elke regel in een verkoopovereenkomst die geen betaalafspraak is, is werk voor de werkplaats.
+
+**De taken staan niet waar je ze verwacht.** Gemeten op 109 overeenkomsten van 2026:
+
+| veld | gevuld | regels over aanbetaling | taakregels |
+|---|---|---|---|
+| `footerText` | 70 | 66 | 83 |
+| `comments` | 52 | 15 | 169 |
+
+De footer is dus overwegend de aanbetaling en `comments` bevat het werk — maar allebei kunnen allebei
+bevatten. Daarom worden **beide velden gelezen** en wordt per regel weggelaten wat over betalen gaat.
+Alleen de footer nemen zou tweederde van het werk missen.
+
+Uitkomst: **283 taakregels over 97 van de 109 overeenkomsten.**
+
+### Wat er wegvalt
+- Alles met *aanbetaling, vooruitbetaling, overmaken, rekeningnummer, meldcode, IBAN, te voldoen*.
+  De meldcode zit erbij omdat die in de praktijk altijd in een betaalzin staat.
+- Regels die **alleen** over geld gaan (*"Bijbetaling klant 4000,-"*). Strak gehouden: *"De klant
+  betaalt voor het uitdeuken van twee putjes"* blijft staan, want daar zit werk in.
+- Kopregels als *"Gemaakte afspraken:"* — anders krijgt Carport dat als klusje.
+
+### Twee dingen die niet vanzelf goed gingen
+- **Eén regel kan twee afspraken bevatten.** *"Auto hoeft niet professioneel gewassen te worden. De
+  auto wordt afgeleverd met nieuwe APK."* wordt gesplitst op een zinseinde gevolgd door een
+  hoofdletter; `1.2 PureTech` blijft daardoor heel.
+- **Een ontkenning is geen taak.** Diezelfde regel als poetsklus inplannen doet precies het
+  omgekeerde van wat er staat. Regels met *hoeft niet / niet nodig / vervalt* worden een **notitie**
+  op de bon in plaats van een taak.
+
+### Soort bepalen
+`poetsen` gaat vóór `beurt`, want *"professionele poetsbeurt"* bevat allebei en dat werk hoort bij de
+poetser, niet bij de werkplaats. Verdeling over 283 regels: 172 reparatie, 57 poetsen, 31 APK,
+21 beurt, 3 onderdeel, 1 notitie.
+
+### Bijwerken gebeurt elke ronde
+De taken worden niet alleen bij een nieuw verwerkte regel weggeschreven maar bij **elke** gekoppelde
+auto met een open werkbon. Wordt er later in Mobilox een afspraak bijgeschreven, dan komt die er
+alsnog bij; dubbelen worden voorkomen door de tekst te vergelijken.

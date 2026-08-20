@@ -8,6 +8,7 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 const pg = require('/opt/pvp-api/node_modules/pg');
+const { takenUit } = require('./taken.js');
 
 const ECHT = process.argv.includes('--echt');
 const SESSIE = '/var/pvp/mobilox-sessie.json';
@@ -68,6 +69,7 @@ function uitRegel(r, soort) {
     vin: (av.VIN || '').trim() || null,
     kenteken: (av.LICEN || '').trim() || null,
     omschrijving: (r.product && r.product.title) || null,
+    taken: takenUit(r),
     inruil: (r.tradeVehicleText || r.tradeVehicleLicense || r.tradeVehicleVin) ? {
       omschrijving: r.tradeVehicleText || null, kenteken: r.tradeVehicleLicense || null,
       vin: r.tradeVehicleVin || null, prijs: bedrag(r.tradeVehiclePrice),
@@ -191,6 +193,34 @@ function uitRegel(r, soort) {
       await pool.query(`INSERT INTO mobilox_gezien (soort,extern_id,nummer,vin,vehicle_id,uitkomst,verwerkt_ts)
         VALUES ($1,$2,$3,$4,$5,'overgeslagen',$6) ON CONFLICT (soort,extern_id) DO NOTHING`,
         [r.soort, r.externId, r.nummer, r.vin, a.id, Date.now()]);
+    }
+
+    // Afspraken uit de overeenkomst als regels op de werkbon. Dit gebeurt elke ronde over álle
+    // gekoppelde auto's, niet alleen bij een nieuw verwerkte regel: wordt er later in Mobilox een
+    // afspraak bijgeschreven, dan komt die er alsnog bij. Dubbelen worden voorkomen door de tekst te
+    // vergelijken, niet door te onthouden wat we al gedaan hebben.
+    if (ECHT) for (const { r, a } of raak) {
+      if (!r.taken.length) continue;
+      const bon = (await pool.query("SELECT id FROM carport_bonnen WHERE vehicle_id=$1 AND status='open' ORDER BY id DESC LIMIT 1", [a.id])).rows[0];
+      if (!bon) continue;
+      const { rows: al } = await pool.query('SELECT lower(tekst) t FROM carport_taken WHERE bon_id=$1', [bon.id]);
+      const bestaat = new Set(al.map(x => x.t));
+      const { rows: [bn] } = await pool.query('SELECT notities::text n FROM carport_bonnen WHERE id=$1', [bon.id]);
+      let bij = 0;
+      for (const t of r.taken) {
+        if (bestaat.has(t.tekst.toLowerCase())) continue;
+        if (t.soort === 'notitie') {
+          if (bn && bn.n && bn.n.toLowerCase().includes(t.tekst.toLowerCase())) continue;
+          await pool.query('UPDATE carport_bonnen SET notities = notities || $2::jsonb, updated_at=now() WHERE id=$1',
+            [bon.id, JSON.stringify([{ ts: Date.now(), door: 'mobilox-agent', rol: 'prieva', soort: 'technisch', tekst: t.tekst }])]);
+        } else {
+          await pool.query("INSERT INTO carport_taken (bon_id, soort, tekst, door, aangemaakt_ts) VALUES ($1,$2,$3,'mobilox',$4)",
+            [bon.id, t.soort, t.tekst, Date.now()]);
+          bestaat.add(t.tekst.toLowerCase());
+          uitkomsten.taken = (uitkomsten.taken || 0) + 1; bij++;
+        }
+      }
+      if (bij) console.log(`  ${bij} afspraak/afspraken op de werkbon van ${a.merk} ${a.model}`);
     }
 
     // Inruilen vastleggen als voorstel — nooit zelf toevoegen aan de catalogus.

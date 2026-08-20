@@ -128,6 +128,7 @@
   .agechip{display:inline-block;font-size:11px;font-weight:700;color:var(--amber);background:var(--amber-soft);padding:1px 7px;border-radius:999px}
   .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
   .b-komende{background:var(--blue-soft);color:var(--blue)} .b-lopende{background:var(--green-soft);color:var(--green)}
+  .b-gemeld{background:var(--amber-soft);color:var(--amber)}
   .segbar{display:flex;gap:3px;align-items:center}
   .seg{width:14px;height:8px;border-radius:6px;background:var(--slate-soft)}
   .seg.done{background:var(--green)} .seg.current{background:var(--blue)} .seg.todo{background:#cdd8e2} .seg.nvt{background:#eef2f6}
@@ -361,6 +362,7 @@
   .soort.apk{background:var(--amber-soft);color:var(--amber)}
   .soort.onderdeel{background:var(--blue-soft);color:var(--blue)}
   .soort.beurt{background:var(--green-soft);color:var(--green)}
+  .soort.poetsen{background:#efe7f7;color:#6b4f9e}
   .vanwie{font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;background:var(--blue-soft);color:var(--blue)}
   .notitie{font-size:12.5px;padding:8px 11px;border-radius:8px;margin-bottom:6px;border-left:3px solid var(--rand-sterk,var(--line))}
   .notitie.technisch{background:var(--slate-soft);border-left-color:var(--slate)}
@@ -705,7 +707,8 @@ function renderVandaag(){
       <div style="flex:1"><div class="bt">${nr.length} nieuw BPM-taxatierapport${nr.length===1?'':'en'} van S-TAX</div>
         <div class="bs">${nr.slice(0,4).map(n=>{const vv=V.find(x=>x.id===n.id);return (vv?`${vv.merk} ${vv.model}`:'Auto')+' · '+fmtDate(n.ts);}).join(' — ')}</div></div>
       <button class="btn btn-ghost btn-sm" onclick="markBpmSeen()">Gezien</button></div>`;})()}
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 4px 12px">
+    ${afleverPaneel()}
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 4px 12px">
       <h3 style="margin:0;font-size:16px">To-do — per persoon <span class="agechip" style="color:var(--accent);background:var(--blue-soft)">${openCount} open</span></h3>
       ${isAdmin()?`<button class="btn btn-ghost btn-sm" onclick="go('logboek')">${ico("logboek")} Logboek</button>`:''}
     </div>
@@ -825,7 +828,10 @@ function renderLopende(){
   const zicht=(keuze==='alles'?lop:lop.filter(v=>faseVan(v)===keuze)).slice().sort(nieuwsteEerst);
   const rows=zicht.map(v=>{const s=steps(v);const pct=s.total?Math.round(s.done/s.total*100):0;
     const a=currentAction(v);
-    const cur=a==null?`<span class="badge b-lopende">✓ Verkoopklaar</span>`
+    // currentAction() geeft null voor élke auto die niet 'lopende' is — ook voor een gemelde
+    // verkoop. Die als "Verkoopklaar" tonen is onjuist: hij is verkocht en wacht op bevestiging.
+    const cur=v.status==='gemeld verkocht'?`<span class="badge b-gemeld">Gemeld verkocht — bevestigen</span>`
+      :a==null?`<span class="badge b-lopende">✓ Verkoopklaar</span>`
       :(a.decision?`<span class="phase-lab">BPM Taxatie?</span> <span class="need">keuze nodig</span>`:`<span class="phase-lab">${a.actie}</span>`);
     const rb=v.importAuto&&v.route?`<span class="route-badge rbg-${v.route==='JA'?'ja':'nee'}">${v.route}</span>`:'';
     return `<tr onclick="openVeh('${v.id}')" style="cursor:pointer">${boekCellen(v)}
@@ -1597,6 +1603,68 @@ function rerenderCurrent(){ if(currentUser&&currentUser.role==='carport')renderC
 /* ===== BPM-taxatierapporten (S-TAX) ===== */
 let bpmData={vehicles:{},notifs:[]};
 async function loadBpm(){ if(!apiOk)return; try{ const r=await fetch("/api/bpmreports",{cache:"no-store"}); if(r.ok){ bpmData=await r.json()||{vehicles:{},notifs:[]}; if(!bpmData.vehicles)bpmData.vehicles={}; if(!Array.isArray(bpmData.notifs))bpmData.notifs=[]; } }catch(_){} }
+/* ===== Geplande afleveringen (pagina Vandaag) =====
+   Wat er nog moet gebeuren vóór een auto de deur uit kan, gesorteerd op de dichtstbijzijnde
+   aflevering. Het werk is verdeeld over twee partijen met verschillende deadlines: Carport moet klaar
+   zijn ${marge} dagen vóór de aflevering, zodat de poetser daarna nog aan de beurt komt. */
+let afleverOpen=null;
+function afleverKlap(id){ afleverOpen = (afleverOpen===id ? null : id); rerender(); }
+function tijdChip(tot, label){
+  if(!tot) return `<span class="dl geen">geen datum</span>`;
+  const over=tot-Date.now();
+  const dag=n=>n===1?'1 dag':n+' dagen', uur=n=>n===1?'1 uur':n+' uur';
+  if(over<=0){ const d=Math.ceil(-over/86400000); return `<span class="dl over" title="${esc(label)}">${dag(d)} over tijd</span>`; }
+  const d=Math.floor(over/86400000), u=Math.floor((over%86400000)/3600000);
+  const kl=d>=5?'ruim':(d>=2?'krap':'nu');
+  // "nog 0 dagen 9 uur" leest als een fout. Onder een dag alleen uren, en onder een uur dat zeggen.
+  const tekst = d>0 ? (dag(d) + (d<7 ? ' '+uur(u) : '')) : (u>0 ? uur(u) : 'minder dan een uur');
+  return `<span class="dl ${kl}" title="${esc(label)}">nog ${tekst}</span>`;
+}
+const dagUit=d=>{ const m=/^(\d{2})-(\d{2})-(\d{4})$/.exec(String(d||'')); return m?Date.UTC(+m[3],+m[2]-1,+m[1]):null; };
+
+function afleverPaneel(){
+  const marge=carportData.marge||2;
+  const lijst=(carportData.planning||[]).filter(b=>b.afleverdatum)
+    .sort((a,b)=>(dagUit(a.afleverdatum)||0)-(dagUit(b.afleverdatum)||0));
+  if(!lijst.length) return '';
+  const rij=b=>{
+    const a=b.auto||{};
+    const aflever=dagUit(b.afleverdatum);
+    const carportTot=aflever!==null?aflever-marge*86400000:null;
+    const carportTaken=b.taken.filter(t=>!POETSWERK(t)), poetsTaken=b.taken.filter(POETSWERK);
+    const open=b.taken.filter(t=>!t.klaar).length;
+    const uit=afleverOpen===b.id;
+    const takenlijst=(titel,taken,tot,uitleg)=>`
+      <div style="flex:1;min-width:250px">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">
+          <span style="font-weight:700;font-size:12px">${titel}</span>${tijdChip(tot,uitleg)}
+        </div>
+        ${taken.length?taken.map(t=>`<div class="taak ${t.klaar?'af':''}" style="padding:4px 0">
+            <span class="soort ${t.soort}">${(SOORTEN.find(x=>x[0]===t.soort)||[,t.soort])[1]}</span>
+            <span class="tk">${esc(t.tekst)}</span>
+            ${t.door==='mobilox'?`<span class="vanwie" title="Uit de verkoopovereenkomst">Overeenkomst</span>`:''}
+            ${t.door==='carport'?`<span class="vanwie">Carport</span>`:''}
+          </div>`).join(''):`<div class="note" style="margin:0">Niets te doen.</div>`}
+      </div>`;
+    return `<div class="bon">
+      <div class="bon-kop" onclick="afleverKlap(${b.id})" style="cursor:pointer">
+        <span class="bon-greep" style="cursor:pointer">${uit?'▾':'▸'}</span>
+        <div class="bon-auto"><div class="nm">${esc(a.merk||'')} ${esc(a.model||'')}</div>
+          <div class="id">${a.kenteken&&a.kenteken!=='—'?esc(a.kenteken):esc(a.vin||'')} · aflevering ${esc(b.afleverdatum)}</div></div>
+        ${tijdChip(aflever,`Aflevering ${b.afleverdatum}`)}
+        <span class="note" style="margin:0">${open?open+' open':'alles af'} van ${b.taken.length}</span>
+      </div>
+      ${uit?`<div class="bon-body" style="display:flex;gap:26px;flex-wrap:wrap">
+        ${takenlijst('Bij Carport',carportTaken,carportTot,`Klaar ${marge} dagen vóór aflevering, zodat de auto nog naar de poetser kan`)}
+        ${takenlijst('Bij de poetser',poetsTaken,aflever,`Vóór de aflevering op ${b.afleverdatum}`)}
+      </div>`:''}
+    </div>`;
+  };
+  return `<div class="card"><h3>Geplande afleveringen <span class="gcount">${lijst.length}</span></h3><div class="card-body">
+    <div class="note" style="margin-top:0">De eerstvolgende bovenaan. Klik een auto open om te zien wat er nog ligt — Carport moet ${marge} dagen vóór de aflevering klaar zijn, daarna is de poetser aan de beurt.</div>
+    ${lijst.map(rij).join('')}
+  </div></div>`;
+}
 /* ===== Garantiegevallen =====
    Meldingen over een auto die al geleverd is. Ze staan op Vandaag omdat ze anders uit beeld raken:
    ze horen bij geen enkele fase van het traject en er is geen lijst waar ze vanzelf in belanden. */
@@ -1688,7 +1756,10 @@ function deadlineChip(bon){
   const kl=dagen>=5?"ruim":(dagen>=2?"krap":"nu");
   return `<span class="dl ${kl}" title="${esc(titel)}">nog ${dagen} ${dagen===1?'dag':'dagen'}</span>`;
 }
-const SOORTEN=[["reparatie","Reparatie"],["apk","APK"],["beurt","Beurt"],["onderdeel","Onderdeel"]];
+// Poetsen is een eigen soort: dat werk gaat naar de poetser, niet naar de werkplaats, en het moet
+// pas ná Carport gebeuren. Daarom staat het apart in de takenlijst per auto.
+const SOORTEN=[["reparatie","Reparatie"],["apk","APK"],["beurt","Beurt"],["onderdeel","Onderdeel"],["poetsen","Poetsen"]];
+const POETSWERK=t=>t.soort==='poetsen';
 const magPlannen=()=>currentUser&&(currentUser.role==='team'||currentUser.role==='admin');
 const isCarport=()=>currentUser&&currentUser.role==='carport';
 

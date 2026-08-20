@@ -905,7 +905,7 @@ const server = http.createServer(async (req, res) => {
       const wie = u.r === 'carport' ? 'carport' : 'prieva';
       if (b.actie === 'toevoegen') {
         if (!b.bonId || !String(b.tekst || '').trim()) return sendJson(res, 400, { error: 'missing' });
-        const soort = ['reparatie', 'apk', 'beurt', 'onderdeel'].includes(b.soort) ? b.soort : 'reparatie';
+        const soort = ['reparatie', 'apk', 'beurt', 'onderdeel', 'poetsen'].includes(b.soort) ? b.soort : 'reparatie';
         const r = await pool.query(
           `INSERT INTO carport_taken (bon_id, soort, tekst, door, aangemaakt_ts) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
           [b.bonId, soort, String(b.tekst).trim().slice(0, 400), wie, Date.now()]);
