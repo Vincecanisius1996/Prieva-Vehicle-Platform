@@ -516,9 +516,13 @@ dezelfde velden lopen uiteen, en dan mist het ene een veld dat het andere wel he
 Na een rondgang langs alle vijf de rollen bleek het gat niet in de techniek te zitten maar in
 handelingen die nergens bereikbaar waren. Vijf dingen erbij:
 
-- **Vandaag: "Wacht op bevestiging."** Een auto op `gemeld verkocht` stond alleen in de tabel op
-  Lopende met een oranje label; je moest toevallig langslopen. Het ís een to-do, dus staat hij nu
-  boven de to-do's. Bevestigen kan alleen een admin; team ziet de melding wél, met een knop *Bekijken*.
+- ~~Vandaag: "Wacht op bevestiging."~~ **Er weer af gehaald op dezelfde dag** (opgave Prieva). Sinds
+  de factuur de verkoop afrondt, is er niets meer te bevestigen: een verkoopovereenkomst betekent
+  gewoon *verkocht, factuur volgt*. Een blok dat om werk vraagt dat niet bestaat, is ruis. Het label
+  op Lopende heet daarom nu **"Verkocht — factuur volgt"** in plaats van "Gemeld verkocht —
+  bevestigen", en de filterchip **"Wacht op factuur"**. De knop *Verkoop bevestigen* blijft wél op de
+  auto zelf staan, voor een verkoop die buiten Mobilox om loopt — met de tekst erbij dat het meestal
+  niet nodig is.
 - **Vandaag: één regel onderaan** met wanneer de koppelingen voor het laatst rondkwamen. De banner
   bovenaan schreeuwt alleen bij een storing; dit is de stille variant.
 - **Lopende: de afleverdatum** met dezelfde teller als op Vandaag, **in de statuskolom en niet als

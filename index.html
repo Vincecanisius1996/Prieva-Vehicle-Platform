@@ -713,7 +713,6 @@ function renderVandaag(){
         <div class="bs">${nr.slice(0,4).map(n=>{const vv=V.find(x=>x.id===n.id);return (vv?`${vv.merk} ${vv.model}`:'Auto')+' · '+fmtDate(n.ts);}).join(' — ')}</div></div>
       <button class="btn btn-ghost btn-sm" onclick="markBpmSeen()">Gezien</button></div>`;})()}
     ${agentBanner()}
-    ${bevestigPaneel()}
     ${afleverPaneel()}
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 4px 12px">
       <h3 style="margin:0;font-size:16px">To-do — per persoon <span class="agechip" style="color:var(--accent);background:var(--blue-soft)">${openCount} open</span></h3>
@@ -920,7 +919,7 @@ function renderLopende(){
   const faseVan=v=>{const a=currentAction(v); return a?a.cat:(v.status==='lopende'?'__klaar':'__gemeld');};
   const groepen=[...CATS.map(c=>({sleutel:c,label:c,lijst:lop.filter(v=>faseVan(v)===c)})),
                  {sleutel:'__klaar',label:'✓ Verkoopklaar',lijst:lop.filter(v=>faseVan(v)==='__klaar')},
-                 {sleutel:'__gemeld',label:'Gemeld verkocht',lijst:lop.filter(v=>faseVan(v)==='__gemeld')}]
+                 {sleutel:'__gemeld',label:'Wacht op factuur',lijst:lop.filter(v=>faseVan(v)==='__gemeld')}]
                 .filter(g=>g.lijst.length);
   const keuze=boekFilter.lopende;
   const zicht=(keuze==='alles'?lop:lop.filter(v=>faseVan(v)===keuze)).slice().sort(nieuwsteEerst);
@@ -928,7 +927,10 @@ function renderLopende(){
     const a=currentAction(v);
     // currentAction() geeft null voor élke auto die niet 'lopende' is — ook voor een gemelde
     // verkoop. Die als "Verkoopklaar" tonen is onjuist: hij is verkocht en wacht op bevestiging.
-    const cur=v.status==='gemeld verkocht'?`<span class="badge b-gemeld">Gemeld verkocht — bevestigen</span>`
+    // Niet "nog te bevestigen": sinds de factuur de verkoop afrondt hoeft niemand hier iets te doen.
+    // Deze auto is verkocht op een overeenkomst; de factuur volgt bij de aflevering en zet hem
+    // vanzelf op verkocht. Een label dat om actie vraagt waar geen actie is, is ruis.
+    const cur=v.status==='gemeld verkocht'?`<span class="badge b-gemeld" title="Verkocht op een verkoopovereenkomst. Zodra de factuur in Mobilox staat, zet de agent hem op verkocht en verhuist de regel in het Autoboek.">Verkocht — factuur volgt</span>`
       :a==null?`<span class="badge b-lopende">✓ Verkoopklaar</span>`
       :(a.decision?`<span class="phase-lab">BPM Taxatie?</span> <span class="need">keuze nodig</span>`:`<span class="phase-lab">${a.actie}</span>`);
     const rb=v.importAuto&&v.route?`<span class="route-badge rbg-${v.route==='JA'?'ja':'nee'}">${v.route}</span>`:'';
@@ -949,7 +951,7 @@ function renderLopende(){
       <div class="card" style="max-width:820px"><h3>Waar staan ze?</h3><div class="card-body"><div class="funnel">
         ${CATS.map((c,i)=>`<div class="fn"><div class="fl">${c}</div><div class="track"><div class="fill" style="width:${Math.round(perCat[i]/maxc*100)}%;${perCat[i]===0?'background:transparent':''}">${perCat[i]||''}</div></div><div class="fc">${perCat[i]}</div></div>`).join("")}
         <div class="fn fn-eind"><div class="fl">✓ Verkoopklaar</div><div class="track"><div class="fill" style="width:${Math.round(klaarAantal/maxc*100)}%;${klaarAantal===0?'background:transparent':''}">${klaarAantal||''}</div></div><div class="fc">${klaarAantal}</div></div>
-        ${gemeldAantal?`<div class="fn fn-gemeld"><div class="fl">Gemeld verkocht</div><div class="track"><div class="fill" style="width:${Math.round(gemeldAantal/maxc*100)}%">${gemeldAantal}</div></div><div class="fc">${gemeldAantal}</div></div>`:''}
+        ${gemeldAantal?`<div class="fn fn-gemeld"><div class="fl">Wacht op factuur</div><div class="track"><div class="fill" style="width:${Math.round(gemeldAantal/maxc*100)}%">${gemeldAantal}</div></div><div class="fc">${gemeldAantal}</div></div>`:''}
       </div><div style="margin-top:10px;font-size:12px;color:var(--muted)">Alle ${allLop.length} lopende auto's staan hierin — de langste balk tussen de stappen is het knelpunt.</div></div></div>
     </div>`;
 }
@@ -1210,7 +1212,7 @@ function openVerkochtModal(id){
       <div><label>Factuurnummer</label><input type="text" id="vk-nr" autocomplete="off"></div>
       <div><label>Factuurdatum</label><input type="text" id="vk-datum" value="${vandaag}"></div>
       <div><label>Verkoopprijs (€)</label><input type="text" id="vk-prijs"></div>
-      <div class="muted" style="font-size:12px">De auto komt op <b>gemeld verkocht</b> te staan. Een beheerder bevestigt daarna; pas dan verhuist de regel in het Autoboek.</div>
+      <div class="muted" style="font-size:12px">De auto komt op <b>verkocht — factuur volgt</b> te staan. Zodra de factuur in Mobilox staat, gaat hij vanzelf op verkocht en verhuist de regel in het Autoboek.</div>
       <div id="vk-mfout" class="fout"></div>
     </div>
     <div class="mf">
@@ -1241,9 +1243,9 @@ async function meldVerkocht(id){
   }catch(_){ fout.textContent="Geen verbinding met de server."; knop.disabled=false; knop.textContent="Melden »"; }
 }
 /* ===== Verkoop =====
-   Een melding van buiten (straks Mobilox) zet de auto op 'gemeld verkocht'. Bevestigen is met opzet
-   een aparte handeling van een beheerder: pas dan verhuist de regel in het Autoboek, en dat is niet
-   met één klik terug te draaien. */
+   Een verkoopovereenkomst uit Mobilox zet de auto op 'gemeld verkocht'; de factuur zet hem daarna op
+   'verkocht' en verhuist de regel in het Autoboek. Er is dus normaal niets te bevestigen — de knop
+   hieronder is er voor het geval een verkoop buiten Mobilox om loopt. */
 function verkoopCard(v){
   if(v.status!=='gemeld verkocht'&&v.status!=='verkocht')return "";
   const bevestigd=v.status==='verkocht';
@@ -1251,14 +1253,14 @@ function verkoopCard(v){
   return `<div class="card"><h3>Verkoop</h3><div class="card-body">
     ${regel("Status", bevestigd
         ? `<span style="color:var(--green)">✓ bevestigd${v.verkochtDoor?` door ${v.verkochtDoor}`:''}</span>`
-        : `<span style="color:var(--amber)">gemeld — nog te bevestigen</span>`)}
+        : `<span style="color:var(--amber)">verkocht op overeenkomst — factuur volgt</span>`)}
     ${regel("Factuurnummer", v.verkoopFactuurnr)}
     ${regel("Factuurdatum", v.verkoopFactuurdatum)}
     ${regel("Verkoopprijs", euro(v.verkoopprijs))}
     ${!bevestigd&&isAdmin()?`<button class="btn btn-primary" style="margin-top:12px;width:100%;justify-content:center"
        onclick="bevestigVerkoop('${v.id}',this)">Verkoop bevestigen</button>
-      <div class="muted" style="font-size:12px;margin-top:8px">Hiermee gaat de auto op verkocht en verhuist de regel in het Autoboek van Lopende naar Verkochte.</div>`:''}
-    ${!bevestigd&&!isAdmin()?`<div class="muted" style="font-size:12px;margin-top:8px">Alleen een beheerder kan een verkoop bevestigen.</div>`:''}
+      <div class="muted" style="font-size:12px;margin-top:8px">Meestal hoeft dit niet: zodra de factuur in Mobilox staat, doet de agent dit vanzelf. Gebruik deze knop als de verkoop buiten Mobilox om loopt.</div>`:''}
+    ${!bevestigd&&!isAdmin()?`<div class="muted" style="font-size:12px;margin-top:8px">Zodra de factuur in Mobilox staat, gaat deze auto vanzelf op verkocht.</div>`:''}
     ${bevestigd&&isAdmin()?`<button class="btn btn-ghost btn-sm" style="margin-top:12px;width:100%;justify-content:center"
        onclick="zetTerugNaarLopend('${v.id}',this)">Terugzetten naar Lopende</button>
       <div class="muted" style="font-size:12px;margin-top:8px">Voor als de verkoop per ongeluk is bevestigd. De regel gaat in het Autoboek terug van Verkochte naar Lopende.</div>`:''}
@@ -1762,24 +1764,6 @@ async function loadBpm(){ if(!apiOk)return; try{ const r=await fetch("/api/bpmre
    Wat er nog moet gebeuren vóór een auto de deur uit kan, gesorteerd op de dichtstbijzijnde
    aflevering. Het werk is verdeeld over twee partijen met verschillende deadlines: Carport moet klaar
    zijn ${marge} dagen vóór de aflevering, zodat de poetser daarna nog aan de beurt komt. */
-/* ===== Verkopen die op een bevestiging wachten =====
-   Een auto op 'gemeld verkocht' stond alleen in de tabel op Lopende, met een oranje label. Je moest
-   dus toevallig langslopen om te zien dat er iets op je wachtte — terwijl de regel pas ná het
-   bevestigen in het Autoboek belandt. Daarom hier, boven de to-do's: het ís een to-do. */
-function bevestigPaneel(){
-  const l=V.filter(v=>v.status==='gemeld verkocht');
-  if(!l.length) return '';
-  return `<div class="card"><h3>Wacht op bevestiging <span class="gcount">${l.length}</span></h3><div class="card-body">
-    <div class="note" style="margin-top:0">Gemeld als verkocht. Pas na het bevestigen verhuist de regel in het Autoboek van Lopende naar Verkochte.${isAdmin()?'':' Bevestigen kan alleen een beheerder — Vince of Floris.'}</div>
-    ${l.map(v=>`<div class="taak" style="padding:7px 0">
-      <span class="tk" onclick="openVeh('${v.id}')" style="cursor:pointer"><b>${esc(v.merk||'')} ${esc(v.model||'')}</b> · ${esc(v.kenteken&&v.kenteken!=='—'?v.kenteken:v.vin||'')}
-        ${v.verkoopFactuurnr?`— factuur ${esc(v.verkoopFactuurnr)}`:''}${v.verkoopFactuurdatum?` · ${esc(v.verkoopFactuurdatum)}`:''}${v.verkoopprijs!=null?` · € ${Number(v.verkoopprijs).toLocaleString('nl-NL')}`:''}</span>
-      ${isAdmin()?`<button class="btn btn-primary btn-sm" onclick="bevestigVerkoop('${v.id}')">Verkoop bevestigen</button>`
-                 :`<button class="btn btn-ghost btn-sm" onclick="openVeh('${v.id}')">Bekijken</button>`}
-    </div>`).join('')}
-  </div></div>`;
-}
-
 /* ===== Melden als een achtergrondtaak stilstaat =====
    De lijst hieronder is zo actueel als de laatste ronde van de Mobilox-agent. Staat die stil, dan
    klopt het scherm niet meer terwijl het er precies hetzelfde uitziet — en dat is het gevaarlijke
