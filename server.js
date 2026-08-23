@@ -514,16 +514,36 @@ const server = http.createServer(async (req, res) => {
     // Nieuwe auto vastleggen (de plusknop). Alleen team/admin. Bewust een eigen endpoint en niet via
     // PUT /api/state: dat schrijft alleen voortgang terug en raakt de catalogusvelden niet aan.
     if (url === '/api/vehicle' && method === 'POST') {
-      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
-      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      // Twee manieren binnen, net als bij /api/verkocht: een ingelogde collega, of de koppeling met
+      // het bearer-token. Bewust hetzelfde endpoint — een auto aanmaken hoort op één plek te
+      // gebeuren, met dezelfde controles en dezelfde regel naar het Autoboek.
+      const u = userFromReq(req);
+      const viaApp = u && (u.r === 'team' || u.r === 'admin');
+      if (!viaApp) {
+        const token = (process.env.PVP_VERKOOP_TOKEN || '').trim();
+        if (!token) return sendJson(res, u ? 403 : 401, { error: u ? 'forbidden' : 'auth' });
+        const kop = String(req.headers.authorization || '');
+        const gegeven = kop.startsWith('Bearer ') ? kop.slice(7).trim() : '';
+        const a = Buffer.from(gegeven), bb = Buffer.from(token);
+        if (a.length !== bb.length || !crypto.timingSafeEqual(a, bb)) return sendJson(res, u ? 403 : 401, { error: u ? 'forbidden' : 'auth' });
+      }
       const b = await readBody(req) || {};
       const tekst = x => { const s = (x === undefined || x === null) ? '' : String(x).trim(); return s === '' ? null : s; };
       const vin = tekst(b.vin), kent = tekst(b.kenteken);
       // De sleutel is de VIN bij import en anders het kenteken — precies zoals de bestaande rijen.
       const id = vin || kent;
       if (!id) return sendJson(res, 400, { error: 'geen vin of kenteken' });
-      const bestaat = await pool.query('SELECT id FROM vehicles WHERE id=$1', [id]);
-      if (bestaat.rowCount) return sendJson(res, 409, { error: 'bestaat al', id });
+      // Zoeken op de genormaliseerde vorm en niet alleen op het id: Mobilox schrijft een kenteken
+      // zonder streepjes, PVP mét. Op het oog verschillende sleutels, dezelfde auto — en een dubbele
+      // regel in de catalogus werkt door naar het Autoboek en naar de rapportage.
+      const platVin = String(vin || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const platKent = String(kent || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const bestaat = await pool.query(
+        `SELECT id FROM vehicles WHERE id=$1
+            OR ($2 <> '' AND upper(regexp_replace(coalesce(vin,''),      '[^A-Za-z0-9]', '', 'g')) = $2)
+            OR ($3 <> '' AND upper(regexp_replace(coalesce(kenteken,''), '[^A-Za-z0-9]', '', 'g')) = $3)
+          LIMIT 1`, [id, platVin, platKent]);
+      if (bestaat.rowCount) return sendJson(res, 409, { error: 'bestaat al', id: bestaat.rows[0].id });
       // Dezelfde omzetting als bij de verkoopmelding. Stond hier een eigen variant die "12.500,00" tot
       // 12,5 maakte — een factor duizend te laag, en dat merk je pas als het in het Autoboek staat.
       const getal = x => { const n = bedrag(x); return n === null || Number.isNaN(n) ? null : n; };
@@ -603,9 +623,42 @@ const server = http.createServer(async (req, res) => {
       if (gev.rowCount > 1) { await spoor(null, 'ongeldig'); return sendJson(res, 409, { error: 'sleutel past op meer dan één auto', gezocht: sleutel }); }
       const v = gev.rows[0];
 
+      // Definitief: de melder zegt dat dit een FACTUUR is, en dan is de verkoop een feit — de auto
+      // gaat meteen op 'verkocht' en de regel verhuist in het Autoboek van Lopende naar Verkochte.
+      // Een verkoopovereenkomst doet dit niet: die kan nog wijzigen of vervallen, dus die blijft
+      // 'gemeld verkocht' tot er een factuur of een beheerder achteraan komt.
+      //
+      // Terugdraaien kan met /api/verkoop-terug (alleen admin), dat de regel ook in het boek terugzet.
+      const definitief = body.definitief === true;
+      // Bevestigen blijft voorbehouden aan een beheerder of aan de koppeling met een token. Een
+      // gewone collega die in de app op "Verkocht melden" drukt, meldt — bevestigen is een andere
+      // handeling, met een andere verantwoordelijkheid.
+      if (definitief && viaApp && sessie.r !== 'admin') {
+        await spoor(v.id, 'geweigerd');
+        return sendJson(res, 403, { error: 'alleen een beheerder of de koppeling kan een verkoop bevestigen' });
+      }
+      const bevestig = async (nietOpnieuwNaarBoek) => {
+        if (v.status !== 'verkocht') {
+          await pool.query(`UPDATE vehicles SET status='verkocht', verkocht_bevestigd_ts=$2,
+                              verkocht_bevestigd_door=$3, updated_at=now() WHERE id=$1`,
+            [v.id, Date.now(), tekst(body.bron) || (viaApp ? 'app: ' + (sessie.u || '?') : 'melding met token')]);
+        }
+        // Nooit twee keer verplaatsen: staat de auto al op 'verkocht', dan staat zijn regel al op
+        // het blad Verkochte en zou een tweede poging hem daar niet meer vinden — of erger, een
+        // tweede regel opleveren.
+        return nietOpnieuwNaarBoek ? { status: 'overgeslagen', rij: null, fout: null } : await verkoopNaarAutoboek(v.id);
+      };
+
       // Idempotent: dezelfde melding nog eens is goed, een andere melding op dezelfde auto niet.
       if (v.status === 'gemeld verkocht' || v.status === 'verkocht') {
         if ((v.verkoop_factuurnr || '') === factuurnr) {
+          // Zelfde nummer, maar nu als factuur: dan is dit de bevestiging die er nog niet was.
+          if (definitief && v.status === 'gemeld verkocht') {
+            const ab = await bevestig(false);
+            await spoor(v.id, 'bevestigd');
+            console.log('verkoop bevestigd:', v.id, 'factuur', factuurnr);
+            return sendJson(res, 200, { ok: true, bevestigd: true, id: v.id, status: 'verkocht', autoboek: ab });
+          }
           await spoor(v.id, 'ongewijzigd');
           return sendJson(res, 200, { ok: true, ongewijzigd: true, id: v.id, status: v.status });
         }
@@ -618,8 +671,12 @@ const server = http.createServer(async (req, res) => {
           await pool.query(`UPDATE vehicles SET verkoop_factuurnr=$2, verkoop_factuurdatum=coalesce($3,verkoop_factuurdatum),
                               verkoopprijs=coalesce($4,verkoopprijs), verkocht_gemeld_ts=$5 WHERE id=$1`,
             [v.id, factuurnr, factuurdatum, Number.isFinite(prijs) ? prijs : null, Date.now()]);
-          await spoor(v.id, 'vervangen');
-          return sendJson(res, 200, { ok: true, vervangen: true, id: v.id, status: v.status, was: v.verkoop_factuurnr });
+          // Eerst het nummer bijwerken, dán bevestigen: het Autoboek leest die velden uit de database,
+          // dus andersom zou het definitieve factuurnummer net te laat komen.
+          const ab = definitief ? await bevestig(false) : null;
+          await spoor(v.id, definitief ? 'vervangen en bevestigd' : 'vervangen');
+          return sendJson(res, 200, { ok: true, vervangen: true, bevestigd: definitief, id: v.id,
+            status: definitief ? 'verkocht' : v.status, was: v.verkoop_factuurnr, autoboek: ab });
         }
         await spoor(v.id, 'conflict');
         return sendJson(res, 409, { error: 'auto staat al op een andere verkoop', id: v.id, status: v.status, bestaand: v.verkoop_factuurnr, gemeld: factuurnr });
@@ -629,6 +686,12 @@ const server = http.createServer(async (req, res) => {
         `UPDATE vehicles SET status='gemeld verkocht', verkoop_factuurnr=$2, verkoop_factuurdatum=$3,
                 verkoopprijs=$4, verkocht_gemeld_ts=$5, updated_at=now() WHERE id=$1`,
         [v.id, factuurnr, factuurdatum, prijs, Date.now()]);
+      if (definitief) {
+        const ab = await bevestig(false);
+        await spoor(v.id, 'gemeld en bevestigd');
+        console.log('verkoop gemeld en bevestigd:', v.id, 'factuur', factuurnr);
+        return sendJson(res, 200, { ok: true, bevestigd: true, id: v.id, status: 'verkocht', autoboek: ab });
+      }
       await spoor(v.id, 'gemeld');
       console.log('verkoop gemeld:', v.id, 'factuur', factuurnr);
       return sendJson(res, 200, { ok: true, id: v.id, status: 'gemeld verkocht' });

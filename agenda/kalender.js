@@ -50,7 +50,17 @@ async function vraag(tok, pad, opties) {
 const inloggen = () => token(SCOPE);
 
 // Welke agenda's kan dit account zien? Alleen om het ID op te zoeken bij het inrichten.
+//
+// Let op: een agenda die mét het service-account gedeeld is, verschijnt hier NIET vanzelf. Google
+// stuurt bij delen buiten het domein een uitnodiging per e-mail, en die kan een service-account niet
+// aannemen. Werken doet het wel: het recht staat al op de agenda. Met aanmelden() zetten we hem
+// alsnog in de lijst, zodat hij hier zichtbaar wordt.
 const agendas = tok => vraag(tok, '/users/me/calendarList?maxResults=250').then(j => (j && j.items) || []);
+
+// Bestaat deze agenda en mogen we erin schrijven?
+const agenda = (tok, id) => vraag(tok, `/calendars/${encodeURIComponent(id)}`);
+
+const aanmelden = (tok, id) => vraag(tok, '/users/me/calendarList', { method: 'POST', body: JSON.stringify({ id }) });
 
 // Alleen onze eigen afspraken, vanaf een moment. Het filter op het merkteken gebeurt bij Google,
 // dus de afspraken van collega's komen niet eens over de lijn.
@@ -80,4 +90,4 @@ async function verwijder(tok, agendaId, id) {
   catch (e) { if (e.status !== 404 && e.status !== 410) throw e; }
 }
 
-module.exports = { SCOPE, MERK, instellingen, inloggen, agendas, onzeAfspraken, maak, wijzig, verwijder, netteFout };
+module.exports = { SCOPE, MERK, instellingen, inloggen, agendas, agenda, aanmelden, onzeAfspraken, maak, wijzig, verwijder, netteFout };

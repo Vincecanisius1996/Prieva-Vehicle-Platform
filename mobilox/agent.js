@@ -11,11 +11,15 @@ const pg = require('/opt/pvp-api/node_modules/pg');
 const { takenUit } = require('./taken.js');
 const { meld } = require('../agentrun.js');
 const planning = require('./planning.js');
+const inruil = require('./inruil.js');
 
 const ECHT = process.argv.includes('--echt');
 const SESSIE = '/var/pvp/mobilox-sessie.json';
 const API = 'https://api.mobilox.nl/api/v2';
 const SOORTEN = { 2: 'overeenkomst', 3: 'factuur' };
+// Waar PVP draait. Instelbaar zodat een toets tegen een testserver kan praten en niet per ongeluk
+// tegen de echte administratie.
+const PVP = process.env.PVP_API || 'http://127.0.0.1:3000';
 
 function env() {
   const o = {};
@@ -103,6 +107,10 @@ function uitRegel(r, soort) {
     const { rows: autos } = await pool.query('SELECT id, vin, kenteken, merk, model, status, klaar, route FROM vehicles');
     const perVin = new Map(), perKent = new Map();
     autos.forEach(a => { if (norm(a.vin)) perVin.set(norm(a.vin), a); if (norm(a.kenteken)) perKent.set(norm(a.kenteken), a); });
+    // De schrijfwijze die PVP zelf al gebruikt, zodat een inruil geen tweede variant van een merk
+    // introduceert (Mobilox schrijft "Citroen", PVP "Citroën").
+    const merken = new Map();
+    autos.forEach(a => { if (a.merk) merken.set(inruil.merkSleutel(a.merk), a.merk); });
 
     let opVin = 0, opKenteken = 0, geen = 0, zonderVin = 0;
     const raak = [], mis = [];
@@ -152,27 +160,35 @@ function uitRegel(r, soort) {
       ? (/^PVP_VERKOOP_TOKEN=(.*)$/m.exec(fs.readFileSync('/var/pvp/verkoop.env','utf8')) || [])[1] : '') || '';
     if (ECHT && !token) throw new Error('PVP_VERKOOP_TOKEN ontbreekt — zonder token weigert /api/verkocht terecht');
 
-    const uitkomsten = { gemeld:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0 };
+    const uitkomsten = { gemeld:0, verkocht:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0 };
     for (const { r, a } of perAuto.values()) {
       const regel = `${(a.merk+' '+a.model).padEnd(24)} ${String(a.kenteken).padEnd(11)} ${r.soort} ${r.nummer}`;
       if (!ECHT) { console.log('  zou melden: ' + regel + `  € ${r.prijs} · ${r.datum}` + (r.afleverdatum?` · aflever ${r.afleverdatum}`:'')); continue; }
       let uit = 'mislukt';
       try {
-        const res = await fetch('http://127.0.0.1:3000/api/verkocht', { method:'POST',
+        const res = await fetch(PVP + '/api/verkocht', { method:'POST',
           headers: { 'Content-Type':'application/json', Authorization: 'Bearer ' + token },
+          // Een FACTUUR is een verkoop die rond is: die bevestigt meteen (definitief) en verhuist de
+          // regel in het Autoboek. Een overeenkomst niet — die kan nog wijzigen of vervallen en
+          // blijft 'gemeld verkocht' staan.
           // vervangt: een factuur mag een eerdere melding uit de overeenkomst overschrijven — die
           // heeft het definitieve nummer. Een overeenkomst nooit; die komt eerst.
           // De auto is hierboven al gevonden, dus sturen we het PVP-id en niet het VIN uit Mobilox.
           // Er staan auto's in PVP met een streepje in het VIN-veld (oude inruilers); die koppelen op
           // kenteken, en dan wijst het VIN uit Mobilox naar niets en kreeg de melding een 404.
-          body: JSON.stringify({ voertuig: a.id, factuurnummer: String(r.nummer), vervangt: r.soort === 'factuur',
+          body: JSON.stringify({ voertuig: a.id, factuurnummer: String(r.nummer),
+            vervangt: r.soort === 'factuur', definitief: r.soort === 'factuur',
             factuurdatum: r.datum, verkoopprijs: r.prijs, bron: 'mobilox-agent (' + r.soort + ')' }) });
         const j = await res.json().catch(()=>({}));
         // 404 is geen storing maar een feit: Mobilox verkoopt ook auto's die nooit in PVP hebben
         // gestaan (doorverkochte inruilers). Dat als "mislukt" tellen zou de koppeling elke ronde
         // als kapot laten zien, en dan kijkt niemand meer naar de melding die er wél toe doet.
         uit = res.status === 409 ? 'botsing' : res.status === 404 ? 'geen-auto'
-            : (res.ok ? (j.vervangen ? 'vervangen' : (j.ongewijzigd ? 'ongewijzigd' : 'gemeld')) : 'mislukt');
+            : (res.ok ? (j.bevestigd ? 'verkocht' : (j.vervangen ? 'vervangen' : (j.ongewijzigd ? 'ongewijzigd' : 'gemeld'))) : 'mislukt');
+        // Ging de auto naar het Autoboek, dan hoort dat in beeld: mislukt dát, dan staat de verkoop
+        // wél in PVP en niet in het boek, en dat is precies het verschil dat je wilt zien.
+        if (j.autoboek && j.autoboek.status === 'fout') console.log('     !! Autoboek: ' + j.autoboek.fout);
+        else if (j.autoboek && j.autoboek.rij) console.log('     -> Autoboek: rij ' + j.autoboek.rij + ' op Verkochte Autos');
         uitkomsten[uit] = (uitkomsten[uit]||0) + 1;
         console.log(`  ${uit.padEnd(12)} ${regel}` + (uit==='mislukt'||uit==='geen-auto' ? '  -> ' + (j.error||res.status) : ''));
       } catch (err) { console.log('  mislukt      ' + regel + '  -> ' + err.message); uitkomsten.mislukt++; }
@@ -242,17 +258,36 @@ function uitRegel(r, soort) {
       if (bij) console.log(`  ${bij} afspraak/afspraken op de werkbon van ${a.merk} ${a.model}`);
     }
 
-    // Inruilen vastleggen als voorstel — nooit zelf toevoegen aan de catalogus.
+    // Een inruil op een verkoopovereenkomst is een FEIT: die auto komt bij de aflevering binnen.
+    // Hij wordt dus aangemaakt bij Komende, precies wat "komend" betekent — afgesproken, nog niet er.
+    //
+    // Alleen voor een inruil die we nog niet eerder gezien hebben. De regels die er al liggen zijn
+    // geschiedenis: die auto's zijn allang binnengekomen of alweer weg, en die alsnog aanmaken zou
+    // de catalogus vullen met auto's die er niet meer zijn.
     if (ECHT) for (const r of regels.filter(x => x.inruil)) {
       const i = r.inruil;
-      const al = await pool.query('SELECT id FROM mobilox_inruil WHERE extern_id=$1', [r.externId]);
-      if (al.rows.length) continue;
-      const bekend = i.vin && perVin.get(norm(i.vin));
-      if (bekend) continue;                       // staat al in PVP
-      await pool.query(`INSERT INTO mobilox_inruil (extern_id,vin,kenteken,omschrijving,prijs,km,bpm,gezien_ts)
-                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [r.externId, i.vin, i.kenteken, i.omschrijving, i.prijs, i.km, i.bpm, Date.now()]);
-      uitkomsten.inruil++;
+      if ((await pool.query('SELECT id FROM mobilox_inruil WHERE extern_id=$1', [r.externId])).rows.length) continue;
+      const auto = inruil.autoUit(i, r, merken);
+      let status = 'geen sleutel', pvpId = null, melding = null;
+      if (auto) {
+        try {
+          const res = await fetch(PVP + '/api/vehicle', { method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify(auto) });
+          const j = await res.json().catch(() => ({}));
+          if (res.status === 409) { status = 'bestond al'; pvpId = j.id || null; }
+          else if (res.ok) {
+            status = 'overgenomen'; pvpId = j.id || null;
+            uitkomsten.inruil++;
+            console.log(`  inruil overgenomen: ${auto.merk || '?'} ${auto.model || ''} ${auto.kenteken || ''} (bij ${r.soort} ${r.nummer})`);
+            if (j.autoboek && j.autoboek.status === 'fout') console.log('     !! Autoboek: ' + j.autoboek.fout);
+          } else { status = 'mislukt'; melding = j.error || String(res.status); }
+        } catch (err) { status = 'mislukt'; melding = err.message; }
+      }
+      await pool.query(`INSERT INTO mobilox_inruil (extern_id,vin,kenteken,omschrijving,prijs,km,bpm,gezien_ts,status,pvp_id,melding)
+                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [r.externId, i.vin, i.kenteken, i.omschrijving, i.prijs, i.km, i.bpm, Date.now(), status, pvpId, melding]);
+      if (status === 'mislukt') { console.log(`  inruil MISLUKT: ${i.omschrijving || i.kenteken} -> ${melding}`); uitkomsten.mislukt++; }
     }
 
     if (ECHT) {

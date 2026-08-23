@@ -28,13 +28,20 @@ Beschrijft de **structuur** van de pagina's: adressen, invoervelden, links, knop
 het aantal rijen. **Bewust geen celinhoud** — om selectors te schrijven is de vorm nodig, geen
 klantgegevens. De uitvoer komt in `verkenning.txt`, die staat in `.gitignore`.
 
-## Wat de agent straks doet
-1. Nieuwe **verkoopovereenkomsten**: de auto op `gemeld verkocht` zetten via het bestaande
-   `POST /api/verkocht`. Dat endpoint is idempotent, legt elke melding vast in `verkoop_meldingen`
-   en zet een auto nooit zelf op verkocht — een beheerder bevestigt. Die scheiding blijft: een agent
-   die uit een scherm leest, mag niet zelfstandig de administratie sluiten.
-2. Nieuwe **facturen**: verkoopdatum en verkoopprijs in/in erbij, zodat bevestigen één klik is.
-3. **Inruil** uit de factuur: die auto als nieuwe regel voorstellen voor Lopende.
+## Wat de agent doet
+1. Nieuwe **verkoopovereenkomsten**: de auto op `gemeld verkocht` via `POST /api/verkocht`, plus de
+   gewenste afleverdatum en de gemaakte afspraken naar de Carport-planning.
+2. Nieuwe **facturen**: `definitief:true`, dus meteen op `verkocht` én de regel verhuist in het
+   Autoboek van *Lopende* naar *Verkochte*, met factuurnummer, verkoopdatum en verkoopprijs.
+   **Dit was tot 23-08-2026 anders**: toen bleef alles op `gemeld verkocht` staan tot een beheerder
+   bevestigde. Dat is losgelaten omdat een factuur die Prieva zelf aanmaakt geen tweede oordeel nodig
+   heeft — en het alternatief was dat PVP en het Autoboek dagenlang achterliepen.
+3. **Inruil**: een inruilauto op een overeenkomst is een feit, geen voorstel. Die wordt aangemaakt bij
+   **Komende** (en dus ook in het Autoboek op *Komende Autos*). Zie `inruil.js`.
+
+Terugdraaien blijft mogelijk: `/api/verkoop-terug` (alleen admin) zet de auto terug op lopende en
+verplaatst de regel in het boek terug. Een per ongeluk aangemaakte inruiler haalt een admin weg met
+*Auto verwijderen* — die regel in het Autoboek moet dan met de hand weg, zoals altijd.
 
 ## Wat er níét wordt bewaard
 Alleen wat PVP nodig heeft: datum, bedrag, kenteken/VIN. **Geen naam, adres, telefoonnummer of

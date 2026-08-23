@@ -258,3 +258,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   duur_ms      integer,
   gelukt_ts    bigint                    -- einde van de laatste GESLAAGDE ronde
 );
+
+-- ===== Inruil is een feit, geen voorstel (23-08-2026) =====
+-- Bij welke PVP-auto een inruil terechtgekomen is, en hoe dat afliep.
+ALTER TABLE mobilox_inruil ADD COLUMN IF NOT EXISTS pvp_id text;
+ALTER TABLE mobilox_inruil ADD COLUMN IF NOT EXISTS melding text;

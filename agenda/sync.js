@@ -10,6 +10,7 @@ const { synchroniseer } = require('./index.js');
 const { meld } = require('../agentrun.js');
 
 const arg = n => process.argv.includes(n);
+const naArg = n => { const i = process.argv.indexOf(n); return i > -1 ? process.argv[i + 1] : null; };
 
 (async () => {
   if (arg('--agendas')) {
@@ -20,10 +21,24 @@ const arg = n => process.argv.includes(n);
     return;
   }
 
+  // Toetsen én aanmelden in één stap: een gedeelde agenda verschijnt niet vanzelf in de lijst van
+  // een service-account, en zonder die stap blijft --agendas leeg terwijl alles werkt.
+  const toets = naArg('--toets');
+  if (toets) {
+    const tok = await K.inloggen();
+    const a = await K.agenda(tok, toets);
+    console.log(`gevonden: ${a.summary}  (tijdzone ${a.timeZone})`);
+    try { const l = await K.aanmelden(tok, toets); console.log(`aangemeld in de lijst, recht: ${l.accessRole}`);
+      if (l.accessRole !== 'writer' && l.accessRole !== 'owner')
+        console.log('LET OP: dit recht is niet genoeg om afspraken te schrijven — deel de agenda als "Wijzigingen aan afspraken aanbrengen".');
+    } catch (e) { console.log('aanmelden in de lijst lukte niet: ' + e.message); }
+    return;
+  }
+
   const begonnen = Date.now();
   const pool = new pg.Pool({ connectionString: process.env.PVP_PG });
   try {
-    const r = await synchroniseer(pool, { proef: !arg('--echt'), forceer: arg('--forceer') });
+    const r = await synchroniseer(pool, { proef: !arg('--echt'), forceer: arg('--forceer'), agendaId: naArg('--agenda') });
     if (!r.aan) { console.log('agenda-koppeling staat uit (AGENDA_ID leeg in /var/pvp/agenda.env)'); return; }
     const samen = `${r.aangemaakt} nieuw, ${r.bijgewerkt} bijgewerkt, ${r.verwijderd} weg, ${r.ongewijzigd} ongewijzigd`;
     console.log(samen);

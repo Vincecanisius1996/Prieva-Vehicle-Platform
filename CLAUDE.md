@@ -86,14 +86,29 @@ uit), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
 `/uploads/*` (auth).
 Auth = HMAC-ondertekende cookie (stateless).
 
-**Uitzondering: `/api/verkocht`** neemt twee soorten toegang aan: een **bearer-token** uit
-`/var/pvp/verkoop.env` (`PVP_VERKOOP_TOKEN`, chmod 600, **niet committen**) voor een ander systeem
-(straks Mobilox), óf een gewone sessie van `team`/`admin` — dat is de knop **Verkocht melden** in de
-app. Bewust hetzelfde endpoint, zodat er maar één set regels is rond idempotentie en vastleggen. Zonder token ingesteld geeft het endpoint **503** — uit staan is nooit
-hetzelfde als vrije toegang. Het zet een auto op `gemeld verkocht`; een beheerder bevestigt daarna in
-de app, en pas dán verhuist de regel in het Autoboek. Elke melding, ook een mislukte, komt in de tabel
-`verkoop_meldingen`. Met `vervangt:true` in de body mag een **factuur** een eerdere melding uit de
-verkoopovereenkomst overschrijven — maar alleen zolang de verkoop nog niet bevestigd is.
+**Uitzondering: `/api/verkocht` en `/api/vehicle`** nemen twee soorten toegang aan: een
+**bearer-token** uit `/var/pvp/verkoop.env` (`PVP_VERKOOP_TOKEN`, chmod 600, **niet committen**) voor
+de Mobilox-koppeling, óf een gewone sessie. Bewust hetzelfde endpoint als de app gebruikt, zodat er
+maar één set regels is rond idempotentie, dubbelcontrole en het Autoboek. Zonder token ingesteld geeft
+`/api/verkocht` **503** — uit staan is nooit hetzelfde als vrije toegang.
+
+Wat `/api/verkocht` doet hangt af van het soort document (23-08-2026):
+- **verkoopovereenkomst** → `gemeld verkocht`. Die kan nog wijzigen of vervallen; het Autoboek blijft
+  ongemoeid.
+- **factuur** (`definitief:true`) → meteen `verkocht`, én de regel verhuist in het Autoboek van
+  *Lopende* naar *Verkochte*. Een factuur is een verkoop die rond is; wachten op een handmatige
+  bevestiging betekende in de praktijk dat PVP en het boek achterliepen.
+- Met `vervangt:true` mag een factuur het nummer uit de overeenkomst overschrijven, maar alleen zolang
+  de verkoop nog niet bevestigd is.
+
+`definitief` mag alleen via het token of door een **admin**; een `team`-sessie krijgt **403**. Melden en
+bevestigen blijven twee handelingen met twee verantwoordelijkheden. Terugdraaien kan met
+`/api/verkoop-terug` (alleen admin), dat de regel ook in het boek terugzet. Elke melding, ook een
+mislukte, komt in de tabel `verkoop_meldingen`.
+
+`/api/vehicle` zoekt bij het aanmaken op de **genormaliseerde** VIN en kenteken, niet alleen op het id:
+Mobilox schrijft `kv115l` waar PVP `KV-115-L` heeft. Op het oog twee sleutels, dezelfde auto — en een
+dubbele regel in de catalogus werkt door naar het Autoboek en naar Power BI.
 
 ## Lokaal testen (voordat je deployt)
 Er staat een testdatabase `pvp_test` klaar (zelfde rol `pvp_app`; `pg_hba` staat beide toe). De backend
@@ -398,6 +413,19 @@ overschreven; `gelukt_ts` bewaart apart de laatste *geslaagde* ronde). `/api/sta
 de taak hoort te lopen. Een groen vinkje dat het goed gaat leest niemand; een melding dat het beeld
 uren oud is wel. Een waarschuwing op zondagavond is ruis.
 
+- **Een inruil is een feit, geen voorstel** (23-08-2026). Staat er een inruilauto op een
+  verkoopovereenkomst, dan komt die auto bij de aflevering binnen. De agent maakt hem aan bij
+  **Komende** en schrijft hem naar *Komende Autos* in het Autoboek, met leverancier `Inruil`, de
+  inruilprijs als inkoopprijs en een notitie bij welke verkoop hij hoort. Alleen voor een inruil die
+  nog niet in `mobilox_inruil` staat: wat daar al ligt is geschiedenis (128 regels uit 2026), en die
+  auto's zijn allang binnen of alweer weg.
+  - Mobilox geeft geen VIN bij een inruil en schrijft het kenteken zonder streepjes in kleine letters.
+    `mobilox/inruil.js` zet dat om naar de Nederlandse groepering (`kentekenOpmaak`) — getoetst tegen
+    alle 45 bestaande kentekens in PVP, die er allemaal identiek uit komen.
+  - Het merk wordt overgenomen in de schrijfwijze die PVP zélf al gebruikt (`Citroen` uit Mobilox
+    wordt `Citroën`), zodat er geen tweede variant van een merk in de catalogus ontstaat.
+  - Model en uitvoering worden **niet** gesplitst: waar het model ophoudt is niet af te leiden, en een
+    verkeerde gok is lastiger te herstellen dan een lange modelnaam.
 - **Een 404 van `/api/verkocht` is geen storing.** Mobilox verkoopt ook auto's die nooit in PVP hebben
   gestaan (doorverkochte inruilers). Die tellen als `geen-auto`, niet als `mislukt` — anders staat de
   koppeling elke ronde als kapot op het scherm en kijkt niemand meer naar de melding die er wél toe doet.
@@ -483,6 +511,11 @@ binnen een kwartier weer — de werkbon staat immers nog open.
   dat slot zou een mislukte `GET /api/state` (backend-herstart, nginx-hik) ertoe leiden dat de
   eerstvolgende klik de beginwaarden van `V` over de database heen zet: alle lopende auto's terug naar
   komende, keuringsfoto's en subtaken weg. Haal die controle er dus niet uit.
+- **Een verkoop kan van twee kanten komen.** De agent bevestigt op een factuur; een beheerder kan het
+  ook met de hand doen via *Verkoop bevestigen*. Beide lopen door dezelfde functie
+  (`verkoopNaarAutoboek`), en die verplaatst nooit twee keer: staat de auto al op `verkocht`, dan staat
+  zijn regel al op *Verkochte* en zou een tweede poging hem daar niet meer vinden — of erger, een
+  tweede regel opleveren.
 - **Een auto verwijderen raakt het Autoboek niet.** `/api/vehicle-del` haalt de auto uit PVP en geeft
   het rijnummer terug; die regel haal je met de hand weg. Bewust: verwijderen is een correctie op een
   vergissing, geen stap in het proces. Een auto die écht verkocht is loopt via de verkoopbevestiging,
@@ -570,6 +603,10 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
 - **Bijna klaar: de agenda-koppeling.** De code staat er en is getoetst; er moet nog drie dingen
   gebeuren buiten de server: Calendar API aanzetten, de agenda delen met het service-account en
   `AGENDA_ID` invullen. Zie `agenda/LEESMIJ.md`.
+- ~~De agent mag een verkoop zelf afronden en de inruil zelf overnemen.~~ **Klaar 23-08-2026.** Bij de
+  overgang zijn zes auto's met een factuur alsnog bevestigd (vier verhuisd naar *Verkochte*, twee
+  stonden daar al — rij 309 en 313 — en hun `autoboek_status` is van 'fout' naar 'ok' gezet), en de
+  ene openstaande inruiler (Opel Zafira Tourer 99-ZVT-9, bij overeenkomst 185) is overgenomen.
 - Open: **vijf auto's dragen het overeenkomstnummer in plaats van het factuurnummer**, omdat ze
   bevestigd zijn vóór de vervang-regel bestond. In het Autoboek staat dat nummer al. Corrigeren kan
   alleen met de hand, in PVP én in het boek.
