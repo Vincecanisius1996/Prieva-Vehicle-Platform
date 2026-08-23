@@ -482,6 +482,34 @@ binnen een kwartier weer — de werkbon staat immers nog open.
   delen met het service-account (recht *Wijzigingen aan afspraken aanbrengen*) en `AGENDA_ID` invullen.
   Zie `agenda/LEESMIJ.md`.
 
+## Een auto wijzigen
+Sinds 23-08-2026. `PUT /api/vehicle` (team en admin), en in de app de knop **Gegevens wijzigen**
+onderaan de auto. Hetzelfde formulier als bij toevoegen, met alles vooringevuld — twee formulieren met
+dezelfde velden lopen uiteen, en dan mist het ene een veld dat het andere wel heeft.
+
+- **Het ID verandert nooit.** Dat is de sleutel waar werkbonnen, taxatierapporten, to-do's,
+  garantiegevallen en verkoopmeldingen aan hangen. Het VIN en het kenteken zijn gewoon te corrigeren;
+  de sleutel blijft wat hij was. Een auto die ooit op zijn kenteken is aangemaakt houdt dus dat
+  kenteken als id, ook als er later een VIN bij komt.
+- **Wat er níét mee kan:** status, fase (`klaar`), route, eigenaar, foto's, subtaken en de
+  verkoopvelden. Dat zijn procesgegevens; die lopen via hun eigen weg.
+- **Botsingscontrole op de genormaliseerde vorm**, tegen de ándere auto's: zet je een kenteken dat al
+  bij een andere auto staat, dan volgt **409**. Datums worden gecontroleerd op of ze bestáán, niet
+  alleen op hun vorm — `31-31-2026` heeft de goede vorm.
+- **Alleen de velden die je werkelijk wijzigt gaan mee naar het Autoboek** (`autoboek.wijzigAuto`).
+  Dat is bewust anders dan `vulAan()`, dat juist alleen lege cellen invult om handwerk van kantoor te
+  beschermen: hier corrigeert iemand met opzet een veld, dus mag er overheen geschreven worden — maar
+  uitsluitend over dat veld. Wat niemand aanraakte, blijft in het boek staan zoals het stond.
+- De auto wordt in het boek gezocht op zijn **oude** VIN en kenteken, op alle drie de tabbladen.
+  Verandert juist dat veld, dan is hij onder zijn nieuwe naam nog nergens te vinden.
+- Kolom **E t/m P (4..15) staat op alle drie de tabbladen op dezelfde plek en betekent hetzelfde** —
+  nagemeten op de inhoud, want de koppen verschillen (`VIN`/`Chassisnummer`, `Transmissie`/`29-X`;
+  die laatste bevat op alle drie de bladen gewoon Aut/Hand). De inkoopprijs staat op *Komende* in R en
+  op de andere twee in T, en staat daarom apart in de tabel.
+- Voor het uploaden wordt nagekeken dat elk tabblad even veel regels houdt en dat de koprijen niet
+  veranderen; daarna volgt de revisiecontrole. Mislukt het boek, dan blijft de correctie in PVP staan
+  met `autoboek_status='fout'` — zichtbaar bij de auto, zelfde patroon als bij het aanmaken.
+
 ## Regels & valkuilen (belangrijk)
 - **Houd PVP strikt gescheiden van CRP.** Op dezelfde droplet draait een aparte reporting-tool (CRP)
   op `reporting.prieva.nl` (Docker-container `crp`, eigen nginx-blok, gedeelde PostgreSQL). **Raak nooit**
@@ -637,5 +665,5 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
   persoonsgegevens van particuliere verkopers**, en dat maakt dit van een schoonheidsfout een
   AVG-punt. Op te lossen met `auth_request` naar de backend, of door `/uploads/` via `serveUpload()`
   te laten lopen in plaats van via `alias`.
-- **Geen enkele auto is in PVP te wijzigen.** Toevoegen kan, verwijderen kan, maar een verkeerd veld
-  corrigeren niet — daarvoor moet je nu de database in. Dat wringt sinds PVP het invoerpunt is.
+- ~~Geen enkele auto is in PVP te wijzigen.~~ **Klaar 23-08-2026:** `PUT /api/vehicle` en de knop
+  *Gegevens wijzigen* op de auto zelf. Zie hieronder.

@@ -577,6 +577,97 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, id, autoboek: ab });
     }
 
+    // Een bestaande auto corrigeren. Tot 23-08-2026 kon dat alleen in de database, terwijl PVP wél
+    // het invoerpunt is — een tikfout in een kenteken werkte door naar het Autoboek en de rapportage.
+    //
+    // Het ID verandert nooit. Dat is de sleutel waar werkbonnen, taxatierapporten, to-do's, garantie-
+    // gevallen en verkoopmeldingen aan hangen; hem meeveranderen zou al die verwijzingen moeten
+    // bijwerken, en één vergeten tabel is een auto die stilletjes zijn geschiedenis kwijt is. Het VIN
+    // en het kenteken zijn dus gewoon te corrigeren, de sleutel blijft wat hij was.
+    if (url === '/api/vehicle' && method === 'PUT') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      if (!b.id) return sendJson(res, 400, { error: 'missing' });
+      const r0 = await pool.query('SELECT * FROM vehicles WHERE id=$1', [b.id]);
+      if (!r0.rowCount) return sendJson(res, 404, { error: 'onbekende auto' });
+      const oud = r0.rows[0];
+
+      const tekst = x => { const t = (x === undefined || x === null) ? '' : String(x).trim(); return t === '' ? null : t; };
+      const getal = x => { if (x === undefined || x === null || String(x).trim() === '') return null; const n = bedrag(x); return Number.isFinite(n) ? n : NaN; };
+      // Niet alleen de vorm maar ook of de dag bestaat: 31-31-2026 heeft de goede vorm en is geen datum.
+      const datum = x => {
+        const t = tekst(x); if (t === null) return null;
+        const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(t); if (!m) return NaN;
+        const d = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
+        return (d.getUTCDate() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCFullYear() === +m[3]) ? t : NaN;
+      };
+
+      // Wat mag er gewijzigd worden. Alles wat hier niet staat is procesgegeven (status, fase, foto's,
+      // eigenaar, verkoopvelden) en hoort via zijn eigen weg te lopen, niet via een correctieformulier.
+      const VELDEN = {
+        vin: tekst, kenteken: tekst, merk: tekst, model: tekst, uitv: tekst, kleur: tekst,
+        brandstof: tekst, transm: tekst, reg: datum, km: getal, inkoopdatum: datum, lev: tekst,
+        batch: tekst, note: tekst, factuurnr: tekst, inkoopprijs: getal,
+      };
+      const KOLOM = { importAuto: 'import_auto' };
+      const nieuw = {}, fouten = [];
+      for (const [veld, omzet] of Object.entries(VELDEN)) {
+        if (!Object.prototype.hasOwnProperty.call(b, veld)) continue;
+        const w = omzet(b[veld]);
+        if (Number.isNaN(w)) { fouten.push(veld); continue; }
+        nieuw[veld] = w;
+      }
+      if (Object.prototype.hasOwnProperty.call(b, 'importAuto')) nieuw.importAuto = b.importAuto === true;
+      if (fouten.length) return sendJson(res, 400, { error: 'ongeldige waarde', velden: fouten });
+
+      const naVin = Object.prototype.hasOwnProperty.call(nieuw, 'vin') ? nieuw.vin : oud.vin;
+      const naKent = Object.prototype.hasOwnProperty.call(nieuw, 'kenteken') ? nieuw.kenteken : oud.kenteken;
+      const plat = x => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!plat(naVin) && !plat(naKent)) return sendJson(res, 400, { error: 'een auto moet een VIN of een kenteken houden' });
+      // Zelfde controle als bij het aanmaken: op de genormaliseerde vorm, en tegen de ándere auto's.
+      const bots = await pool.query(
+        `SELECT id FROM vehicles WHERE id <> $1
+            AND ( ($2 <> '' AND upper(regexp_replace(coalesce(vin,''),      '[^A-Za-z0-9]', '', 'g')) = $2)
+               OR ($3 <> '' AND upper(regexp_replace(coalesce(kenteken,''), '[^A-Za-z0-9]', '', 'g')) = $3) )
+          LIMIT 1`, [oud.id, plat(naVin), plat(naKent)]);
+      if (bots.rowCount) return sendJson(res, 409, { error: 'een andere auto heeft dit VIN of kenteken al', id: bots.rows[0].id });
+
+      // Alleen wat écht verandert. Zo blijft in het Autoboek staan wat niemand heeft aangeraakt.
+      const gewijzigd = {};
+      for (const [veld, w] of Object.entries(nieuw)) {
+        const kol = KOLOM[veld] || veld;
+        const was = oud[kol];
+        const gelijk = (was === null || was === undefined ? null : (typeof w === 'number' ? Number(was) : String(was)))
+                     === (w === null ? null : (typeof w === 'number' ? Number(w) : String(w)));
+        if (!gelijk) gewijzigd[veld] = w;
+      }
+      if (!Object.keys(gewijzigd).length) return sendJson(res, 200, { ok: true, id: oud.id, gewijzigd: [], autoboek: { status: 'overgeslagen' } });
+
+      const zetten = Object.keys(gewijzigd).map((veld, i) => `${KOLOM[veld] || veld}=$${i + 2}`);
+      await pool.query(`UPDATE vehicles SET ${zetten.join(', ')}, updated_at=now() WHERE id=$1`,
+        [oud.id, ...Object.keys(gewijzigd).map(v => gewijzigd[v])]);
+      console.log('auto gewijzigd:', oud.id, 'door', u.u, '->', Object.keys(gewijzigd).join(', '));
+
+      // Het Autoboek is een aparte stap en mag de correctie in PVP nooit tegenhouden. Mislukt hij, dan
+      // staat dat bij de auto en is hij opnieuw te proberen — zelfde patroon als bij het aanmaken.
+      let ab = { status: 'uit', rij: null, fout: null };
+      if (autoboek && autoboek.aan()) {
+        try {
+          const uit = await autoboek.wijzigAuto({ vin: oud.vin, kenteken: oud.kenteken }, gewijzigd);
+          ab = { status: uit.status, rij: uit.rij, blad: uit.blad, kolommen: uit.kolommen, fout: null };
+          if (uit.status === 'ok') await pool.query('UPDATE vehicles SET autoboek_status=$2, autoboek_rij=$3, autoboek_ts=$4, autoboek_fout=NULL WHERE id=$1',
+            [oud.id, 'ok', uit.rij, Date.now()]);
+        } catch (e) {
+          console.error('autoboek wijzigen:', oud.id, e.message);
+          ab = { status: 'fout', rij: null, fout: String(e.message).slice(0, 400) };
+          await pool.query('UPDATE vehicles SET autoboek_status=$2, autoboek_ts=$3, autoboek_fout=$4 WHERE id=$1',
+            [oud.id, 'fout', Date.now(), ab.fout]);
+        }
+      }
+      return sendJson(res, 200, { ok: true, id: oud.id, gewijzigd: Object.keys(gewijzigd), autoboek: ab });
+    }
+
     // Auto verwijderen. Alleen admin: dit is de enige onomkeerbare handeling in PVP.
     //
     // Het Autoboek wordt NIET aangeraakt. De koppeling is met opzet alleen-toevoegen — dat is precies

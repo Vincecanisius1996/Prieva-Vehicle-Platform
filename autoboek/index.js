@@ -324,4 +324,127 @@ async function verplaatsNaarLopend(v) { return verplaats(v, 'terug'); }
 // Auto binnengekomen: Komende -> Lopende.
 async function verplaatsBinnengekomen(v) { return verplaats(v, 'binnen'); }
 
-module.exports = { schrijfAuto, verplaatsNaarVerkocht, verplaatsNaarLopend, verplaatsBinnengekomen, aan, BLAD };
+
+/* ===== Een bestaande regel corrigeren (23-08-2026) =====
+   Tot nu toe schreef PVP alleen bij het aanmaken naar het Autoboek; een correctie achteraf bleef in
+   PVP hangen en het boek liep stil uit de pas. Nu een auto in PVP te wijzigen is, is dat niet meer
+   houdbaar: wie een tikfout in een kenteken herstelt, verwacht dat het boek meegaat.
+
+   Twee dingen bewust anders dan bij vulAan():
+   * vulAan vult alleen LEGE cellen — dat beschermt handwerk van kantoor tegen automatisch invullen.
+     Hier is het omgekeerde de bedoeling: iemand corrigeert met opzet een veld. Daarom schrijven we
+     wél over een gevulde cel heen, maar UITSLUITEND voor de velden die in PVP daadwerkelijk zijn
+     veranderd. Wat niemand aanraakte, blijft in het boek staan zoals het stond.
+   * de auto wordt gezocht op zijn OUDE VIN en kenteken. Verandert juist dat veld, dan is de auto
+     onder zijn nieuwe naam nog nergens te vinden.
+
+   Kolom E t/m P (4..15) staat op alle drie de tabbladen op dezelfde plek en betekent hetzelfde —
+   nagemeten op de inhoud, want de koppen verschillen (VIN/Chassisnummer, Transmissie/29-X). De
+   inkoopprijs staat op Komende in R en op de andere twee in T; die staat daarom apart. */
+const BLADEN = ['Komende Autos', 'Lopende Autos', 'Verkochte Autos'];
+const K_INKOOPPRIJS = { 'Komende Autos': 17, 'Lopende Autos': 19, 'Verkochte Autos': 19 };
+// veld in PVP -> kolomnummer, en of het een datum, een getal of tekst is
+const WIJZIGBAAR = [
+  ['vin',         4,  'tekst'], ['kenteken',    5,  'tekst'], ['merk',       6,  'merk'],
+  ['model',       7,  'tekst'], ['kleur',       8,  'tekst'], ['lev',        9,  'tekst'],
+  ['uitv',        10, 'tekst'], ['brandstof',   11, 'tekst'], ['transm',     12, 'tekst'],
+  ['reg',         13, 'datum'], ['km',          14, 'getal'], ['inkoopdatum', 15, 'datum'],
+  ['inkoopprijs', null, 'getal'],
+];
+
+// Eén cel zetten in een bestaande rij. Bestaat de cel niet (een lege kolom heeft vaak helemaal geen
+// <c>-element), dan wordt hij op de juiste plek tussengevoegd — op kolomvolgorde, anders leest Excel
+// de rij niet meer.
+function zetCel(rijXml, rijNr, kolIndex, waarde, soort) {
+  const letter = bouw.kolLetter(kolIndex), ref = letter + rijNr;
+  const leeg = waarde === null || waarde === undefined || String(waarde).trim() === '';
+  const stijl = bouw.stijlenUit(rijXml)[letter];
+  const s = stijl !== undefined ? ` s="${stijl}"` : '';
+  let cel;
+  if (leeg) cel = `<c r="${ref}"${s}/>`;
+  else if (soort === 'datum') { const n = bouw.serie(waarde); cel = n ? `<c r="${ref}"${s}><v>${n}</v></c>` : `<c r="${ref}"${s} t="inlineStr"><is><t>${bouwEsc(waarde)}</t></is></c>`; }
+  else if (soort === 'getal') cel = `<c r="${ref}"${s}><v>${Number(waarde)}</v></c>`;
+  else cel = `<c r="${ref}"${s} t="inlineStr"><is><t>${bouwEsc(waarde)}</t></is></c>`;
+
+  const bestaand = new RegExp(`<c r="${ref}"(?:[^>]*?)(?:/>|>[\\s\\S]*?</c>)`);
+  if (bestaand.test(rijXml)) return rijXml.replace(bestaand, cel);
+  // Tussenvoegen vóór de eerste cel met een hoger kolomnummer.
+  const cellen = [...rijXml.matchAll(/<c r="([A-Z]+)\d+"(?:[^>]*?)(?:\/>|>[\s\S]*?<\/c>)/g)];
+  const na = cellen.find(m => xlsx.kolIndex(m[1] + rijNr) > kolIndex);
+  if (!na) return rijXml.replace(/<\/row>$/, cel + '</row>');
+  return rijXml.slice(0, na.index) + cel + rijXml.slice(na.index);
+}
+const bouwEsc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * @param {{vin?:string, kenteken?:string}} oud   waarop de auto in het boek gezocht wordt
+ * @param {object} velden   alleen de velden die veranderd zijn, met hun NIEUWE waarde
+ */
+async function wijzigAuto(oud, velden) {
+  if (!aan()) throw new Error('koppeling staat uit (AUTOBOEK_FILE_ID ontbreekt)');
+  const sleutels = [plat(oud.vin), plat(oud.kenteken)].filter(Boolean);
+  if (!sleutels.length) throw new Error('deze auto heeft geen VIN en geen kenteken — niet terug te vinden in het Autoboek');
+  const teDoen = WIJZIGBAAR.filter(([veld]) => Object.prototype.hasOwnProperty.call(velden, veld));
+  if (!teDoen.length) return { status: 'overgeslagen', rij: null, blad: null, kolommen: [] };
+
+  const ID = process.env.AUTOBOEK_FILE_ID.trim();
+  const tok = await drive.token(SCOPE);
+  const voor = await drive.meta(tok, ID);
+  if (!voor.capabilities || !voor.capabilities.canEdit) throw new Error('geen schrijfrecht op het Autoboek');
+  const buf = await drive.download(tok, ID);
+  const entries = bouw.leesZip(buf);
+  const gedeeldE = entries.find(x => x.naam === 'xl/sharedStrings.xml');
+  const gedeeld = gedeeldE ? xlsx.tekstUit(bouw.uitpakken(gedeeldE).toString('utf8')) : [];
+
+  // Zoeken op alle drie de tabbladen; de auto staat er maar op één.
+  let gevonden = null;
+  for (const bladNaam of BLADEN) {
+    const pad = bouw.bladPad(entries, bladNaam);
+    const e = entries.find(x => x.naam === pad);
+    const xml = bouw.uitpakken(e).toString('utf8');
+    for (const r of bouw.rijenUit(xml)) {
+      if (r.nr < 2 || !r.gevuld) continue;
+      const c = celsUit(r.binnen, gedeeld);
+      const raak = [K_VIN, K_KENTEKEN].some(k => { const w = plat(c[k] && c[k].w); return w && sleutels.includes(w); });
+      if (raak) { gevonden = { bladNaam, e, xml, rij: r.nr }; break; }
+    }
+    if (gevonden) break;
+  }
+  if (!gevonden) throw new Error('deze auto staat niet in het Autoboek — niets gewijzigd');
+
+  const rijRe = new RegExp(`(<row r="${gevonden.rij}"[^>]*>)([\\s\\S]*?)(</row>)`);
+  const m = rijRe.exec(gevonden.xml);
+  if (!m) throw new Error('rij ' + gevonden.rij + ' niet gevonden');
+  let binnen = m[2];
+  const gedaan = [];
+  for (const [veld, kol, soort] of teDoen) {
+    const k = kol === null ? K_INKOOPPRIJS[gevonden.bladNaam] : kol;
+    if (k === undefined) continue;
+    let w = velden[veld];
+    if (soort === 'merk') w = bouw.merkNotatie(String(w || '')) || w;
+    if (soort === 'getal' && w !== null && w !== '' && !Number.isFinite(Number(w))) continue;
+    binnen = zetCel(binnen, gevonden.rij, k, w, soort);
+    gedaan.push(bouw.kolLetter(k));
+  }
+  if (!gedaan.length) return { status: 'overgeslagen', rij: gevonden.rij, blad: gevonden.bladNaam, kolommen: [] };
+
+  const nieuweXml = gevonden.xml.replace(rijRe, (_, a, __, c) => a + binnen + c);
+  bouw.vervang(gevonden.e, Buffer.from(nieuweXml, 'utf8'));
+  const nieuwBuf = bouw.schrijfZip(entries);
+
+  // Nakijken vóór het uploaden: even veel regels op elk tabblad, koprijen ongewijzigd.
+  const a = lees(buf), b = lees(nieuwBuf);
+  const telling = boek => Object.fromEntries(Object.keys(boek).map(n => [n, Object.keys(boek[n]).length]));
+  const t1 = telling(a), t2 = telling(b);
+  for (const blad of Object.keys(t1)) {
+    if (t1[blad] !== t2[blad]) throw new Error(`aantal regels op "${blad}" veranderde (${t1[blad]} -> ${t2[blad]}) — niet geüpload`);
+    if (JSON.stringify(a[blad][1] || {}) !== JSON.stringify(b[blad][1] || {})) throw new Error(`de koprij van "${blad}" veranderde — niet geüpload`);
+  }
+
+  const nu = await drive.meta(tok, ID);
+  if (nu.headRevisionId !== voor.headRevisionId) throw new Error('het Autoboek is intussen door iemand anders gewijzigd — niets geschreven');
+  await drive.upload(tok, ID, nieuwBuf);
+  return { status: 'ok', rij: gevonden.rij, blad: gevonden.bladNaam, kolommen: gedaan };
+}
+
+module.exports = { schrijfAuto, verplaatsNaarVerkocht, verplaatsNaarLopend, verplaatsBinnengekomen, aan, BLAD, wijzigAuto };

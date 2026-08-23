@@ -908,9 +908,10 @@ function openVeh(id){
         ${docCard(v)}
       </div>
     </div>
-    ${isAdmin()?`<div style="display:flex;justify-content:flex-end;margin-top:22px;padding-top:14px;border-top:1px solid var(--line)">
-      <button class="btn btn-danger-o btn-sm" onclick="vraagVerwijderen('${v.id}')" title="Deze auto uit PVP halen">${ico("trash")} Auto verwijderen</button>
-    </div>`:''}`;
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:22px;padding-top:14px;border-top:1px solid var(--line)">
+      <button class="btn btn-ghost btn-sm" onclick="openAutoModal('${v.id}')" title="Merk, kenteken, kilometerstand — corrigeren wat er niet klopt">${ico("doc")} Gegevens wijzigen</button>
+      ${isAdmin()?`<button class="btn btn-danger-o btn-sm" onclick="vraagVerwijderen('${v.id}')" title="Deze auto uit PVP halen">${ico("trash")} Auto verwijderen</button>`:''}
+    </div>`;
   window.scrollTo(0,0);
 }
 
@@ -1359,7 +1360,11 @@ function normDatum(s){
   if(m){const j=m[3].length===2?"20"+m[3]:m[3]; return `${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}-${j}`;}
   return s;   // niet herkend: laten staan, de gebruiker ziet het zelf terug
 }
-function openAutoModal(){
+function openAutoModal(wijzigId){
+  // Eén formulier voor toevoegen én corrigeren. Twee formulieren met dezelfde velden lopen uiteen,
+  // en dan mist het ene een veld dat het andere wel heeft.
+  const bestaand = wijzigId ? V.find(x=>x.id===wijzigId) : null;
+  if(wijzigId && !bestaand){ showToast("Die auto is niet gevonden",false); return; }
   nieuweDocs=[];
   let ov=document.getElementById('autoModal');
   if(!ov){ov=document.createElement('div'); ov.id='autoModal'; ov.className='modal-ov';
@@ -1372,10 +1377,11 @@ function openAutoModal(){
   const kies=(id,lijst)=>`<select id="${id}"><option value="">—</option>${lijst.map(x=>`<option value="${x}">${x}</option>`).join("")}</select>`;
   const veld=(id,label,extra="",type="text")=>`<div><label>${label}</label><input type="${type}" id="${id}" ${extra}></div>`;
   ov.innerHTML=`<div class="modal wide">
-    <h3>Auto toevoegen <button class="mclose" onclick="closeAutoModal()" title="Sluiten">×</button></h3>
+    <h3>${bestaand?'Gegevens wijzigen':'Auto toevoegen'} <button class="mclose" onclick="closeAutoModal()" title="Sluiten">×</button></h3>
     <div class="mb">
-      <div class="fsec">Documenten</div>
-      <div class="full">
+      ${bestaand?`<div class="note" style="margin:0 0 4px">Je corrigeert <b>${esc((bestaand.merk||'')+' '+(bestaand.model||''))}</b>. Alleen de velden die je aanpast worden ook in het Autoboek bijgewerkt; de rest blijft daar staan zoals het stond. De interne sleutel van de auto verandert niet.</div>`:''}
+      <div class="fsec" ${bestaand?'style="display:none"':''}>Documenten</div>
+      <div class="full" ${bestaand?'style="display:none"':''}>
         <div class="drop" id="na-drop" onclick="document.getElementById('na-files').click()">
           Koopovereenkomst, proforma, screenshots — klik of sleep hierheen.<br>
           <span style="font-size:11px">Ze worden bij de auto bewaard en meteen uitgelezen; kijk daarna na wat er is ingevuld.</span>
@@ -1415,15 +1421,61 @@ function openAutoModal(){
     </div>
     <div class="mf">
       <button class="btn btn-ghost" onclick="closeAutoModal()">Annuleren</button>
-      <button class="btn btn-primary" id="na-opslaan" onclick="opslaanAuto()">Toevoegen »</button>
+      <button class="btn btn-primary" id="na-opslaan" onclick="${bestaand?`opslaanWijziging('${wijzigId}')`:'opslaanAuto()'}">${bestaand?'Wijzigingen opslaan':'Toevoegen »'}</button>
     </div>
   </div>`;
   const d=document.getElementById('na-drop');
   ['dragenter','dragover'].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault(); d.classList.add('over');}));
   ['dragleave','drop'].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault(); d.classList.remove('over');}));
   d.addEventListener('drop',ev=>autoDocsKiezen(ev.dataTransfer.files));
+  // Bij corrigeren staat alles al ingevuld; anders zou je het hele formulier moeten overtypen om
+  // één kilometerstand recht te zetten.
+  if(bestaand){
+    const z=(id,w)=>{const e=document.getElementById(id); if(e&&w!==null&&w!==undefined&&w!=='—')e.value=w;};
+    z('na-vin',bestaand.vin); z('na-kenteken',bestaand.kenteken); z('na-merk',bestaand.merk);
+    z('na-model',bestaand.model); z('na-uitv',bestaand.uitv); z('na-kleur',bestaand.kleur);
+    z('na-brandstof',bestaand.brandstof); z('na-transm',bestaand.transm); z('na-reg',bestaand.reg);
+    z('na-km',bestaand.km); z('na-lev',bestaand.lev); z('na-inkoopdatum',bestaand.inkoopdatum);
+    z('na-batch',bestaand.batch); z('na-note',bestaand.note); z('na-factuurnr',bestaand.factuurnr);
+    z('na-inkoopprijs',bestaand.inkoopprijs);
+    const imp=document.getElementById('na-import'); if(imp){imp.checked=!!bestaand.importAuto; imp.dataset.hand='1';}
+  }
   ov.classList.add('show');
-  setTimeout(()=>{const el=document.getElementById('na-vin'); if(el)el.focus();},40);
+  setTimeout(()=>{const el=document.getElementById(bestaand?'na-km':'na-vin'); if(el)el.focus();},40);
+}
+
+/* Corrigeren. Stuurt het hele formulier op; de server bepaalt wat er werkelijk veranderd is en
+   werkt alleen díé velden bij — in PVP en in het Autoboek. */
+async function opslaanWijziging(id){
+  const w=x=>{const e=document.getElementById(x); return e?e.value.trim():"";};
+  const fout=document.getElementById('na-fout');
+  const body={ id,
+    vin:w('na-vin'), kenteken:w('na-kenteken'), merk:w('na-merk'), model:w('na-model'), uitv:w('na-uitv'),
+    kleur:w('na-kleur'), brandstof:w('na-brandstof'), transm:w('na-transm'), reg:normDatum(w('na-reg')),
+    km:w('na-km'), lev:w('na-lev'), inkoopdatum:normDatum(w('na-inkoopdatum')), batch:w('na-batch'),
+    note:w('na-note'), factuurnr:w('na-factuurnr'), inkoopprijs:w('na-inkoopprijs'),
+    importAuto:!!(document.getElementById('na-import')||{}).checked };
+  if(!body.vin&&!body.kenteken){fout.textContent="Een auto moet een VIN of een kenteken houden."; return;}
+  if(!apiOk){fout.textContent="Geen verbinding met de server."; return;}
+  const knop=document.getElementById('na-opslaan'); knop.disabled=true; knop.textContent="Bezig…"; fout.textContent="";
+  const terug=()=>{knop.disabled=false; knop.textContent="Wijzigingen opslaan";};
+  try{
+    const r=await fetch("/api/vehicle",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(r.status===409){fout.textContent="Een andere auto heeft dit VIN of kenteken al."; terug(); return;}
+    if(r.status===400){fout.textContent=(j.velden||[]).length?("Controleer: "+j.velden.join(', ')):(j.error||"Er klopt iets niet aan de invoer."); terug(); return;}
+    if(!r.ok){fout.textContent="Opslaan mislukt — probeer het opnieuw."; terug(); return;}
+    await loadVehicles(); await loadState();
+    const n=(j.gewijzigd||[]).length;
+    if(n){ logActivity('Gegevens gewijzigd',(j.gewijzigd||[]).join(', '),id); scheduleSave(); }
+    closeAutoModal();
+    const ab=j.autoboek||{};
+    const staart = !n ? "" : ab.status==='ok' ? " — ook in het Autoboek bijgewerkt ✓"
+                 : ab.status==='fout' ? " — NIET in het Autoboek, zie de auto zelf"
+                 : "";
+    showToast(n?`${n} veld${n===1?'':'en'} gewijzigd`+staart:"Er was niets gewijzigd",true);
+    if(state.view==='veh:'+id)rerenderCurrent();
+  }catch(_){ fout.textContent="Geen verbinding met de server."; terug(); }
 }
 function closeAutoModal(){const ov=document.getElementById('autoModal'); if(ov)ov.classList.remove('show'); nieuweDocs=[];}
 // Import is de regel bij een VIN zonder NL-kenteken; blijft met de hand te wijzigen.
