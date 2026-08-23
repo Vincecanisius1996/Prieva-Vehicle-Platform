@@ -534,6 +534,18 @@ handelingen die nergens bereikbaar waren. Vijf dingen erbij:
   je de juiste auto voor je hebt; pas daarna kijk je waar hij in het traject staat. Stond eerst
   onderaan de linkerkolom, onder de foto's — dan moet je langs alles heen scrollen om te zien of het
   chassisnummer klopt. Nu een kaart over de volle breedte, met kolommen die zich vanzelf verdelen.
+- **Lege velden worden aangevuld uit de advertentie** (`VULBAAR` in `mobilox/agent.js`). Mobilox weet
+  van elke auto die te koop staat de kleur, de brandstof, de uitvoering en of het een automaat is;
+  dat hoeft niemand over te typen. **Alleen wat in PVP leeg is** — wat er staat is met de hand gezet
+  of uit de inkoopstukken gelezen, en dat overschrijven is geen aanvullen maar overrulen. Het gaat via
+  `PUT /api/vehicle` (die neemt daarom óók het bearer-token aan), zodat de dubbelcontrole en de regel
+  naar het Autoboek dezelfde zijn als bij handwerk.
+  - Een **importauto heeft nog geen Nederlandse toelatingsdatum**, wél een buitenlandse. Zonder die
+    terugval (`RDW_DATUM_EERSTE_TOELATING_INTERNATIONAAL`) blijft *1e reg.* leeg bij precies de auto's
+    die het langst in het traject zitten.
+  - Een kenteken dat al bij een ándere auto staat wordt nooit ingevuld: dan maak je een dubbele.
+  - Stand 23-08-2026 na de eerste ronde: van de 51 lopende auto's misten er nog **drie** iets. De 24
+    zonder kenteken zijn allemaal import — dat kenteken bestáát nog niet.
 - **Doorklikken naar de advertentie in Mobilox.** `members.mobilox.nl/#vehicles/<product-id>`; het id
   komt van `GET /api/v2/products?category=VOERTUIGEN_AUTO&productStatus=all` en wordt door de agent
   elke ronde gekoppeld op VIN of kenteken (`vehicles.mobilox_id`). Vraagprijs en of hij online staat
@@ -601,6 +613,12 @@ handelingen die nergens bereikbaar waren. Vijf dingen erbij:
   het rijnummer terug; die regel haal je met de hand weg. Bewust: verwijderen is een correctie op een
   vergissing, geen stap in het proces. Een auto die écht verkocht is loopt via de verkoopbevestiging,
   en dáár verplaatst PVP de regel wél zelf.
+- **Een auto met alléén een VIN en een auto met alléén een kenteken zijn niet als dubbel te
+  herkennen.** De controle bij `POST /api/vehicle` vergelijkt beide sleutels genormaliseerd, maar twee
+  regels die elkaar op geen van beide overlappen, botsen nergens. Zo ontstonden op 23-08-2026 twee
+  dubbelen bij het overnemen van de RDW-bedrijfsvoorraad (Peugeot 107 en Audi A3), opgeruimd met
+  `inhaalslag/dubbelen-opruimen-20260823.js`. Wie een auto aanmaakt met alleen een kenteken terwijl
+  PVP hem onder zijn VIN kent, krijgt daar dus geen waarschuwing over.
 - **Merken in het Autoboek: één schrijfwijze per merk** (19-08-2026). Het boek was met de hand gevuld
   en telde **73 schrijfwijzen voor 31 merken** — `PEU` 48× naast `Peugeot` 12×, `CITR` 22× naast
   `Citroen` 15×, en zestien cellen met een spatie erachter (`"Peugeot "` is voor een draaitabel een

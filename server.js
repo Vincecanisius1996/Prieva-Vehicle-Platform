@@ -586,8 +586,19 @@ const server = http.createServer(async (req, res) => {
     // bijwerken, en één vergeten tabel is een auto die stilletjes zijn geschiedenis kwijt is. Het VIN
     // en het kenteken zijn dus gewoon te corrigeren, de sleutel blijft wat hij was.
     if (url === '/api/vehicle' && method === 'PUT') {
-      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
-      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      // Ook met het bearer-token, net als aanmaken: de Mobilox-agent vult hiermee lege velden aan uit
+      // de advertentie. Bewust hetzelfde endpoint — dan gelden voor de agent dezelfde controles op
+      // dubbelen en datums, en loopt de wijziging langs dezelfde weg naar het Autoboek.
+      const u = userFromReq(req);
+      const viaApp = u && (u.r === 'team' || u.r === 'admin');
+      if (!viaApp) {
+        const token = (process.env.PVP_VERKOOP_TOKEN || '').trim();
+        if (!token) return sendJson(res, u ? 403 : 401, { error: u ? 'forbidden' : 'auth' });
+        const kop = String(req.headers.authorization || '');
+        const gegeven = kop.startsWith('Bearer ') ? kop.slice(7).trim() : '';
+        const a1 = Buffer.from(gegeven), b1 = Buffer.from(token);
+        if (a1.length !== b1.length || !crypto.timingSafeEqual(a1, b1)) return sendJson(res, u ? 403 : 401, { error: u ? 'forbidden' : 'auth' });
+      }
       const b = await readBody(req) || {};
       if (!b.id) return sendJson(res, 400, { error: 'missing' });
       const r0 = await pool.query('SELECT * FROM vehicles WHERE id=$1', [b.id]);
@@ -648,7 +659,8 @@ const server = http.createServer(async (req, res) => {
       const zetten = Object.keys(gewijzigd).map((veld, i) => `${KOLOM[veld] || veld}=$${i + 2}`);
       await pool.query(`UPDATE vehicles SET ${zetten.join(', ')}, updated_at=now() WHERE id=$1`,
         [oud.id, ...Object.keys(gewijzigd).map(v => gewijzigd[v])]);
-      console.log('auto gewijzigd:', oud.id, 'door', u.u, '->', Object.keys(gewijzigd).join(', '));
+      // u is null als de agent met het token binnenkomt; die heeft geen gebruikersnaam.
+      console.log('auto gewijzigd:', oud.id, 'door', (u && u.u) || 'koppeling', '->', Object.keys(gewijzigd).join(', '));
 
       // Het Autoboek is een aparte stap en mag de correctie in PVP nooit tegenhouden. Mislukt hij, dan
       // staat dat bij de auto en is hij opnieuw te proberen — zelfde patroon als bij het aanmaken.

@@ -173,7 +173,7 @@ function uitRegel(r, soort) {
       ? (/^PVP_VERKOOP_TOKEN=(.*)$/m.exec(fs.readFileSync('/var/pvp/verkoop.env','utf8')) || [])[1] : '') || '';
     if (ECHT && !token) throw new Error('PVP_VERKOOP_TOKEN ontbreekt — zonder token weigert /api/verkocht terecht');
 
-    const uitkomsten = { gemeld:0, verkocht:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0, advertentie:0 };
+    const uitkomsten = { gemeld:0, verkocht:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0, advertentie:0, aangevuld:0 };
     for (const { r, a } of perAuto.values()) {
       const regel = `${(a.merk+' '+a.model).padEnd(24)} ${String(a.kenteken).padEnd(11)} ${r.soort} ${r.nummer}`;
       if (!ECHT) { console.log('  zou melden: ' + regel + `  € ${r.prijs} · ${r.datum}` + (r.afleverdatum?` · aflever ${r.afleverdatum}`:'')); continue; }
@@ -255,6 +255,63 @@ function uitRegel(r, soort) {
         bij++;
       }
       if (bij) { uitkomsten.advertentie = bij; console.log(`  ${bij} advertentie(s) gekoppeld of bijgewerkt`); }
+
+      // Lege velden aanvullen uit de advertentie. Mobilox weet van elke auto die te koop staat de
+      // kleur, de brandstof en of het een automaat is; PVP hoeft dat niet nog eens te laten intikken.
+      //
+      // Alleen wat in PVP LEEG is. Wat er staat is met de hand gezet of uit de inkoopstukken gelezen,
+      // en dat overschrijven met een advertentietekst is geen aanvullen maar overrulen. Het gaat via
+      // PUT /api/vehicle en niet met eigen SQL: daar zitten de controle op dubbele kentekens en de
+      // regel naar het Autoboek al in.
+      // Datums uit Mobilox komen als 2017-07-18; PVP schrijft dd-mm-jjjj.
+      const isoNaarNl = x => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(x || '')); return m ? `${m[3]}-${m[2]}-${m[1]}` : null; };
+      // Een importauto heeft nog geen Nederlandse toelatingsdatum, wél een buitenlandse — en dát is
+      // voor die auto de eerste toelating. Zonder die terugval blijft 1e reg. leeg bij precies de
+      // auto's die het langst in het traject zitten.
+      const VULBAAR = [['kleur','COLOR'], ['brandstof','FUEL'], ['transm','TRANS'], ['uitv','TYPE'],
+                       ['merk','BRAND'], ['model','MODEL'], ['vin','VIN'], ['kenteken','LICEN'],
+                       ['reg','RDW_DATUM_EERSTE_TOELATING_NATIONAAL', isoNaarNl],
+                       ['reg','RDW_DATUM_EERSTE_TOELATING_INTERNATIONAAL', isoNaarNl],
+                       ['km','KILOM']];
+      const leegIn = x => x === null || x === undefined || String(x).trim() === '' || String(x).trim() === '—';
+      const rauw = await page.evaluate(async () => {
+        const r = await fetch('https://api.mobilox.nl/api/v2/products?page=1&limit=500&sort=id%3Adesc&category=VOERTUIGEN_AUTO&productStatus=all', { credentials: 'include' });
+        const j = r.ok ? await r.json().catch(() => null) : null;
+        return (j && j.products) ? j.products.map(p => ({ id: p.id, av: p.attributeValues || {} })) : [];
+      });
+      const { rows: volledig } = await pool.query('SELECT * FROM vehicles');
+      const perPvpId = new Map(volledig.map(r => [r.id, r]));
+      const bezet = new Set(volledig.map(r => norm(r.kenteken)).filter(Boolean));
+      let gevuld = 0;
+      for (const p of rauw) {
+        const a = (p.av.VIN && perVin.get(norm(p.av.VIN))) || (p.av.LICEN && perKent.get(norm(p.av.LICEN))) || null;
+        if (!a) continue;
+        const v = perPvpId.get(a.id); if (!v) continue;
+        const body = { id: v.id };
+        for (const [veld, attr, omzet] of VULBAAR) {
+          if (body[veld] !== undefined) continue;              // een eerdere bron won al
+          if (!leegIn(v[veld]) || leegIn(p.av[attr])) continue;
+          const w = omzet ? omzet(p.av[attr]) : String(p.av[attr]).trim();
+          if (w === null || w === '') continue;
+          // Een kenteken dat al bij een andere auto staat nooit invullen: dan maak je een dubbele.
+          if (veld === 'kenteken' && bezet.has(norm(w))) continue;
+          body[veld] = w;
+        }
+        if (Object.keys(body).length === 1) continue;
+        try {
+          const res = await fetch(PVP + '/api/vehicle', { method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify(body) });
+          const j = await res.json().catch(() => ({}));
+          if (res.ok && (j.gewijzigd || []).length) {
+            gevuld++;
+            console.log(`  aangevuld uit de advertentie: ${a.merk} ${a.model} ${v.kenteken || v.vin} -> ${j.gewijzigd.join(', ')}` +
+              ((j.autoboek || {}).status === 'fout' ? '  !! Autoboek: ' + j.autoboek.fout : ''));
+            if (body.kenteken) bezet.add(norm(body.kenteken));
+          } else if (!res.ok) console.log(`  aanvullen mislukt voor ${v.id}: ${j.error || res.status}`);
+        } catch (err) { console.log(`  aanvullen mislukt voor ${v.id}: ${err.message}`); }
+      }
+      if (gevuld) uitkomsten.aangevuld = gevuld;
     }
 
     // De afleverdatum bijhouden, elke ronde en over álle gekoppelde regels — niet alleen bij een
