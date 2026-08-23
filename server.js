@@ -174,11 +174,12 @@ function serveUpload(req, res, url) {
 
 // { vehicles:{ id:{status,klaar,route,owner,subtasks,photos,arrivedAt,taxAt} }, subUid, globalTodos, gtUid, activityLog }
 async function getState() {
-  const [veh, todos, log, meta] = await Promise.all([
+  const [veh, todos, log, meta, runs] = await Promise.all([
     pool.query('SELECT id,status,klaar,route,owner,subtasks,photos,arrived_at,tax_at FROM vehicles ORDER BY sort_order NULLS LAST, id'),
     pool.query('SELECT id,text,owner,vehicle_id,done,created_at,done_at,done_by FROM global_todos ORDER BY id'),
     pool.query('SELECT ts,by_name,action,text,vehicle_id FROM activity_log ORDER BY id'),
-    pool.query('SELECT key,value FROM meta')
+    pool.query('SELECT key,value FROM meta'),
+    pool.query('SELECT naam,ts,ok,melding,gelukt_ts FROM agent_runs')
   ]);
   const vehicles = {};
   for (const r of veh.rows) vehicles[r.id] = { status: r.status, klaar: r.klaar, route: r.route, owner: r.owner, subtasks: r.subtasks || [], photos: r.photos || {}, arrivedAt: r.arrived_at, taxAt: r.tax_at };
@@ -195,7 +196,10 @@ async function getState() {
       return t;
     }),
     gtUid: m.gtUid || 1,
-    activityLog: log.rows.map(r => ({ ts: r.ts, by: r.by_name, action: r.action, text: r.text, vehicleId: r.vehicle_id }))
+    activityLog: log.rows.map(r => ({ ts: r.ts, by: r.by_name, action: r.action, text: r.text, vehicleId: r.vehicle_id })),
+    // Hoe de achtergrondtaken erbij staan. Hoort hier omdat het scherm de plek is waar iemand het
+    // ziet: als de Mobilox-agent al uren stilstaat, is de lijst met afleveringen ouder dan hij lijkt.
+    agents: runs.rows.map(r => ({ naam: r.naam, ts: r.ts, ok: r.ok, melding: r.melding, geluktTs: r.gelukt_ts }))
   };
 }
 
@@ -604,6 +608,18 @@ const server = http.createServer(async (req, res) => {
         if ((v.verkoop_factuurnr || '') === factuurnr) {
           await spoor(v.id, 'ongewijzigd');
           return sendJson(res, 200, { ok: true, ongewijzigd: true, id: v.id, status: v.status });
+        }
+        // Een factuur volgt op een verkoopovereenkomst en draagt het definitieve nummer. Zolang de
+        // verkoop nog niet bevestigd is, mag die de eerdere melding vervangen — maar alleen als de
+        // melder dat uitdrukkelijk zegt (vervangt:true), zodat het geen stille overschrijving is.
+        // Een BEVESTIGDE verkoop blijft geweigerd: die regel staat al in het Autoboek met dit
+        // nummer, en PVP en het boek uit elkaar laten lopen is erger dan een verouderd nummer.
+        if (v.status === 'gemeld verkocht' && body.vervangt === true) {
+          await pool.query(`UPDATE vehicles SET verkoop_factuurnr=$2, verkoop_factuurdatum=coalesce($3,verkoop_factuurdatum),
+                              verkoopprijs=coalesce($4,verkoopprijs), verkocht_gemeld_ts=$5 WHERE id=$1`,
+            [v.id, factuurnr, factuurdatum, Number.isFinite(prijs) ? prijs : null, Date.now()]);
+          await spoor(v.id, 'vervangen');
+          return sendJson(res, 200, { ok: true, vervangen: true, id: v.id, status: v.status, was: v.verkoop_factuurnr });
         }
         await spoor(v.id, 'conflict');
         return sendJson(res, 409, { error: 'auto staat al op een andere verkoop', id: v.id, status: v.status, bestaand: v.verkoop_factuurnr, gemeld: factuurnr });

@@ -11,6 +11,7 @@ het dan ook daarheen.
 | `pvp-uploads-opruimen.sh` | `/usr/local/bin/pvp-uploads-opruimen.sh` | 02:20 UTC |
 | `pvp-uploads-snapshot.sh` | `/usr/local/bin/pvp-uploads-snapshot.sh` | 02:30 UTC |
 | `pvp-offsite.sh` | `/usr/local/bin/pvp-offsite.sh` | 03:00 UTC |
+| `pvp-mobilox.sh` | `/usr/local/bin/pvp-mobilox.sh` | elk kwartier, ma–za 07:00–18:45 (NL) |
 | `systemd/*.service` + `*.timer` | `/etc/systemd/system/` | — |
 
 Wat ze doen en hoe je terugzet, staat in `CLAUDE.md`. In het kort: `pvp-backup` maakt een `pg_dump`
@@ -18,6 +19,13 @@ van alleen de database `pvp`, `pvp-uploads-opruimen` stemt schijf en database op
 verplaatst wees-bestanden naar de prullenbak, `pvp-uploads-snapshot` maakt een momentopname van
 `/var/pvp/uploads` met hardlinks, en `pvp-offsite` stuurt een versleutelde kopie naar Backblaze B2 in
 Amsterdam.
+
+`pvp-mobilox` valt uit de toon: die draait overdag in plaats van 's nachts, want hij houdt het beeld
+op het scherm actueel in plaats van de data veilig. Hij leest Mobilox uit (verkopen, afleverdata,
+afspraken uit de overeenkomst) en werkt daarna de agenda bij. Twee losse stappen achter elkaar: de
+agenda moet ook bijgewerkt worden als Mobilox onbereikbaar is, en andersom. Hoe elke ronde afliep
+staat in de tabel `agent_runs` en daarmee op de pagina Vandaag — een koppeling die stil faalt is
+erger dan geen koppeling.
 
 De volgorde is niet toevallig: eerst opruimen, dán de momentopname, dán de kopie naar buiten, zodat er
 geen afval mee wordt vastgelegd of geüpload. En alles ná `crp-backup` om 01:30, zodat de twee elkaar

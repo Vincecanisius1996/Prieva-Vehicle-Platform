@@ -239,3 +239,22 @@ CREATE TABLE IF NOT EXISTS mobilox_inruil (
   gezien_ts     bigint
 );
 CREATE INDEX IF NOT EXISTS mobilox_inruil_status_idx ON mobilox_inruil (status);
+
+-- ===== Agenda-koppeling (23-08-2026) =====
+-- Het Google-agenda-item dat bij een werkbon hoort. Op de bon en niet in een aparte tabel: er is
+-- precies één afspraak per bon, en zo verdwijnt hij vanzelf mee als de bon verdwijnt.
+ALTER TABLE carport_bonnen ADD COLUMN IF NOT EXISTS agenda_event_id text;
+
+-- ===== Draaiverslag van de achtergrondtaken (23-08-2026) =====
+-- Eén regel per taak, telkens overschreven. Niet een logboek van alle rondes: bij vier rondes per uur
+-- is dat binnen een week onleesbaar, en de enige vraag die ertoe doet is "draait hij nog, en ging de
+-- laatste ronde goed". De laatste geslaagde ronde wordt apart bewaard, want dat is wat je wilt weten
+-- als het nú misgaat: hoe oud is het beeld dat op het scherm staat.
+CREATE TABLE IF NOT EXISTS agent_runs (
+  naam         text PRIMARY KEY,         -- 'mobilox' | 'agenda'
+  ts           bigint,                   -- einde van de laatste ronde
+  ok           boolean,
+  melding      text,
+  duur_ms      integer,
+  gelukt_ts    bigint                    -- einde van de laatste GESLAAGDE ronde
+);

@@ -1,0 +1,14 @@
+[Unit]
+Description=PVP Mobilox-koppeling: verkopen ophalen en de agenda bijwerken
+After=network-online.target postgresql.service pvp-api.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pvp-mobilox.sh
+# Een ronde duurt normaal een halve minuut. Loopt hij vast op een browser die niet opstart of een
+# scherm dat blijft laden, dan wordt hij afgebroken — anders staat er om 17:00 nog een ronde van
+# 09:00 te wachten en gebeurt er de hele dag niets meer.
+TimeoutStartSec=600
+# De browser van Playwright staat in de cache van root; zonder HOME zoekt hij ernaast.
+Environment=HOME=/root

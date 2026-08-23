@@ -40,13 +40,18 @@ Draait live op **https://pvp.prieva.nl**. Meerdere gebruikers, met rollen en log
 - `beheer/` — de scripts en systemd-units van `/usr/local/bin/` en `/etc/systemd/system/`. Zie
   `beheer/LEESMIJ.md`. Wijzig je daar iets, kopieer het dan ook naar de server; ze draaien vanaf
   de server, niet vanuit de repo.
+- `agenda/` — de koppeling met de Google-agenda van Prieva (draait mee in `/opt/pvp-api/agenda/`).
+  Zie `agenda/LEESMIJ.md`.
+- `mobilox/` — de agent die Mobilox uitleest (draait mee in `/opt/pvp-api/mobilox/`, mét een eigen
+  `node_modules` voor playwright). Zie `mobilox/LEESMIJ.md`.
 - `pg/` — archief van de Postgres-migratie, alleen nog `import-json.js` + `package*.json`. Zie
   `pg/LEESMIJ.md`. De kopieën van `server.js`/`setpw.js`/`schema.sql` die hier stonden zijn weg;
   twee exemplaren van hetzelfde bestand lopen uiteen en dan weet niemand meer welke geldt.
 - In de repo staan historische `index_N.html`-kopieën en een bestand `server.js update`; die zijn
   van vóór deze opschoning en niet meer in gebruik. Bron van waarheid is `index.html`.
 - **Niet in de repo, met opzet:** `/var/pvp/pg.env`, `/var/pvp/restic.env`, `/var/pvp/secret`,
-  `/var/pvp/autoboek.env`, `/var/pvp/autoboek-sleutel.json`,
+  `/var/pvp/autoboek.env`, `/var/pvp/autoboek-sleutel.json`, `/var/pvp/verkoop.env`,
+  `/var/pvp/mobilox.env`, `/var/pvp/mobilox-sessie.json`, `/var/pvp/agenda.env`, `/var/pvp/ai.env`,
   `/var/pvp/uploads`, de JSON-back-ups en alles wat `.gitignore` uitsluit.
 
 ## Rollen (server dwingt af)
@@ -87,7 +92,8 @@ Auth = HMAC-ondertekende cookie (stateless).
 app. Bewust hetzelfde endpoint, zodat er maar één set regels is rond idempotentie en vastleggen. Zonder token ingesteld geeft het endpoint **503** — uit staan is nooit
 hetzelfde als vrije toegang. Het zet een auto op `gemeld verkocht`; een beheerder bevestigt daarna in
 de app, en pas dán verhuist de regel in het Autoboek. Elke melding, ook een mislukte, komt in de tabel
-`verkoop_meldingen`.
+`verkoop_meldingen`. Met `vervangt:true` in de body mag een **factuur** een eerdere melding uit de
+verkoopovereenkomst overschrijven — maar alleen zolang de verkoop nog niet bevestigd is.
 
 ## Lokaal testen (voordat je deployt)
 Er staat een testdatabase `pvp_test` klaar (zelfde rol `pvp_app`; `pg_hba` staat beide toe). De backend
@@ -349,10 +355,12 @@ Sinds 20-08-2026. Twee tabellen: `carport_bonnen` (één per auto die bij Carpor
 - **De deadline is afgeleid, niet ingevoerd:** gewenste afleverdatum min `CARPORT_MARGE_DAGEN` (2),
   zodat de auto daarna nog naar de poetser kan. Die constante staat in `server.js`; de frontend krijgt
   hem mee in het antwoord van `/api/carport` en rekent niet zelf.
-- **De afleverdatum komt uit Mobilox** — de gewenste afleverdatum uit de verkoopovereenkomst. Die
-  koppeling bestaat nog niet, dus hij wordt met de hand ingevuld. Gemeten op 20-08-2026: in het
-  Autoboek staat op *Lopende* bij 1 van de 66 auto's een verkoopdatum, en die ligt in het verleden —
-  er is dus geen bruikbare tweede bron.
+- **De afleverdatum komt uit Mobilox** — de gewenste afleverdatum uit de verkoopovereenkomst. Sinds
+  20-08-2026 haalt de Mobilox-agent hem op; sinds 23-08 houdt hij hem ook **elke ronde bij**, zodat een
+  verzette aflevering binnen een kwartier op de planning staat. Met de hand invullen kan nog steeds,
+  maar Mobilox wint: die datum is met de koper afgesproken. Het Autoboek is géén bruikbare tweede bron
+  — gemeten op 20-08-2026 stond op *Lopende* bij 1 van de 66 auto's een verkoopdatum, en die lag in
+  het verleden.
 - **Sorteren:** op deadline, tenzij Carport zelf sleept. Dan krijgen álle open bonnen een nummer
   (`volgorde`), zodat er geen gaten of dubbele nummers ontstaan als twee mensen tegelijk schuiven.
   Een lege lijst naar `/api/carport-volgorde` zet alles terug op deadlinevolgorde.
@@ -365,6 +373,69 @@ Sinds 20-08-2026. Twee tabellen: `carport_bonnen` (één per auto die bij Carpor
 - **Notities zijn gescheiden in `technisch` en `klant`.** Carport schrijft de techniek, Prieva de
   vertaling richting de koper. Bewust twee soorten: monteurstaal hoort niet ongefilterd bij een klant
   terecht te komen.
+
+## De Mobilox-koppeling draait elk kwartier
+Sinds 23-08-2026 draait `pvp-mobilox.timer` **maandag t/m zaterdag, 07:00–18:45 Nederlandse tijd, elk
+kwartier**. Daarvoor moest de agent met de hand gestart worden. De reden voor die frequentie is niet
+de techniek maar het werk: Carport, de poetser en de verkoop kijken allemaal naar hetzelfde scherm, en
+een verkoopovereenkomst die pas de volgende ochtend binnenkomt is een dag te laat.
+
+De tijdzone staat **in de kalenderregel** (`OnCalendar=Mon-Sat *-*-* 07..18:00/15 Europe/Amsterdam`).
+De server staat op UTC; zonder die tijdzone zou de koppeling in de winter een uur verschuiven ten
+opzichte van de zaak.
+
+`/usr/local/bin/pvp-mobilox.sh` draait twee stappen achter elkaar en faalt pas aan het eind:
+1. `mobilox/agent.js --echt` — verkopen melden, afleverdata bijwerken, afspraken naar Carport;
+2. `agenda/sync.js --echt` — de geplande afleveringen in de Prieva-agenda zetten.
+
+Bewust twee losse stappen: de agenda moet ook bijgewerkt worden als Mobilox onbereikbaar is (iemand
+kan in PVP zelf een datum hebben verzet), en een agenda die weigert mag het melden van een verkoop
+niet tegenhouden.
+
+**Elke ronde legt vast hoe het ging** in de tabel `agent_runs` (één regel per taak, telkens
+overschreven; `gelukt_ts` bewaart apart de laatste *geslaagde* ronde). `/api/state` stuurt dat mee en
+`agentBanner()` op Vandaag toont het — maar alléén als er iets mis is, en alleen tijdens de uren dat
+de taak hoort te lopen. Een groen vinkje dat het goed gaat leest niemand; een melding dat het beeld
+uren oud is wel. Een waarschuwing op zondagavond is ruis.
+
+- **Een 404 van `/api/verkocht` is geen storing.** Mobilox verkoopt ook auto's die nooit in PVP hebben
+  gestaan (doorverkochte inruilers). Die tellen als `geen-auto`, niet als `mislukt` — anders staat de
+  koppeling elke ronde als kapot op het scherm en kijkt niemand meer naar de melding die er wél toe doet.
+- **De agent meldt op het PVP-id, niet op het VIN uit Mobilox.** Er staan auto's in PVP met een
+  streepje in het VIN-veld (oude inruilers); die koppelen op kenteken, en dan wees het VIN uit Mobilox
+  naar niets. Kostte op 23-08 drie meldingen die als "onbekend voertuig" mislukten.
+- **Een factuur mag een eerdere melding uit de overeenkomst vervangen** (`vervangt:true` in de body van
+  `/api/verkocht`), maar alleen zolang de verkoop nog **niet bevestigd** is. Een bevestigde verkoop
+  blijft een 409: die regel staat al in het Autoboek met dat nummer, en PVP en het boek uit elkaar
+  laten lopen is erger dan een verouderd nummer. Nasleep hiervan: **vijf auto's dragen nog het
+  overeenkomstnummer** (o.a. BMW J-699-DX 183 i.p.v. 336, Renault Twingo KST-45-P 181 i.p.v. 333) —
+  die zijn bevestigd vóór deze wijziging en worden niet vanzelf bijgewerkt.
+- **De afleverdatum wordt elke ronde bijgehouden** (`mobilox/planning.js`), niet alleen bij een regel
+  die de agent voor het eerst ziet. Mobilox wint bewust van wat er in PVP staat: die datum is met de
+  koper afgesproken. Een verzetting komt wél als notitie op de werkbon, zodat het geen stille
+  wijziging is. **Een auto zonder open werkbon krijgt er geen** — anders verschijnt een auto die
+  Carport heeft afgemeld elke ronde opnieuw op de planning.
+
+## Geplande afleveringen in de Prieva-agenda
+Sinds 23-08-2026. `agenda/` zet elke geplande aflevering als afspraak in de Google-agenda, met hetzelfde
+service-account als het Autoboek — er komt geen tweede sleutel bij. Instellingen in
+**`/var/pvp/agenda.env`** (chmod 600, `AGENDA_ID`, **niet committen**); leeg = koppeling uit.
+
+De agenda is een **spiegel van PVP**, geen tweede administratie: PVP werkt hem elke ronde bij, en een
+wijziging in de agenda zelf wordt overschreven. Verwijder je een afspraak met de hand, dan staat hij er
+binnen een kwartier weer — de werkbon staat immers nog open.
+
+- Afspraken van PVP dragen een merkteken (`extendedProperties.private.pvp=aflevering`) en Google
+  filtert daar al op bij het ophalen. **Wat een collega in de agenda zet, komt niet eens over de lijn.**
+- Een aflevering is een **hele dag** en staat op *vrij*: Mobilox geeft alleen een datum, en een
+  verzonnen tijdstip van 10:00 zou betrouwbaarder lijken dan het is.
+- **Afleveringen uit het verleden blijven staan** en er worden er geen gemaakt voor een datum die al
+  geweest is.
+- **Meer dan tien afspraken weghalen in één ronde wordt geweigerd** — dat is een fout, geen opruiming.
+  Bewust doorgaan kan met `--forceer`.
+- **Nog te doen vóór dit werkt:** de Google Calendar API aanzetten in het Google-project, de agenda
+  delen met het service-account (recht *Wijzigingen aan afspraken aanbrengen*) en `AGENDA_ID` invullen.
+  Zie `agenda/LEESMIJ.md`.
 
 ## Regels & valkuilen (belangrijk)
 - **Houd PVP strikt gescheiden van CRP.** Op dezelfde droplet draait een aparte reporting-tool (CRP)
@@ -494,6 +565,14 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
   bevinding: **de zeven stapkolommen AW–BC in het Autoboek zijn leeg**, dus de fase is daar niet uit
   over te nemen. Alleen het kenteken is een hard signaal — dat bestaat niet vóór RDW-goedkeuring en
   BIN. **Nog te doen:** 15 auto's zonder kenteken en 5 regels van vóór april, met de hand.
+- ~~De Mobilox-agent op een timer.~~ **Klaar 23-08-2026:** elk kwartier, ma–za 07:00–18:45 NL, met een
+  melding op Vandaag als hij stilstaat.
+- **Bijna klaar: de agenda-koppeling.** De code staat er en is getoetst; er moet nog drie dingen
+  gebeuren buiten de server: Calendar API aanzetten, de agenda delen met het service-account en
+  `AGENDA_ID` invullen. Zie `agenda/LEESMIJ.md`.
+- Open: **vijf auto's dragen het overeenkomstnummer in plaats van het factuurnummer**, omdat ze
+  bevestigd zijn vóór de vervang-regel bestond. In het Autoboek staat dat nummer al. Corrigeren kan
+  alleen met de hand, in PVP én in het boek.
 - Bekend gat: **PVP schrijft alleen bij het aanmaken naar het Autoboek.** Latere wijzigingen aan een
   auto komen daar niet in terecht.
 - **Zwaarder geworden op 17-08-2026: `/uploads/` staat open.** nginx serveert die map rechtstreeks met

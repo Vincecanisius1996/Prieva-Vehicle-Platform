@@ -9,6 +9,8 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const pg = require('/opt/pvp-api/node_modules/pg');
 const { takenUit } = require('./taken.js');
+const { meld } = require('../agentrun.js');
+const planning = require('./planning.js');
 
 const ECHT = process.argv.includes('--echt');
 const SESSIE = '/var/pvp/mobilox-sessie.json';
@@ -80,6 +82,7 @@ function uitRegel(r, soort) {
 }
 
 (async () => {
+  const begonnen = Date.now();
   const e = env();
   const jaar = new Date().getUTCFullYear();
   const browser = await chromium.launch({ headless: true });
@@ -144,11 +147,12 @@ function uitRegel(r, soort) {
     console.log(`\nnieuw sinds de vorige ronde: ${nieuw.length} regel(s) over ${perAuto.size} auto('s)`);
 
     const vandaag = new Date(); vandaag.setUTCHours(0,0,0,0);
+    const toekomst = d => planning.toekomst(d, vandaag.getTime());
     const token = (fs.existsSync('/var/pvp/verkoop.env')
       ? (/^PVP_VERKOOP_TOKEN=(.*)$/m.exec(fs.readFileSync('/var/pvp/verkoop.env','utf8')) || [])[1] : '') || '';
     if (ECHT && !token) throw new Error('PVP_VERKOOP_TOKEN ontbreekt — zonder token weigert /api/verkocht terecht');
 
-    const uitkomsten = { gemeld:0, ongewijzigd:0, botsing:0, mislukt:0, carport:0, inruil:0 };
+    const uitkomsten = { gemeld:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0 };
     for (const { r, a } of perAuto.values()) {
       const regel = `${(a.merk+' '+a.model).padEnd(24)} ${String(a.kenteken).padEnd(11)} ${r.soort} ${r.nummer}`;
       if (!ECHT) { console.log('  zou melden: ' + regel + `  € ${r.prijs} · ${r.datum}` + (r.afleverdatum?` · aflever ${r.afleverdatum}`:'')); continue; }
@@ -156,31 +160,37 @@ function uitRegel(r, soort) {
       try {
         const res = await fetch('http://127.0.0.1:3000/api/verkocht', { method:'POST',
           headers: { 'Content-Type':'application/json', Authorization: 'Bearer ' + token },
-          body: JSON.stringify({ voertuig: r.vin, factuurnummer: String(r.nummer),
+          // vervangt: een factuur mag een eerdere melding uit de overeenkomst overschrijven — die
+          // heeft het definitieve nummer. Een overeenkomst nooit; die komt eerst.
+          // De auto is hierboven al gevonden, dus sturen we het PVP-id en niet het VIN uit Mobilox.
+          // Er staan auto's in PVP met een streepje in het VIN-veld (oude inruilers); die koppelen op
+          // kenteken, en dan wijst het VIN uit Mobilox naar niets en kreeg de melding een 404.
+          body: JSON.stringify({ voertuig: a.id, factuurnummer: String(r.nummer), vervangt: r.soort === 'factuur',
             factuurdatum: r.datum, verkoopprijs: r.prijs, bron: 'mobilox-agent (' + r.soort + ')' }) });
         const j = await res.json().catch(()=>({}));
-        uit = res.status === 409 ? 'botsing' : (res.ok ? (j.ongewijzigd ? 'ongewijzigd' : 'gemeld') : 'mislukt');
+        // 404 is geen storing maar een feit: Mobilox verkoopt ook auto's die nooit in PVP hebben
+        // gestaan (doorverkochte inruilers). Dat als "mislukt" tellen zou de koppeling elke ronde
+        // als kapot laten zien, en dan kijkt niemand meer naar de melding die er wél toe doet.
+        uit = res.status === 409 ? 'botsing' : res.status === 404 ? 'geen-auto'
+            : (res.ok ? (j.vervangen ? 'vervangen' : (j.ongewijzigd ? 'ongewijzigd' : 'gemeld')) : 'mislukt');
         uitkomsten[uit] = (uitkomsten[uit]||0) + 1;
-        console.log(`  ${uit.padEnd(12)} ${regel}` + (uit==='mislukt' ? '  -> ' + (j.error||res.status) : ''));
+        console.log(`  ${uit.padEnd(12)} ${regel}` + (uit==='mislukt'||uit==='geen-auto' ? '  -> ' + (j.error||res.status) : ''));
       } catch (err) { console.log('  mislukt      ' + regel + '  -> ' + err.message); uitkomsten.mislukt++; }
       await pool.query(`INSERT INTO mobilox_gezien (soort,extern_id,nummer,vin,vehicle_id,uitkomst,verwerkt_ts)
         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (soort,extern_id) DO UPDATE SET uitkomst=EXCLUDED.uitkomst, verwerkt_ts=EXCLUDED.verwerkt_ts`,
         [r.soort, r.externId, r.nummer, r.vin, a.id, uit, Date.now()]);
 
-      // Afleverdatum naar Carport — alleen als die datum nog moet komen. Een aflevering uit april is
-      // geschiedenis, geen planning, en zou de lijst van Carport vervuilen.
-      const ad = r.afleverdatum && /^(\d{2})-(\d{2})-(\d{4})$/.exec(r.afleverdatum);
-      if (ad && Date.UTC(+ad[3], +ad[2]-1, +ad[1]) >= vandaag.getTime()) {
-        const bon = await pool.query("SELECT id, afleverdatum FROM carport_bonnen WHERE vehicle_id=$1 AND status='open'", [a.id]);
+      // Een auto zonder werkbon op de planning zetten. Bewust alleen hier, bij een regel die we voor
+      // het eerst zien: een auto die Carport al heeft afgemeld heeft geen open bon meer, en die mag
+      // niet elke ronde opnieuw op de planning verschijnen. Het bijhouden van de datum gebeurt
+      // verderop, over álle regels.
+      if (toekomst(r.afleverdatum)) {
+        const bon = await pool.query("SELECT id FROM carport_bonnen WHERE vehicle_id=$1 AND status='open'", [a.id]);
         if (!bon.rows.length) {
           await pool.query(`INSERT INTO carport_bonnen (vehicle_id, afleverdatum, aangemaakt_ts, aangemaakt_door)
                             VALUES ($1,$2,$3,'mobilox-agent')`, [a.id, r.afleverdatum, Date.now()]);
           uitkomsten.carport++;
           console.log(`     -> op de Carport-planning gezet, aflevering ${r.afleverdatum}`);
-        } else if (!bon.rows[0].afleverdatum) {
-          await pool.query('UPDATE carport_bonnen SET afleverdatum=$2, updated_at=now() WHERE id=$1', [bon.rows[0].id, r.afleverdatum]);
-          uitkomsten.carport++;
-          console.log(`     -> afleverdatum ${r.afleverdatum} bij de bestaande werkbon gezet`);
         }
       }
     }
@@ -193,6 +203,15 @@ function uitRegel(r, soort) {
       await pool.query(`INSERT INTO mobilox_gezien (soort,extern_id,nummer,vin,vehicle_id,uitkomst,verwerkt_ts)
         VALUES ($1,$2,$3,$4,$5,'overgeslagen',$6) ON CONFLICT (soort,extern_id) DO NOTHING`,
         [r.soort, r.externId, r.nummer, r.vin, a.id, Date.now()]);
+    }
+
+    // De afleverdatum bijhouden, elke ronde en over álle gekoppelde regels — niet alleen bij een
+    // regel die we voor het eerst zien. Wordt een aflevering in Mobilox verzet, dan is dat precies
+    // wat Carport en de poetser moeten weten, en de agenda hangt eraan. Zie planning.js.
+    {
+      const regels = await planning.bijwerkenAfleverdata(pool, raak, vandaag.getTime(), !ECHT);
+      regels.forEach(x => console.log(x));
+      if (ECHT) uitkomsten.carport += regels.length;
     }
 
     // Afspraken uit de overeenkomst als regels op de werkbon. Dit gebeurt elke ronde over álle
@@ -237,11 +256,14 @@ function uitRegel(r, soort) {
     }
 
     if (ECHT) {
-      console.log('\nuitkomst: ' + Object.entries(uitkomsten).filter(([,n])=>n).map(([k,n])=>`${n} ${k}`).join(', ') || 'niets te doen');
+      const samen = Object.entries(uitkomsten).filter(([,n])=>n).map(([k,n])=>`${n} ${k}`).join(', ') || 'niets te doen';
+      console.log('\nuitkomst: ' + samen);
+      await meld(pool, 'mobilox', !uitkomsten.mislukt, samen, begonnen);
       if (uitkomsten.mislukt) process.exitCode = 1;      // luid falen, niet stil
     } else console.log('\n>>> PROEFDRAAI — er is niets geschreven.');
   } catch (err) {
     console.error('MISLUKT:', err.message);
+    if (ECHT) await meld(pool, 'mobilox', false, err.message, begonnen);
     process.exitCode = 1;
   } finally {
     await browser.close(); await pool.end();

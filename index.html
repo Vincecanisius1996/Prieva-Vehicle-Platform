@@ -579,6 +579,7 @@ function badge(s){return `<span class="badge b-${s}">${statusLabel[s]}</span>`;}
    Windows is 🗑 een andere tekening dan op een Mac — en ze zijn niet mee te kleuren met de tekst.
    Deze erven currentColor en schalen mee met de lettergrootte. */
 const ICONEN = {
+  waarschuwing: '<path d="M12 4l9 16H3l9-16z"/><path d="M12 10v4"/><path d="M12 17.5v.01"/>',
   plus:     '<path d="M12 5v14M5 12h14"/>',
   undo:     '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-4"/>',
   download: '<path d="M12 4v11"/><path d="M8 12l4 4 4-4"/><path d="M5 19h14"/>',
@@ -610,6 +611,9 @@ let apiOk=false, saveT=null;
 // klik zou dat over de database heen schrijven.
 let stateOk=false;
 function buildState(){const vehicles={}; V.forEach(v=>{vehicles[v.id]={status:v.status,klaar:v.klaar,route:v.route,owner:v.owner,subtasks:v.subtasks,photos:v.photos,arrivedAt:v.arrivedAt||null,taxAt:v.taxAt||null};}); return {vehicles,subUid,globalTodos,gtUid,activityLog};}
+/* Hoe de achtergrondtaken erbij staan (Mobilox-agent, agenda). Alleen zichtbaar als er iets mis is:
+   een groen vinkje dat het goed gaat leest niemand, een melding dat het beeld uren oud is wel. */
+let agents=[];
 async function loadState(){
   stateOk=false;   // opnieuw inlezen: tot het gelukt is mag er niets terug naar de server
   try{ const r=await fetch("/api/state",{cache:"no-store"}); if(!r.ok)return; const s=await r.json(); apiOk=true;
@@ -617,7 +621,8 @@ async function loadState(){
       if(typeof s.subUid==="number")subUid=Math.max(subUid,s.subUid);
       if(Array.isArray(s.globalTodos))globalTodos=s.globalTodos;
       if(Array.isArray(s.activityLog))activityLog=s.activityLog;
-      if(typeof s.gtUid==="number")gtUid=Math.max(gtUid,s.gtUid); }
+      if(typeof s.gtUid==="number")gtUid=Math.max(gtUid,s.gtUid);
+      if(Array.isArray(s.agents))agents=s.agents; }
     stateOk=true;   // pas hier: alles is zonder fout ingelezen, vanaf nu mag er opgeslagen worden
   }catch(_){ /* geen backend: lokaal verder */ }
 }
@@ -707,6 +712,7 @@ function renderVandaag(){
       <div style="flex:1"><div class="bt">${nr.length} nieuw BPM-taxatierapport${nr.length===1?'':'en'} van S-TAX</div>
         <div class="bs">${nr.slice(0,4).map(n=>{const vv=V.find(x=>x.id===n.id);return (vv?`${vv.merk} ${vv.model}`:'Auto')+' · '+fmtDate(n.ts);}).join(' — ')}</div></div>
       <button class="btn btn-ghost btn-sm" onclick="markBpmSeen()">Gezien</button></div>`;})()}
+    ${agentBanner()}
     ${afleverPaneel()}
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 4px 12px">
       <h3 style="margin:0;font-size:16px">To-do — per persoon <span class="agechip" style="color:var(--accent);background:var(--blue-soft)">${openCount} open</span></h3>
@@ -1607,6 +1613,31 @@ async function loadBpm(){ if(!apiOk)return; try{ const r=await fetch("/api/bpmre
    Wat er nog moet gebeuren vóór een auto de deur uit kan, gesorteerd op de dichtstbijzijnde
    aflevering. Het werk is verdeeld over twee partijen met verschillende deadlines: Carport moet klaar
    zijn ${marge} dagen vóór de aflevering, zodat de poetser daarna nog aan de beurt komt. */
+/* ===== Melden als een achtergrondtaak stilstaat =====
+   De lijst hieronder is zo actueel als de laatste ronde van de Mobilox-agent. Staat die stil, dan
+   klopt het scherm niet meer terwijl het er precies hetzelfde uitziet — en dat is het gevaarlijke
+   geval. Alleen tonen als er echt iets mis is, en alleen tijdens de uren dat de taak hoort te lopen:
+   een waarschuwing op zondagavond dat er niets is opgehaald is ruis, geen signaal. */
+const AGENT_NAMEN={mobilox:'de Mobilox-agent',agenda:'de agenda-koppeling'};
+const AGENT_STIL_MIN=45;                 // ruim boven de kwartierronde, zodat één gemiste ronde niet meteen alarmeert
+function binnenKantoortijd(d){ const u=d.getHours(); return d.getDay()>=1&&d.getDay()<=6&&u>=7&&u<19; }
+function agentBanner(){
+  if(!agents.length) return '';
+  const nu=Date.now(), werktijd=binnenKantoortijd(new Date());
+  const stuk=agents.filter(a=>{
+    if(a.ok===false) return true;
+    if(!werktijd) return false;
+    return !a.geluktTs || (nu-a.geluktTs)>AGENT_STIL_MIN*60000;
+  });
+  if(!stuk.length) return '';
+  const oud=t=>{ if(!t) return 'nog nooit gelukt'; const m=Math.round((nu-t)/60000);
+    return m<90?`laatste keer ${m} min geleden`:`laatste keer ${Math.round(m/60)} uur geleden`; };
+  return `<div class="banner" style="border-color:#f3d3c9;background:linear-gradient(180deg,#fdf1ec,#fbe7df)">
+    <div class="bi" style="background:var(--amber)">${ico("waarschuwing",18)}</div>
+    <div style="flex:1"><div class="bt">${stuk.length===1?'Een achtergrondtaak loopt niet':'Achtergrondtaken lopen niet'}</div>
+      <div class="bs">${stuk.map(a=>`${AGENT_NAMEN[a.naam]||a.naam}: ${oud(a.geluktTs)}${a.melding&&a.ok===false?' — '+esc(a.melding):''}`).join(' · ')}.
+        Wat hieronder staat kan verouderd zijn.</div></div></div>`;
+}
 let afleverOpen=null;
 function afleverKlap(id){ afleverOpen = (afleverOpen===id ? null : id); rerender(); }
 function tijdChip(tot, label){

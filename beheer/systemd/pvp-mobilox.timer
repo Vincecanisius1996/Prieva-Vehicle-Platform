@@ -1,0 +1,16 @@
+[Unit]
+Description=PVP Mobilox-koppeling, elk kwartier tijdens kantooruren
+
+[Timer]
+# Maandag t/m zaterdag, 07:00–18:45, elk kwartier. Nederlandse tijd, niet UTC: de server staat op UTC
+# en zonder deze tijdzone zou de koppeling in de winter een uur verschuiven ten opzichte van de zaak.
+OnCalendar=Mon-Sat *-*-* 07..18:00/15 Europe/Amsterdam
+# Niet inhalen na een herstart: een gemiste ronde van een uur geleden heeft geen waarde meer, de
+# volgende ronde haalt hem toch in.
+Persistent=false
+# Een paar seconden spreiding, zodat Mobilox niet elk kwartier precies op de seconde wordt geraakt.
+RandomizedDelaySec=45
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target
