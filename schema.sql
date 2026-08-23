@@ -263,3 +263,12 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 -- Bij welke PVP-auto een inruil terechtgekomen is, en hoe dat afliep.
 ALTER TABLE mobilox_inruil ADD COLUMN IF NOT EXISTS pvp_id text;
 ALTER TABLE mobilox_inruil ADD COLUMN IF NOT EXISTS melding text;
+
+-- ===== Afleveren (23-08-2026) =====
+-- Afmelden en afleveren zijn twee dingen. Carport meldt af als het werk klaar is; Prieva vinkt af als
+-- de auto bij de klant staat. Zonder dat onderscheid kan Carport een aflevering afsluiten die nog
+-- niet heeft plaatsgevonden, en blijft een auto met een verstreken afleverdatum eeuwig in de lijst
+-- staan omdat er geen knop is om hem eruit te halen.
+ALTER TABLE carport_bonnen ADD COLUMN IF NOT EXISTS afgeleverd_ts     bigint;
+ALTER TABLE carport_bonnen ADD COLUMN IF NOT EXISTS afgeleverd_door   text;
+ALTER TABLE carport_bonnen ADD COLUMN IF NOT EXISTS afgeleverd_datum  text;   -- dd-mm-jjjj, de dag zelf

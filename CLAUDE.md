@@ -363,6 +363,14 @@ uit bij de auto waar het rapport al aan hing.
 - Een rapport wordt **niet geweigerd** als de auto inmiddels op route NEE staat: het hoort bij de auto
   waar het VIN naar wijst. Weigeren zou het rapport laten verdwijnen.
 
+## Skills (`.claude/skills/`)
+Sinds 23-08-2026. Twee stuks, bedoeld om `CLAUDE.md` niet verder te laten uitdijen:
+- **`pvp-ui`** — huisstijl, de bestaande bouwstenen (`.card`, `.bon`, `.taak`, `.dl`, `.badge`), en de
+  gedragsregels: elke handeling omkeerbaar of met bevestiging, alleen tonen wat er mis is, verbergen
+  in beeld is nooit genoeg zonder controle in het endpoint.
+- **`pvp-testen`** — het jsdom-recept zonder browser, de vallen die tijd hebben gekost, en wat je
+  minimaal doorloopt vóór een deploy.
+
 ## Carport: werkbonnen en planning
 Sinds 20-08-2026. Twee tabellen: `carport_bonnen` (één per auto die bij Carport staat) en
 `carport_taken` (de regels: reparatie, APK, beurt, onderdeel). Notities staan als jsonb op de bon.
@@ -382,9 +390,18 @@ Sinds 20-08-2026. Twee tabellen: `carport_bonnen` (één per auto die bij Carpor
 - **Wie mag wat:** Carport werkt de planning af, voegt zelf werk toe en meldt auto's af. Alleen Prieva
   zet een auto óp de planning of haalt hem eraf. **Carport kan geen werk van Prieva weghalen** —
   alleen wat ze zelf hebben toegevoegd; dat staat per regel vast in `door`.
-- **Afmelden is omkeerbaar.** Een afgemelde auto verdwijnt uit de planning en verschijnt onder
-  *Afgeleverd*; Prieva kan hem terugzetten. Dat logboek wordt nooit opgeschoond: het is voor beide
-  partijen de plek om terug te kijken wat er is gedaan.
+- **Afmelden en afleveren zijn twee dingen** (23-08-2026). Carport *meldt af* als het werk klaar is;
+  Prieva *levert af* als de auto bij de klant staat. Daartussen zit soms een week. Vandaar drie bakken
+  in `/api/carport`: `planning` (Carport werkt eraan), `afgemeld` (werk klaar, auto staat er nog) en
+  `afgeleverd` (weg). Alleen team en admin kunnen afleveren — Carport kan niet weten of de klant is
+  geweest; `/api/carport-afgeleverd` geeft die rol **403**.
+  - Daarvóór bestond alleen "afgemeld", onder de naam *Afgeleverd*. Gevolg: een auto met een
+    verstreken afleverdatum bleef eeuwig in de lijst staan omdat er geen knop was om hem eruit te
+    halen — op 23-08 stonden er vier, waarvan één zes dagen over tijd. En zodra Carport afmeldde,
+    verdween de aflevering van *Vandaag* terwijl de auto nog de deur uit moest. Het paneel op Vandaag
+    telt nu `planning` én `afgemeld`.
+  - **Beide zijn omkeerbaar** en beide logboeken worden nooit opgeschoond: het is voor beide partijen
+    de plek om terug te kijken wat er is gedaan.
 - **Notities zijn gescheiden in `technisch` en `klant`.** Carport schrijft de techniek, Prieva de
   vertaling richting de koper. Bewust twee soorten: monteurstaal hoort niet ongefilterd bij een klant
   terecht te komen.

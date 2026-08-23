@@ -419,6 +419,13 @@ function dagUitTekst(d) {                       // 'dd-mm-jjjj' -> epoch ms (UTC
   const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(String(d || ''));
   return m ? Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null;
 }
+// Vandaag als 'dd-mm-jjjj', in Nederlandse tijd. De server draait op UTC; tussen middernacht en
+// twee uur 's nachts zou dat anders de dag ervoor opleveren.
+function vandaagTekst() {
+  const d = new Date().toLocaleDateString('nl-NL', { timeZone: 'Europe/Amsterdam', day: '2-digit', month: '2-digit', year: 'numeric' });
+  return d.replace(/\//g, '-');
+}
+
 function deadlineVan(afleverdatum) {
   const t = dagUitTekst(afleverdatum);
   return t === null ? null : t - CARPORT_MARGE_DAGEN * 86400000;
@@ -450,16 +457,23 @@ async function getCarport() {
   const maak = r => ({
     id: r.id, vehicleId: r.vehicle_id, afleverdatum: r.afleverdatum, deadline: deadlineVan(r.afleverdatum),
     volgorde: r.volgorde, status: r.status, klaarTs: r.klaar_ts, klaarDoor: r.klaar_door,
+    afgeleverdTs: r.afgeleverd_ts, afgeleverdDoor: r.afgeleverd_door, afgeleverdDatum: r.afgeleverd_datum,
     ts: r.aangemaakt_ts, door: r.aangemaakt_door, notities: r.notities || [], taken: perBon[r.id] || [],
     auto: { merk: r.merk, model: r.model, kenteken: r.kenteken, vin: r.vin, kleur: r.kleur, km: r.km, uitv: r.uitv }
   });
   const alles = bon.rows.map(maak);
+  const geleverd = b => b.afgeleverdTs !== null && b.afgeleverdTs !== undefined;
   return {
     marge: CARPORT_MARGE_DAGEN,
-    planning: alles.filter(b => b.status === 'open').sort(sorteerBonnen),
-    // Afgeleverd: nieuwste bovenaan. Dit is het logboek waar beide partijen op terugkijken, dus er
-    // wordt niets weggegooid — ook niet na een maand.
-    afgeleverd: alles.filter(b => b.status !== 'open').sort((a, b) => (b.klaarTs || 0) - (a.klaarTs || 0))
+    // Drie bakken, want afmelden en afleveren zijn twee verschillende dingen:
+    //   planning   — Carport is nog bezig
+    //   afgemeld   — Carport is klaar, de auto moet nog de deur uit
+    //   afgeleverd — de auto staat bij de klant; hier stopt het traject
+    planning: alles.filter(b => b.status === 'open' && !geleverd(b)).sort(sorteerBonnen),
+    afgemeld: alles.filter(b => b.status !== 'open' && !geleverd(b)).sort((a, b) => (b.klaarTs || 0) - (a.klaarTs || 0)),
+    // Nieuwste bovenaan. Dit is het logboek waar beide partijen op terugkijken, dus er wordt niets
+    // weggegooid — ook niet na een maand.
+    afgeleverd: alles.filter(geleverd).sort((a, b) => (b.afgeleverdTs || 0) - (a.afgeleverdTs || 0))
   };
 }
 
@@ -1060,6 +1074,28 @@ const server = http.createServer(async (req, res) => {
       console.log('carport:', u.u, klaar ? 'afgemeld' : 'teruggezet', r.rows[0].vehicle_id);
       return sendJson(res, 200, { ok: true });
     }
+
+    // Afgeleverd: de auto staat bij de klant. Bewust een andere handeling dan afmelden — Carport
+    // meldt af als het werk klaar is, Prieva vinkt af als de auto de deur uit is. Daarom ook alleen
+    // team en admin: Carport kan niet weten of de klant is geweest.
+    if (url === '/api/carport-afgeleverd' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (!magPlannen(u)) return sendJson(res, 403, { error: 'alleen Prieva kan een auto afleveren' });
+      const b = await readBody(req) || {};
+      if (!b.id) return sendJson(res, 400, { error: 'missing' });
+      const af = b.afgeleverd !== false;
+      const datum = (b.datum && /^\d{2}-\d{2}-\d{4}$/.test(String(b.datum).trim())) ? String(b.datum).trim() : vandaagTekst();
+      const r = await pool.query(
+        `UPDATE carport_bonnen SET afgeleverd_ts=$2, afgeleverd_door=$3, afgeleverd_datum=$4,
+                volgorde=NULL, updated_at=now() WHERE id=$1 RETURNING vehicle_id`,
+        [b.id, af ? Date.now() : null, af ? (u.n || u.u) : null, af ? datum : null]);
+      if (!r.rows.length) return sendJson(res, 404, { error: 'onbekende bon' });
+      console.log('aflevering:', u.u, af ? 'afgeleverd ' + datum : 'teruggezet', r.rows[0].vehicle_id);
+      return sendJson(res, 200, { ok: true, datum: af ? datum : null });
+    }
+
+    // De afleverdatum verzetten kan al via /api/carport-bon; dit endpoint gaat alleen over de
+    // vraag of de auto de deur uit is.
 
     if (url === '/api/bpmreports' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r === 'carport') return sendJson(res, 403, { error: 'forbidden' }); return sendJson(res, 200, await getBpm()); }
     // Eén rapport bij één auto (de bestaande weg: je zit al op de pagina van die auto).

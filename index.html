@@ -1655,7 +1655,10 @@ const dagUit=d=>{ const m=/^(\d{2})-(\d{2})-(\d{4})$/.exec(String(d||'')); retur
 
 function afleverPaneel(){
   const marge=carportData.marge||2;
-  const lijst=(carportData.planning||[]).filter(b=>b.afleverdatum)
+  // Zowel de auto's waar Carport nog aan werkt als de auto's die Carport al heeft afgemeld: allebei
+  // moeten ze nog de deur uit. Stonden hier alleen de open werkbonnen, dan verdween een aflevering
+  // uit beeld op het moment dat Carport klaar was — precies andersom dan de bedoeling.
+  const lijst=[...(carportData.planning||[]),...(carportData.afgemeld||[])].filter(b=>b.afleverdatum)
     .sort((a,b)=>(dagUit(a.afleverdatum)||0)-(dagUit(b.afleverdatum)||0));
   if(!lijst.length) return '';
   const rij=b=>{
@@ -1683,7 +1686,13 @@ function afleverPaneel(){
         <div class="bon-auto"><div class="nm">${esc(a.merk||'')} ${esc(a.model||'')}</div>
           <div class="id">${a.kenteken&&a.kenteken!=='—'?esc(a.kenteken):esc(a.vin||'')} · aflevering ${esc(b.afleverdatum)}</div></div>
         ${tijdChip(aflever,`Aflevering ${b.afleverdatum}`)}
+        ${b.status!=='open'?`<span class="badge b-lopende" title="Carport heeft dit werk afgemeld">Carport klaar</span>`:''}
         <span class="note" style="margin:0">${open?open+' open':'alles af'} van ${b.taken.length}</span>
+        ${magPlannen()?`<span onclick="event.stopPropagation()" style="display:flex;gap:6px;align-items:center">
+          <input class="inp" id="afl-datum-${b.id}" style="width:118px;padding:4px 8px;font-size:12px" value="${esc(b.afleverdatum||'')}" title="Afleverdatum verzetten" onkeydown="if(event.key==='Enter')afleverDatum(${b.id})">
+          <button class="btn btn-ghost btn-sm" onclick="afleverDatum(${b.id})" title="Nieuwe datum opslaan">Verzetten</button>
+          <button class="btn btn-primary btn-sm" onclick="afleveren(${b.id})" title="De auto staat bij de klant">Afgeleverd</button>
+        </span>`:''}
       </div>
       ${uit?`<div class="bon-body" style="display:flex;gap:26px;flex-wrap:wrap">
         ${takenlijst('Bij Carport',carportTaken,carportTot,`Klaar ${marge} dagen vóór aflevering, zodat de auto nog naar de poetser kan`)}
@@ -1692,9 +1701,46 @@ function afleverPaneel(){
     </div>`;
   };
   return `<div class="card"><h3>Geplande afleveringen <span class="gcount">${lijst.length}</span></h3><div class="card-body">
-    <div class="note" style="margin-top:0">De eerstvolgende bovenaan. Klik een auto open om te zien wat er nog ligt — Carport moet ${marge} dagen vóór de aflevering klaar zijn, daarna is de poetser aan de beurt.</div>
+    <div class="note" style="margin-top:0">De eerstvolgende bovenaan. Klik een auto open om te zien wat er nog ligt — Carport moet ${marge} dagen vóór de aflevering klaar zijn, daarna is de poetser aan de beurt. Staat de auto bij de klant, druk dan op <b>Afgeleverd</b>.</div>
     ${lijst.map(rij).join('')}
+  </div></div>` + afgeleverdPaneel();
+}
+
+/* Wat er de afgelopen twee weken is afgeleverd. Kort zichtbaar en niet langer: dit is er om een
+   vergissing meteen te kunnen terugdraaien, niet als archief — dat staat op de Carport-pagina. */
+const AFGELEVERD_DAGEN=14;
+function afgeleverdPaneel(){
+  const grens=Date.now()-AFGELEVERD_DAGEN*86400000;
+  const l=(carportData.afgeleverd||[]).filter(b=>(b.afgeleverdTs||0)>=grens);
+  if(!l.length) return '';
+  return `<div class="card"><h3>Afgeleverd <span class="gcount">${l.length}</span></h3><div class="card-body">
+    <div class="note" style="margin-top:0">De laatste ${AFGELEVERD_DAGEN} dagen. Per ongeluk afgevinkt? Zet hem terug, dan staat hij weer in de planning.</div>
+    ${l.map(b=>{const a=b.auto||{};return `<div class="taak af" style="padding:7px 0">
+      <span class="tk"><b>${esc(a.merk||'')} ${esc(a.model||'')}</b> · ${esc(a.kenteken&&a.kenteken!=='—'?a.kenteken:a.vin||'')}
+        — afgeleverd ${esc(b.afgeleverdDatum||'')}${b.afgeleverdDoor?' door '+esc(b.afgeleverdDoor):''}</span>
+      ${magPlannen()?`<button class="btn btn-ghost btn-sm" onclick="afleverTerug(${b.id})">Terugzetten</button>`:''}
+    </div>`;}).join('')}
   </div></div>`;
+}
+
+/* De drie handelingen rond afleveren. Ze lezen daarna opnieuw in en tekenen de héle pagina opnieuw:
+   de aflevering staat op Vandaag én op de Carport-pagina, en die mogen niet uiteenlopen. */
+async function afleverDoe(pad,body,melding){
+  try{
+    const r=await fetch(pad,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ showToast(j.melding||j.error||"Actie mislukt",false); return null; }
+    await loadCarport(); rerenderCurrent();
+    if(melding)showToast(melding,true);
+    return j;
+  }catch(_){ showToast("Geen verbinding met de server",false); return null; }
+}
+function afleveren(id){ afleverDoe('/api/carport-afgeleverd',{id,afgeleverd:true},"Afgeleverd — hij staat nu onder Afgeleverd"); }
+function afleverTerug(id){ afleverDoe('/api/carport-afgeleverd',{id,afgeleverd:false},"Teruggezet in de planning"); }
+function afleverDatum(id){
+  const inp=document.getElementById('afl-datum-'+id); const t=(inp&&inp.value||'').trim();
+  if(t&&!/^\d{2}-\d{2}-\d{4}$/.test(t)){ showToast("Datum als dd-mm-jjjj",false); return; }
+  afleverDoe('/api/carport-bon',{id,afleverdatum:t||null},"Afleverdatum bijgewerkt");
 }
 /* ===== Garantiegevallen =====
    Meldingen over een auto die al geleverd is. Ze staan op Vandaag omdat ze anders uit beeld raken:
@@ -1772,10 +1818,10 @@ function garantiePaneel(){
 /* ===== Carport: werkbonnen en planning =====
    De deadline is de gewenste afleverdatum min de marge (standaard 2 dagen), zodat de auto daarna nog
    naar de poetser kan. De server rekent hem uit en stuurt hem mee; hier tonen we alleen. */
-let carportData={marge:2,planning:[],afgeleverd:[]};
+let carportData={marge:2,planning:[],afgemeld:[],afgeleverd:[]};
 async function loadCarport(){ if(!apiOk)return;
   try{ const r=await fetch("/api/carport",{cache:"no-store"}); if(r.ok){ const d=await r.json();
-    if(d&&Array.isArray(d.planning)){ carportData=d; carportData.afgeleverd=d.afgeleverd||[]; } } }catch(_){}
+    if(d&&Array.isArray(d.planning)){ carportData=d; carportData.afgemeld=d.afgemeld||[]; carportData.afgeleverd=d.afgeleverd||[]; } } }catch(_){}
 }
 function deadlineChip(bon){
   if(!bon.deadline) return `<span class="dl geen" title="Zonder afleverdatum is er niets te plannen. Prieva vult die in.">geen afleverdatum</span>`;
@@ -1837,7 +1883,7 @@ function bonKaart(bon,sleepbaar){
 }
 
 function renderCarport(){
-  const p=carportData.planning, af=carportData.afgeleverd;
+  const p=carportData.planning, af=carportData.afgemeld||[], gel=carportData.afgeleverd||[];
   const eigenVolgorde=p.some(b=>b.volgorde!==null&&b.volgorde!==undefined);
   const gek=p.filter(b=>heeftKenteken(b.auto||{})), ong=p.filter(b=>!heeftKenteken(b.auto||{}));
   const kop=isCarport()
@@ -1865,11 +1911,22 @@ function renderCarport(){
         <div class="note" style="margin-top:0">Nog geen kenteken, dus geen APK. Voorwerk dat vast opgepakt kan worden als het rustig is — groot werk hier eerst weghalen scheelt straks doorlooptijd.</div>
         ${ong.length?ong.map(b=>bonKaart(b,true)).join(""):`<div class="empty">Geen ongekentekende auto's op de planning.</div>`}
       </div></div>`
-    + `<div class="card"><h3>Afgeleverd <span class="gcount">${af.length}</span></h3><div class="card-body" style="padding:0 4px">
+    // Twee logboeken, want het zijn twee momenten. "Afgemeld" is van Carport: het werk is klaar.
+    // "Afgeleverd" is van Prieva: de auto staat bij de klant. Daartussen zit soms een week.
+    + `<div class="card"><h3>Afgemeld door Carport <span class="gcount">${af.length}</span></h3><div class="card-body" style="padding:0 4px">
+        <div class="note" style="margin:8px 4px 0">Werk klaar, auto staat nog hier. Prieva vinkt hem af zodra hij de deur uit is.</div>
         ${af.length?`<div class="tabelwrap"><table><thead><tr><th>Voertuig</th><th>Aflevering gewenst</th><th>Afgemeld</th><th>Door</th><th>Werk</th></tr></thead><tbody>
           ${af.map(b=>`<tr><td><div class="nm" style="font-weight:600">${esc((b.auto.merk||'')+' '+(b.auto.model||''))}</div><div class="id" style="font-size:11px;color:var(--muted)">${esc(b.auto.kenteken&&b.auto.kenteken!=='—'?b.auto.kenteken:b.auto.vin||'')}</div></td>
             <td>${esc(b.afleverdatum||'—')}</td><td>${b.klaarTs?fmtDate(b.klaarTs):'—'}</td><td>${esc(b.klaarDoor||'—')}</td>
-            <td>${b.taken.filter(t=>t.klaar).length}/${b.taken.length} afgevinkt${magPlannen()?` <button class="btn btn-ghost btn-sm" onclick="carportTerug(${b.id})">Terug op planning</button>`:''}</td></tr>`).join("")}
+            <td>${b.taken.filter(t=>t.klaar).length}/${b.taken.length} afgevinkt${magPlannen()?` <button class="btn btn-ghost btn-sm" onclick="carportTerug(${b.id})">Terug op planning</button>${b.afleverdatum?` <button class="btn btn-primary btn-sm" onclick="afleveren(${b.id})">Afgeleverd</button>`:''}`:''}</td></tr>`).join("")}
+        </tbody></table></div>`:`<div class="empty">Niets afgemeld dat nog op aflevering wacht.</div>`}
+      </div></div>`
+    + `<div class="card"><h3>Afgeleverd <span class="gcount">${gel.length}</span></h3><div class="card-body" style="padding:0 4px">
+        <div class="note" style="margin:8px 4px 0">De auto staat bij de klant. Dit logboek wordt nooit opgeschoond.</div>
+        ${gel.length?`<div class="tabelwrap"><table><thead><tr><th>Voertuig</th><th>Aflevering gewenst</th><th>Werkelijk afgeleverd</th><th>Door</th><th>Werk</th></tr></thead><tbody>
+          ${gel.map(b=>`<tr><td><div class="nm" style="font-weight:600">${esc((b.auto.merk||'')+' '+(b.auto.model||''))}</div><div class="id" style="font-size:11px;color:var(--muted)">${esc(b.auto.kenteken&&b.auto.kenteken!=='—'?b.auto.kenteken:b.auto.vin||'')}</div></td>
+            <td>${esc(b.afleverdatum||'—')}</td><td>${esc(b.afgeleverdDatum||'—')}</td><td>${esc(b.afgeleverdDoor||'—')}</td>
+            <td>${b.taken.filter(t=>t.klaar).length}/${b.taken.length} afgevinkt${magPlannen()?` <button class="btn btn-ghost btn-sm" onclick="afleverTerug(${b.id})">Terugzetten</button>`:''}</td></tr>`).join("")}
         </tbody></table></div>`:`<div class="empty">Nog niets afgeleverd.</div>`}
       </div></div>`;
   syncHistory();
