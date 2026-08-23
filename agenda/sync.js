@@ -26,7 +26,20 @@ const naArg = n => { const i = process.argv.indexOf(n); return i > -1 ? process.
   const toets = naArg('--toets');
   if (toets) {
     const tok = await K.inloggen();
-    const a = await K.agenda(tok, toets);
+    let a;
+    // Een nette regel in plaats van een stapel regels uit node: dit is de stap waar iemand die de
+    // koppeling inricht op vastloopt, en die heeft aan een foutmelding met bestandsnaam niets.
+    try { a = await K.agenda(tok, toets); }
+    catch (e) {
+      console.log('lukt niet: ' + e.message);
+      if (e.status === 404) console.log(
+        'Het service-account heeft nu geen enkele toegang tot deze agenda.\n' +
+        'Deel hem met prieva-vehicle-platform-autobo@prieva-vehicle-platform.iam.gserviceaccount.com,\n' +
+        'recht "Wijzigingen aan afspraken aanbrengen". Blijft dit staan, kijk dan in de Google-\n' +
+        'beheerconsole bij Agenda > Opties voor extern delen: staat die op alleen vrij/bezet, dan kan\n' +
+        'een account van buiten het domein dit recht niet krijgen.');
+      process.exitCode = 1; return;
+    }
     console.log(`gevonden: ${a.summary}  (tijdzone ${a.timeZone})`);
     try { const l = await K.aanmelden(tok, toets); console.log(`aangemeld in de lijst, recht: ${l.accessRole}`);
       if (l.accessRole !== 'writer' && l.accessRole !== 'owner')
