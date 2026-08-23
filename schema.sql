@@ -272,3 +272,12 @@ ALTER TABLE mobilox_inruil ADD COLUMN IF NOT EXISTS melding text;
 ALTER TABLE carport_bonnen ADD COLUMN IF NOT EXISTS afgeleverd_ts     bigint;
 ALTER TABLE carport_bonnen ADD COLUMN IF NOT EXISTS afgeleverd_door   text;
 ALTER TABLE carport_bonnen ADD COLUMN IF NOT EXISTS afgeleverd_datum  text;   -- dd-mm-jjjj, de dag zelf
+
+-- ===== Doorklikken naar de advertentie in Mobilox (23-08-2026) =====
+-- Het product-id uit Mobilox, zodat PVP kan linken naar members.mobilox.nl/#vehicles/<id>. Prijs en
+-- of hij online staat komen mee omdat dat precies de twee dingen zijn die je op de autopagina wilt
+-- weten zonder over te schakelen.
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS mobilox_id     bigint;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS mobilox_prijs  numeric(12,2);
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS mobilox_online boolean;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS mobilox_ts     bigint;

@@ -97,6 +97,19 @@ function uitRegel(r, soort) {
     if (!fs.existsSync(SESSIE)) await opnieuwInloggen(page, e);
     else { await page.goto(e.MOBILOX_URL, { waitUntil: 'domcontentloaded' }); await page.waitForTimeout(1200); }
 
+    // De voorraad zoals hij in Mobilox staat: dat zijn de advertenties. Hieruit halen we het
+    // product-id, zodat PVP naar de advertentie kan doorlinken, plus de vraagprijs en of hij online
+    // staat — de twee dingen die je op de autopagina wilt zien zonder over te schakelen.
+    const producten = await page.evaluate(async () => {
+      const r = await fetch('https://api.mobilox.nl/api/v2/products?page=1&limit=500&sort=id%3Adesc&category=VOERTUIGEN_AUTO&productStatus=all', { credentials: 'include' });
+      if (!r.ok) return null;
+      const j = await r.json().catch(() => null);
+      return (j && j.products) ? j.products.map(p => ({ id: p.id, prijs: p.price,
+        online: p.publishedToWeb === true, vin: ((p.attributeValues || {}).VIN || '').trim(),
+        kenteken: ((p.attributeValues || {}).LICEN || '').trim(), titel: p.title || '' })) : null;
+    });
+    console.log(producten ? `advertenties in Mobilox: ${producten.length}` : 'advertenties: niet op te halen');
+
     const regels = [];
     for (const type of [2, 3]) {
       const rauw = await haal(page, e, type, jaar);
@@ -160,7 +173,7 @@ function uitRegel(r, soort) {
       ? (/^PVP_VERKOOP_TOKEN=(.*)$/m.exec(fs.readFileSync('/var/pvp/verkoop.env','utf8')) || [])[1] : '') || '';
     if (ECHT && !token) throw new Error('PVP_VERKOOP_TOKEN ontbreekt — zonder token weigert /api/verkocht terecht');
 
-    const uitkomsten = { gemeld:0, verkocht:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0 };
+    const uitkomsten = { gemeld:0, verkocht:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0, advertentie:0 };
     for (const { r, a } of perAuto.values()) {
       const regel = `${(a.merk+' '+a.model).padEnd(24)} ${String(a.kenteken).padEnd(11)} ${r.soort} ${r.nummer}`;
       if (!ECHT) { console.log('  zou melden: ' + regel + `  € ${r.prijs} · ${r.datum}` + (r.afleverdatum?` · aflever ${r.afleverdatum}`:'')); continue; }
@@ -219,6 +232,29 @@ function uitRegel(r, soort) {
       await pool.query(`INSERT INTO mobilox_gezien (soort,extern_id,nummer,vin,vehicle_id,uitkomst,verwerkt_ts)
         VALUES ($1,$2,$3,$4,$5,'overgeslagen',$6) ON CONFLICT (soort,extern_id) DO NOTHING`,
         [r.soort, r.externId, r.nummer, r.vin, a.id, Date.now()]);
+    }
+
+    // De advertentie aan de auto hangen. Elke ronde, want een prijs verandert en een auto gaat online
+    // en weer offline. Alleen schrijven als er iets verandert, anders staat updated_at elke ronde te
+    // schuiven op auto's waar niets mee gebeurt.
+    if (ECHT && producten) {
+      let bij = 0;
+      const { rows: nu } = await pool.query('SELECT id, mobilox_id, mobilox_prijs, mobilox_online FROM vehicles');
+      const stand = new Map(nu.map(r => [r.id, r]));
+      for (const p of producten) {
+        const a = (p.vin && perVin.get(norm(p.vin))) || (p.kenteken && perKent.get(norm(p.kenteken))) || null;
+        if (!a) continue;
+        const s = stand.get(a.id) || {};
+        const prijs = p.prijs == null ? null : Number(p.prijs);
+        const gelijk = Number(s.mobilox_id) === Number(p.id)
+          && (s.mobilox_prijs === null ? null : Number(s.mobilox_prijs)) === prijs
+          && s.mobilox_online === p.online;
+        if (gelijk) continue;
+        await pool.query('UPDATE vehicles SET mobilox_id=$2, mobilox_prijs=$3, mobilox_online=$4, mobilox_ts=$5 WHERE id=$1',
+          [a.id, p.id, prijs, p.online, Date.now()]);
+        bij++;
+      }
+      if (bij) { uitkomsten.advertentie = bij; console.log(`  ${bij} advertentie(s) gekoppeld of bijgewerkt`); }
     }
 
     // De afleverdatum bijhouden, elke ronde en over álle gekoppelde regels — niet alleen bij een

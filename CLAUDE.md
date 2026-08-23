@@ -530,6 +530,15 @@ handelingen die nergens bereikbaar waren. Vijf dingen erbij:
   zestiende (~74 px) zou dat breken.
 - **Carport: "Naar de auto →"** op elke werkbon (alleen Prieva; Carport heeft geen autopagina). Tot nu
   toe moest je het kenteken overtypen in de zoekbalk.
+- **De autopagina begint met de specificaties** (23-08-2026, opgave Prieva). Daarmee stel je vast dát
+  je de juiste auto voor je hebt; pas daarna kijk je waar hij in het traject staat. Stond eerst
+  onderaan de linkerkolom, onder de foto's — dan moet je langs alles heen scrollen om te zien of het
+  chassisnummer klopt. Nu een kaart over de volle breedte, met kolommen die zich vanzelf verdelen.
+- **Doorklikken naar de advertentie in Mobilox.** `members.mobilox.nl/#vehicles/<product-id>`; het id
+  komt van `GET /api/v2/products?category=VOERTUIGEN_AUTO&productStatus=all` en wordt door de agent
+  elke ronde gekoppeld op VIN of kenteken (`vehicles.mobilox_id`). Vraagprijs en of hij online staat
+  komen mee — dat zijn de twee dingen die je op de autopagina wilt zien zonder over te schakelen.
+  Gemeten op 23-08-2026: 70 advertenties, waarvan **61 aan een auto in PVP gekoppeld** en 51 online.
 - **Komende: "Inruilauto's uit Mobilox."** De agent legde elke inruil vast in `mobilox_inruil`, maar
   daar hoorde geen scherm bij — 128 regels waar niemand bij kon. Per regel *Overnemen als komend* of
   *Negeren*, en wat al in PVP staat wordt als zodanig herkend (op het genormaliseerde kenteken, ook als

@@ -512,13 +512,14 @@ const server = http.createServer(async (req, res) => {
       const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
       // Carport krijgt alleen de auto's die op hun eigen planning staan. Zelfde gedachte als bij de
       // taxateur: een afgeschermde rol hoort de catalogus niet te kunnen ophalen.
-      const kolommen = 'id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,import_auto,batch,note,status,factuurnr,inkoopprijs,verkoopdatum,docs,autoboek_status,autoboek_rij,autoboek_fout,verkoop_factuurnr,verkoop_factuurdatum,verkoopprijs,verkocht_gemeld_ts,verkocht_bevestigd_door';
+      const kolommen = 'id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,import_auto,batch,note,status,factuurnr,inkoopprijs,verkoopdatum,docs,autoboek_status,autoboek_rij,autoboek_fout,verkoop_factuurnr,verkoop_factuurdatum,verkoopprijs,verkocht_gemeld_ts,verkocht_bevestigd_door,mobilox_id,mobilox_prijs,mobilox_online';
       const r = u.r === 'carport'
         ? await pool.query(`SELECT ${kolommen} FROM vehicles WHERE id IN (SELECT vehicle_id FROM carport_bonnen) ORDER BY sort_order NULLS LAST, id`)
         : await pool.query(`SELECT ${kolommen} FROM vehicles ORDER BY sort_order NULLS LAST, id`);
       // inkoopprijs is numeric; die geeft pg als string terug. Hier omzetten en niet met een globale
       // type-parser, want dan raak je ook iedere toekomstige numeric elders in de app.
       return sendJson(res, 200, r.rows.map(v => ({ id: v.id, vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model, uitv: v.uitv, kleur: v.kleur, brandstof: v.brandstof, transm: v.transm, reg: v.reg, km: v.km, inkoopdatum: v.inkoopdatum, lev: v.lev, importAuto: v.import_auto, batch: v.batch, note: v.note, status: v.status, factuurnr: v.factuurnr, inkoopprijs: v.inkoopprijs === null ? null : Number(v.inkoopprijs), verkoopdatum: v.verkoopdatum, docs: Array.isArray(v.docs) ? v.docs : [],
+        mobiloxId: v.mobilox_id, mobiloxPrijs: v.mobilox_prijs === null ? null : Number(v.mobilox_prijs), mobiloxOnline: v.mobilox_online,
         autoboekStatus: v.autoboek_status, autoboekRij: v.autoboek_rij, autoboekFout: v.autoboek_fout,
         verkoopFactuurnr: v.verkoop_factuurnr, verkoopFactuurdatum: v.verkoop_factuurdatum,
         verkoopprijs: v.verkoopprijs === null ? null : Number(v.verkoopprijs),

@@ -960,8 +960,14 @@ function renderLopende(){
 function openVeh(id){
   const v=V.find(x=>x.id===id); if(!v)return; state.view="veh:"+id; setNav(v.status==='lopende'?'lopende':'komende');
   const s=steps(v); const act=currentAction(v);
+  // De advertentie in Mobilox. Het id komt van de agent; het adres is vast. Nieuw tabblad met
+  // rel="noopener", want een link naar een ander systeem hoort PVP niet te kunnen sturen.
+  const adv=v.mobiloxId?`<a href="https://members.mobilox.nl/#vehicles/${v.mobiloxId}" target="_blank" rel="noopener" title="De advertentie openen in Mobilox">Openen in Mobilox ↗</a>`
+    +(v.mobiloxPrijs!=null?` <span class="muted">· ${euro(v.mobiloxPrijs)}</span>`:'')
+    +` <span class="badge ${v.mobiloxOnline?'b-lopende':''}" title="${v.mobiloxOnline?'Staat online op de website':'Staat in Mobilox maar is niet gepubliceerd'}">${v.mobiloxOnline?'online':'niet online'}</span>`
+    :`<span class="muted">nog geen advertentie</span>`;
   const specs=[["Kenteken",v.kenteken],["VIN / chassis",`<span class="mono">${v.vin}</span>`],["Merk & model",`${v.merk} ${v.model}`],["Uitvoering",v.uitv],["1e toelating",v.reg],["Km-stand",km(v.km)],["Brandstof",v.brandstof],["Transmissie",v.transm],["Leverancier",v.lev],["Datum inkoop",v.inkoopdatum],
-    ["Factuurnummer",v.factuurnr],["Inkoopprijs",euro(v.inkoopprijs)],["Datum verkoop",v.verkoopdatum]];
+    ["Factuurnummer",v.factuurnr],["Inkoopprijs",euro(v.inkoopprijs)],["Datum verkoop",v.verkoopdatum],["Advertentie",adv]];
   const opts=['<option value="">— niemand</option>'].concat(PEOPLE.map(p=>`<option value="${p}" ${v.owner===p?'selected':''}>${p}</option>`)).join("");
   app.innerHTML=`
     <div class="back" onclick="go('${v.status}')">← Terug</div>
@@ -977,6 +983,15 @@ function openVeh(id){
         ${v.status==='lopende'?`<div style="margin-top:12px"><button class="btn btn-ghost btn-sm" onclick="askBackToKomend('${v.id}')" title="Deze auto stond per ongeluk op binnen">↩ Terug naar Komend</button></div>`:''}
       </div>
     </div>
+    <!-- Specificaties bovenaan en over de volle breedte. Dit is waarmee je vaststelt dát je de juiste
+         auto voor je hebt; pas daarna kijk je waar hij in het traject staat. Stond eerst onderaan de
+         linkerkolom, onder de foto's — dan moet je eerst langs alles heen scrollen om te zien of het
+         wel het goede chassisnummer is. Vier kolommen, want over de volle breedte worden er twee
+         belachelijk breed. -->
+    <div class="card" style="margin-bottom:18px"><h3>Specificaties</h3><div class="card-body">
+      <div class="spec-grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));column-gap:26px">
+        ${specs.map(([k,val])=>`<div class="spec"><span class="k">${k}</span><span class="v">${val||'—'}</span></div>`).join("")}
+      </div></div></div>
     <div class="det-grid">
       <div style="display:flex;flex-direction:column;gap:18px">
         ${v.status==='lopende'&&v.importAuto?taxPanel(v):''}
@@ -988,7 +1003,6 @@ function openVeh(id){
         </div></div>`:''}
         ${v.status==='lopende'&&v.importAuto?PHOTO_GROUPS.map(g=>photoCard(v,g)).join(''):''}
         ${v.status==='lopende'?adGalleryCard(v):''}
-        <div class="card"><h3>Specificaties</h3><div class="card-body"><div class="spec-grid">${specs.map(([k,val])=>`<div class="spec"><span class="k">${k}</span><span class="v">${val||'—'}</span></div>`).join("")}</div></div></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:18px">
         ${v.status==='lopende'?`<div class="card"><h3>Verantwoordelijke</h3><div class="owner-box">${v.owner?pav(v.owner):`<span class="pav" style="background:var(--slate)">?</span>`}<div style="flex:1"><div style="font-weight:600;font-size:13px">${v.owner||'Niet toegewezen'}</div><div class="muted" style="font-size:12px">voor huidige fase</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div></div>`:''}
@@ -1870,14 +1884,17 @@ function afgeleverdPaneel(){
   const grens=Date.now()-AFGELEVERD_DAGEN*86400000;
   const l=(carportData.afgeleverd||[]).filter(b=>(b.afgeleverdTs||0)>=grens);
   if(!l.length) return '';
-  return `<div class="card"><h3>Afgeleverd <span class="gcount">${l.length}</span></h3><div class="card-body">
-    <div class="note" style="margin-top:0">De laatste ${AFGELEVERD_DAGEN} dagen. Per ongeluk afgevinkt? Zet hem terug, dan staat hij weer in de planning.</div>
+  // Ingeklapt, want een afgeleverde auto is geen werk meer. Hij staat er alleen voor het geval iemand
+  // zich vergist heeft; dan is Terugzetten één klik weg. Uitklappen kost een klik, in beeld staan
+  // kost iedereen elke dag ruimte.
+  return `<details style="margin:-6px 4px 18px"><summary class="note" style="cursor:pointer">Afgeleverd — ${l.length} de laatste ${AFGELEVERD_DAGEN} dagen</summary>
+    <div style="margin-top:8px">
     ${l.map(b=>{const a=b.auto||{};return `<div class="taak af" style="padding:7px 0">
       <span class="tk"><b>${esc(a.merk||'')} ${esc(a.model||'')}</b> · ${esc(a.kenteken&&a.kenteken!=='—'?a.kenteken:a.vin||'')}
         — afgeleverd ${esc(b.afgeleverdDatum||'')}${b.afgeleverdDoor?' door '+esc(b.afgeleverdDoor):''}</span>
       ${magPlannen()?`<button class="btn btn-ghost btn-sm" onclick="afleverTerug(${b.id})">Terugzetten</button>`:''}
     </div>`;}).join('')}
-  </div></div>`;
+    </div></details>`;
 }
 
 /* De drie handelingen rond afleveren. Ze lezen daarna opnieuw in en tekenen de héle pagina opnieuw:
@@ -2077,19 +2094,23 @@ function renderCarport(){
     // "Afgeleverd" is van Prieva: de auto staat bij de klant. Daartussen zit soms een week.
     + `<div class="card"><h3>Afgemeld door Carport <span class="gcount">${af.length}</span></h3><div class="card-body" style="padding:0 4px">
         <div class="note" style="margin:8px 4px 0">Werk klaar, auto staat nog hier. Prieva vinkt hem af zodra hij de deur uit is.</div>
+        <!-- deze blijft open: hier ligt nog werk, de auto moet nog de deur uit -->
         ${af.length?`<div class="tabelwrap"><table><thead><tr><th>Voertuig</th><th>Aflevering gewenst</th><th>Afgemeld</th><th>Door</th><th>Werk</th></tr></thead><tbody>
           ${af.map(b=>`<tr><td><div class="nm" style="font-weight:600">${esc((b.auto.merk||'')+' '+(b.auto.model||''))}</div><div class="id" style="font-size:11px;color:var(--muted)">${esc(b.auto.kenteken&&b.auto.kenteken!=='—'?b.auto.kenteken:b.auto.vin||'')}</div></td>
             <td>${esc(b.afleverdatum||'—')}</td><td>${b.klaarTs?fmtDate(b.klaarTs):'—'}</td><td>${esc(b.klaarDoor||'—')}</td>
             <td>${b.taken.filter(t=>t.klaar).length}/${b.taken.length} afgevinkt${magPlannen()?` <button class="btn btn-ghost btn-sm" onclick="carportTerug(${b.id})">Terug op planning</button>${b.afleverdatum?` <button class="btn btn-primary btn-sm" onclick="afleveren(${b.id})">Afgeleverd</button>`:''}`:''}</td></tr>`).join("")}
         </tbody></table></div>`:`<div class="empty">Niets afgemeld dat nog op aflevering wacht.</div>`}
       </div></div>`
+    // Het logboek van afgeleverde auto's is een archief dat alleen maar groeit. Ingeklapt: wie wil
+    // terugkijken klapt hem open, de rest ziet zijn planning zonder eronder te scrollen.
     + `<div class="card"><h3>Afgeleverd <span class="gcount">${gel.length}</span></h3><div class="card-body" style="padding:0 4px">
-        <div class="note" style="margin:8px 4px 0">De auto staat bij de klant. Dit logboek wordt nooit opgeschoond.</div>
+        <details${gel.length?'':' open'}><summary class="note" style="cursor:pointer;margin:8px 4px">De auto staat bij de klant — logboek openklappen. Dit wordt nooit opgeschoond.</summary>
         ${gel.length?`<div class="tabelwrap"><table><thead><tr><th>Voertuig</th><th>Aflevering gewenst</th><th>Werkelijk afgeleverd</th><th>Door</th><th>Werk</th></tr></thead><tbody>
           ${gel.map(b=>`<tr><td><div class="nm" style="font-weight:600">${esc((b.auto.merk||'')+' '+(b.auto.model||''))}</div><div class="id" style="font-size:11px;color:var(--muted)">${esc(b.auto.kenteken&&b.auto.kenteken!=='—'?b.auto.kenteken:b.auto.vin||'')}</div></td>
             <td>${esc(b.afleverdatum||'—')}</td><td>${esc(b.afgeleverdDatum||'—')}</td><td>${esc(b.afgeleverdDoor||'—')}</td>
             <td>${b.taken.filter(t=>t.klaar).length}/${b.taken.length} afgevinkt${magPlannen()?` <button class="btn btn-ghost btn-sm" onclick="afleverTerug(${b.id})">Terugzetten</button>`:''}</td></tr>`).join("")}
         </tbody></table></div>`:`<div class="empty">Nog niets afgeleverd.</div>`}
+        </details>
       </div></div>`;
   syncHistory();
 }
