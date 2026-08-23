@@ -668,6 +668,49 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, id: oud.id, gewijzigd: Object.keys(gewijzigd), autoboek: ab });
     }
 
+    /* ===== Inruilauto's uit Mobilox =====
+       De agent legt elke inruil vast die hij tegenkomt. Sinds 23-08 maakt hij een nieuwe inruil zelf
+       aan bij Komende, maar de 128 regels van vóór die datum liggen er nog — en een enkele mislukt.
+       Zonder scherm zaten die in een tabel waar niemand bij kon. */
+    if (url === '/api/inruil' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const { rows } = await pool.query(
+        `SELECT i.id, i.extern_id, i.vin, i.kenteken, i.omschrijving, i.prijs, i.km, i.bpm,
+                i.status, i.pvp_id, i.melding, i.gezien_ts,
+                v.merk, v.model, v.status AS auto_status
+           FROM mobilox_inruil i
+           LEFT JOIN vehicles v ON v.id = i.pvp_id
+          ORDER BY i.gezien_ts DESC NULLS LAST, i.id DESC`);
+      // Staat de auto inmiddels toch in PVP, ook al is deze regel nooit overgenomen? Dan is er niets
+      // te doen. Op het kenteken zoeken, genormaliseerd — Mobilox schrijft het zonder streepjes.
+      const { rows: bekend } = await pool.query(
+        `SELECT id, upper(regexp_replace(coalesce(kenteken,''), '[^A-Za-z0-9]', '', 'g')) k FROM vehicles`);
+      const perKent = new Map(bekend.filter(r => r.k).map(r => [r.k, r.id]));
+      return sendJson(res, 200, { gevallen: rows.map(r => {
+        const plat = String(r.kenteken || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const alIn = r.pvp_id || perKent.get(plat) || null;
+        return { id: r.id, externId: r.extern_id, vin: r.vin, kenteken: r.kenteken, omschrijving: r.omschrijving,
+          prijs: r.prijs === null ? null : Number(r.prijs), km: r.km, bpm: r.bpm === null ? null : Number(r.bpm),
+          status: r.status, melding: r.melding, ts: r.gezien_ts, pvpId: alIn,
+          auto: alIn ? { merk: r.merk, model: r.model, status: r.auto_status } : null };
+      }) });
+    }
+
+    if (url === '/api/inruil' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const acties = { overgenomen: 'overgenomen', genegeerd: 'genegeerd', voorstel: 'voorstel' };
+      if (!b.id || !acties[b.actie]) return sendJson(res, 400, { error: 'missing' });
+      const r = await pool.query(
+        'UPDATE mobilox_inruil SET status=$2, pvp_id=COALESCE($3, pvp_id) WHERE id=$1 RETURNING id',
+        [b.id, acties[b.actie], b.pvpId || null]);
+      if (!r.rowCount) return sendJson(res, 404, { error: 'onbekende regel' });
+      console.log('inruil:', u.u, acties[b.actie], b.id, b.pvpId || '');
+      return sendJson(res, 200, { ok: true });
+    }
+
     // Auto verwijderen. Alleen admin: dit is de enige onomkeerbare handeling in PVP.
     //
     // Het Autoboek wordt NIET aangeraakt. De koppeling is met opzet alleen-toevoegen — dat is precies

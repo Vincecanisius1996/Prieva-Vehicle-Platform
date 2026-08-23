@@ -81,6 +81,8 @@ node /opt/pvp-api/setpw.js <gebruiker> <team|admin|foto|taxateur> "<wachtwoord>"
 uit), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
 `/api/adphotos-set`, `/api/taxstate` (taxateur+team+admin), `/api/bpmreports`, `/api/bpmreport`,
 `/api/bpmnotif-seen`, `/api/bpmreport-del`, `/api/vehicle` (team+admin, nieuwe auto),
+`PUT /api/vehicle` (team+admin, auto corrigeren), `/api/inruil` (GET+POST, team+admin),
+`/api/carport-afgeleverd` (**alleen team+admin**),
 `/api/vehicle-del` (**alleen admin**), `/api/vehicledoc`, `/api/uitlezen`, `/api/autoboek-retry`,
 `/api/verkoop-bevestigen` + `/api/verkoop-terug` (**alleen admin**), `/api/binnengekomen`,
 `/uploads/*` (auth).
@@ -509,6 +511,27 @@ dezelfde velden lopen uiteen, en dan mist het ene een veld dat het andere wel he
 - Voor het uploaden wordt nagekeken dat elk tabblad even veel regels houdt en dat de koprijen niet
   veranderen; daarna volgt de revisiecontrole. Mislukt het boek, dan blijft de correctie in PVP staan
   met `autoboek_status='fout'` — zichtbaar bij de auto, zelfde patroon als bij het aanmaken.
+
+## Wat er op welk scherm staat (23-08-2026)
+Na een rondgang langs alle vijf de rollen bleek het gat niet in de techniek te zitten maar in
+handelingen die nergens bereikbaar waren. Vijf dingen erbij:
+
+- **Vandaag: "Wacht op bevestiging."** Een auto op `gemeld verkocht` stond alleen in de tabel op
+  Lopende met een oranje label; je moest toevallig langslopen. Het ís een to-do, dus staat hij nu
+  boven de to-do's. Bevestigen kan alleen een admin; team ziet de melding wél, met een knop *Bekijken*.
+- **Vandaag: één regel onderaan** met wanneer de koppelingen voor het laatst rondkwamen. De banner
+  bovenaan schreeuwt alleen bij een storing; dit is de stille variant.
+- **Lopende: de afleverdatum** met dezelfde teller als op Vandaag, **in de statuskolom en niet als
+  extra kolom**. De tabel telt vijftien kolommen en past nu net zonder horizontaal schuiven; een
+  zestiende (~74 px) zou dat breken.
+- **Carport: "Naar de auto →"** op elke werkbon (alleen Prieva; Carport heeft geen autopagina). Tot nu
+  toe moest je het kenteken overtypen in de zoekbalk.
+- **Komende: "Inruilauto's uit Mobilox."** De agent legde elke inruil vast in `mobilox_inruil`, maar
+  daar hoorde geen scherm bij — 128 regels waar niemand bij kon. Per regel *Overnemen als komend* of
+  *Negeren*, en wat al in PVP staat wordt als zodanig herkend (op het genormaliseerde kenteken, ook als
+  de regel zelf nooit is overgenomen). **Overnemen gaat langs hetzelfde `POST /api/vehicle`** als de
+  knop *Auto* rechtsboven — dezelfde dubbelcontrole, dezelfde regel naar het Autoboek. Een tweede weg
+  om een auto aan te maken zou daar vroeg of laat van afwijken.
 
 ## Regels & valkuilen (belangrijk)
 - **Houd PVP strikt gescheiden van CRP.** Op dezelfde droplet draait een aparte reporting-tool (CRP)

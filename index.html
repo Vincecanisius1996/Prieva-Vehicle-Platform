@@ -713,6 +713,7 @@ function renderVandaag(){
         <div class="bs">${nr.slice(0,4).map(n=>{const vv=V.find(x=>x.id===n.id);return (vv?`${vv.merk} ${vv.model}`:'Auto')+' · '+fmtDate(n.ts);}).join(' — ')}</div></div>
       <button class="btn btn-ghost btn-sm" onclick="markBpmSeen()">Gezien</button></div>`;})()}
     ${agentBanner()}
+    ${bevestigPaneel()}
     ${afleverPaneel()}
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 4px 12px">
       <h3 style="margin:0;font-size:16px">To-do — per persoon <span class="agechip" style="color:var(--accent);background:var(--blue-soft)">${openCount} open</span></h3>
@@ -734,7 +735,20 @@ function renderVandaag(){
     </div>
     <div class="card" style="margin-bottom:18px"><h3>Verwacht binnenkort — aanvinken zodra binnen <span class="btn btn-ghost btn-sm" onclick="go('komende')">Alle komende →</span></h3>
       <div class="card-body" style="padding:0 4px">${verwacht.length?komTable(verwacht):`<div class="empty">Alle verwachte auto's zijn aangevinkt.</div>`}</div></div>
+    ${agentRegel()}
   `;
+}
+
+/* Eén regel onderaan Vandaag met wanneer de koppelingen voor het laatst rondkwamen. De banner
+   bovenaan schreeuwt alleen als er iets stuk is; dit is de stille variant, voor als je je afvraagt
+   hoe vers het beeld is. Bewust klein en onderaan: het is geen werk, het is een geruststelling. */
+function agentRegel(){
+  if(!agents.length) return '';
+  const nu=Date.now();
+  const oud=t=>{ if(!t) return 'nog nooit'; const m=Math.round((nu-t)/60000);
+    return m<2?'zojuist':m<90?m+' min geleden':Math.round(m/60)+' uur geleden'; };
+  return `<div class="note" style="text-align:right;margin:0 4px 6px">${
+    agents.map(a=>`${AGENT_NAMEN[a.naam]||a.naam}: ${a.ok===false?'<b>loopt vast</b> — laatst gelukt '+oud(a.geluktTs):'bijgewerkt '+oud(a.geluktTs)}`).join(' · ')}</div>`;
 }
 /* ===== Logboek (alleen admin: Vince & Floris) ===== */
 function renderLog(){
@@ -798,7 +812,85 @@ function renderKomende(){
     <p class="page-sub">Nieuw ingekocht? Voeg hem toe met <b>${ico("plus")} Auto</b> rechtsboven. <b>Vink een auto aan zodra hij binnen is</b> — hij verdwijnt dan uit deze lijst en verhuist naar Lopende, waar de to-do voor stap 1 (RDW Foto's) gaat lopen.</p>
     <div class="groupwrap">
       ${groepen || `<div class="empty">${state.q?`Geen komende auto's die op “${state.q}” passen.`:`Geen komende auto's meer — alles is binnen. Nieuw ingekocht? Gebruik <b>${ico("plus")} Auto</b> rechtsboven.`}</div>`}
-    </div>`;
+    </div>
+    ${inruilPaneel()}`;
+}
+
+/* ===== Inruilauto's uit Mobilox =====
+   De agent legt elke inruil vast die hij op een verkoopovereenkomst tegenkomt. Sinds 23-08-2026 maakt
+   hij een nieuwe inruil zelf aan bij Komende; de regels van vóór die datum liggen er nog, en die
+   zaten in een tabel waar geen scherm bij hoorde. Hier staan ze, met per regel één knop.
+
+   Overnemen gaat langs hetzelfde /api/vehicle als de knop Auto rechtsboven — dus met dezelfde
+   controle op dubbelen en dezelfde regel naar het Autoboek. Een tweede manier om een auto aan te
+   maken zou daar vroeg of laat van afwijken. */
+let inruilen=[];
+async function loadInruil(){ if(!apiOk)return;
+  try{ const r=await fetch("/api/inruil",{cache:"no-store"}); if(r.ok){ const d=await r.json(); if(d&&Array.isArray(d.gevallen))inruilen=d.gevallen; } }catch(_){}
+}
+function inruilRegel(g){
+  const staatEr=!!g.pvpId;
+  const merk=(g.omschrijving||'').split(' ')[0]||'';
+  return `<div class="taak ${staatEr||g.status==='genegeerd'?'af':''}" style="padding:7px 0">
+    <span class="tk"><b>${esc(g.kenteken?kentekenNet(g.kenteken):(g.vin||'?'))}</b> · ${esc(g.omschrijving||'onbekend')}
+      <span class="muted" style="font-size:11px">${g.prijs!=null?' · € '+Number(g.prijs).toLocaleString('nl-NL'):''}${g.km!=null?' · '+Number(g.km).toLocaleString('nl-NL')+' km':''}${g.ts?' · gezien '+fmtDate(g.ts):''}</span>
+      ${staatEr?`<span class="badge b-lopende">staat in PVP${g.auto&&g.auto.status?' — '+esc(g.auto.status):''}</span>`:''}
+      ${g.status==='genegeerd'&&!staatEr?`<span class="badge">genegeerd</span>`:''}
+      ${g.melding?`<span class="muted" style="font-size:11px"> · ${esc(g.melding)}</span>`:''}</span>
+    ${staatEr?`<button class="btn btn-ghost btn-sm" onclick="openVeh('${esc(g.pvpId)}')">Naar de auto →</button>`
+      :g.status==='genegeerd'?`<button class="btn btn-ghost btn-sm" onclick="inruilDoe(${g.id},'voorstel')">Terugzetten</button>`
+      :`<button class="btn btn-primary btn-sm" onclick="inruilOvernemen(${g.id})">Overnemen als komend</button>
+        <button class="btn btn-ghost btn-sm" onclick="inruilDoe(${g.id},'genegeerd')" title="Deze auto hebben we niet (meer)">Negeren</button>`}
+  </div>`;
+}
+function inruilPaneel(){
+  if(!inruilen.length) return '';
+  const teDoen=inruilen.filter(g=>!g.pvpId&&g.status!=='genegeerd');
+  const rest=inruilen.filter(g=>g.pvpId||g.status==='genegeerd');
+  return `<div class="card" style="margin-top:18px"><h3>Inruilauto's uit Mobilox <span class="gcount">${teDoen.length}</span></h3><div class="card-body">
+    <div class="note" style="margin-top:0">Ingeruild op een verkoopovereenkomst. Een nieuwe inruil zet de agent zelf op Komende; dit zijn de regels die dat nog niet zijn. <b>Overnemen</b> maakt de auto aan zoals de knop ${ico("plus")} Auto dat doet, inclusief de regel in het Autoboek.</div>
+    ${teDoen.length?teDoen.map(inruilRegel).join(''):`<div class="empty" style="padding:14px">Niets meer te doen — alle inruilers staan in PVP of zijn genegeerd.</div>`}
+    ${rest.length?`<details style="margin-top:10px"><summary class="note" style="cursor:pointer">Al afgehandeld (${rest.length})</summary>
+      <div style="margin-top:8px">${rest.map(inruilRegel).join('')}</div></details>`:''}
+  </div></div>`;
+}
+// Zelfde groepering als in mobilox/inruil.js, zodat het scherm hetzelfde kenteken toont als PVP straks opslaat.
+function kentekenNet(ruw){
+  const k=String(ruw||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(k.length!==6) return k;
+  const g=k.match(/[A-Z]+|[0-9]+/g)||[];
+  if(g.length===3) return g.join('-');
+  if(g.length===2){ const [a,b]=g;
+    if(a.length===2&&b.length===4) return `${a}-${b.slice(0,2)}-${b.slice(2)}`;
+    if(a.length===4&&b.length===2) return `${a.slice(0,2)}-${a.slice(2)}-${b}`; }
+  return k;
+}
+async function inruilDoe(id,actie,pvpId){
+  try{
+    const r=await fetch("/api/inruil",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,actie,pvpId})});
+    if(!r.ok){ showToast("Actie mislukt",false); return false; }
+    await loadInruil(); rerenderCurrent(); return true;
+  }catch(_){ showToast("Geen verbinding met de server",false); return false; }
+}
+async function inruilOvernemen(id){
+  const g=inruilen.find(x=>x.id===id); if(!g)return;
+  const woorden=String(g.omschrijving||'').trim().split(/\s+/);
+  const body={ kenteken:kentekenNet(g.kenteken), vin:g.vin||'', merk:woorden[0]||'', model:woorden[1]||'',
+    uitv:woorden.slice(2).join(' '), km:g.km!=null?String(g.km):'', inkoopprijs:g.prijs!=null?String(g.prijs):'',
+    lev:'Inruil', importAuto:false, note:'Inruil, overgenomen uit Mobilox' };
+  if(!body.kenteken&&!body.vin){ showToast("Deze regel heeft geen kenteken en geen chassisnummer",false); return; }
+  try{
+    const r=await fetch("/api/vehicle",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(r.status===409){ await inruilDoe(id,'overgenomen',j.id); showToast("Stond al in PVP — regel afgehandeld",true); return; }
+    if(!r.ok){ showToast("Overnemen mislukt",false); return; }
+    await inruilDoe(id,'overgenomen',j.id);
+    await loadVehicles(); await loadState();
+    logActivity('Inruil overgenomen',[body.merk,body.model].filter(Boolean).join(' ')||j.id,j.id); scheduleSave();
+    const ab=j.autoboek||{};
+    showToast("Bij Komende gezet"+(ab.status==='ok'?" — ook in het Autoboek ✓":ab.status==='fout'?" — NIET in het Autoboek":""),true);
+    rerenderCurrent();
+  }catch(_){ showToast("Geen verbinding met de server",false); }
 }
 
 /* ===== Lopende ===== */
@@ -840,8 +932,13 @@ function renderLopende(){
       :a==null?`<span class="badge b-lopende">✓ Verkoopklaar</span>`
       :(a.decision?`<span class="phase-lab">BPM Taxatie?</span> <span class="need">keuze nodig</span>`:`<span class="phase-lab">${a.actie}</span>`);
     const rb=v.importAuto&&v.route?`<span class="route-badge rbg-${v.route==='JA'?'ja':'nee'}">${v.route}</span>`:'';
+    // De afleverdatum hoort hier thuis: dat is de deadline van het hele traject, en tot nu toe was
+    // hij alleen op de Carport-pagina te zien. Bewust géén extra kolom — de tabel telt er al vijftien
+    // en past nu precies zonder horizontaal schuiven; dit past in de cel die er al is.
+    const bon=afleverBonVan(v.id);
     return `<tr onclick="openVeh('${v.id}')" style="cursor:pointer">${boekCellen(v)}
-      <td style="min-width:230px"><div class="pbar"><div class="pfill" style="width:${pct}%"></div></div><div style="margin-top:5px;white-space:nowrap">${cur} <span class="muted" style="font-size:11px">· ${s.done}/${s.total}</span></div></td>
+      <td style="min-width:230px"><div class="pbar"><div class="pfill" style="width:${pct}%"></div></div><div style="margin-top:5px;white-space:nowrap">${cur} <span class="muted" style="font-size:11px">· ${s.done}/${s.total}</span></div>
+        ${bon?`<div style="margin-top:4px;white-space:nowrap">${tijdChip(dagUit(bon.afleverdatum),`Aflevering ${bon.afleverdatum}`)} <span class="muted" style="font-size:11px">aflevering ${esc(bon.afleverdatum)}</span></div>`:''}</td>
       <td><span class="tag ${v.importAuto?'tag-imp':'tag-nl'}">${v.importAuto?'Import':'NL'}</span> ${rb}</td>
       <td>${v.owner?pav(v.owner):`<span class="pav" style="background:var(--slate)">?</span>`}</td></tr>`;}).join("");
   app.innerHTML=`
@@ -1665,6 +1762,24 @@ async function loadBpm(){ if(!apiOk)return; try{ const r=await fetch("/api/bpmre
    Wat er nog moet gebeuren vóór een auto de deur uit kan, gesorteerd op de dichtstbijzijnde
    aflevering. Het werk is verdeeld over twee partijen met verschillende deadlines: Carport moet klaar
    zijn ${marge} dagen vóór de aflevering, zodat de poetser daarna nog aan de beurt komt. */
+/* ===== Verkopen die op een bevestiging wachten =====
+   Een auto op 'gemeld verkocht' stond alleen in de tabel op Lopende, met een oranje label. Je moest
+   dus toevallig langslopen om te zien dat er iets op je wachtte — terwijl de regel pas ná het
+   bevestigen in het Autoboek belandt. Daarom hier, boven de to-do's: het ís een to-do. */
+function bevestigPaneel(){
+  const l=V.filter(v=>v.status==='gemeld verkocht');
+  if(!l.length) return '';
+  return `<div class="card"><h3>Wacht op bevestiging <span class="gcount">${l.length}</span></h3><div class="card-body">
+    <div class="note" style="margin-top:0">Gemeld als verkocht. Pas na het bevestigen verhuist de regel in het Autoboek van Lopende naar Verkochte.${isAdmin()?'':' Bevestigen kan alleen een beheerder — Vince of Floris.'}</div>
+    ${l.map(v=>`<div class="taak" style="padding:7px 0">
+      <span class="tk" onclick="openVeh('${v.id}')" style="cursor:pointer"><b>${esc(v.merk||'')} ${esc(v.model||'')}</b> · ${esc(v.kenteken&&v.kenteken!=='—'?v.kenteken:v.vin||'')}
+        ${v.verkoopFactuurnr?`— factuur ${esc(v.verkoopFactuurnr)}`:''}${v.verkoopFactuurdatum?` · ${esc(v.verkoopFactuurdatum)}`:''}${v.verkoopprijs!=null?` · € ${Number(v.verkoopprijs).toLocaleString('nl-NL')}`:''}</span>
+      ${isAdmin()?`<button class="btn btn-primary btn-sm" onclick="bevestigVerkoop('${v.id}')">Verkoop bevestigen</button>`
+                 :`<button class="btn btn-ghost btn-sm" onclick="openVeh('${v.id}')">Bekijken</button>`}
+    </div>`).join('')}
+  </div></div>`;
+}
+
 /* ===== Melden als een achtergrondtaak stilstaat =====
    De lijst hieronder is zo actueel als de laatste ronde van de Mobilox-agent. Staat die stil, dan
    klopt het scherm niet meer terwijl het er precies hetzelfde uitziet — en dat is het gevaarlijke
@@ -1689,6 +1804,12 @@ function agentBanner(){
     <div style="flex:1"><div class="bt">${stuk.length===1?'Een achtergrondtaak loopt niet':'Achtergrondtaken lopen niet'}</div>
       <div class="bs">${stuk.map(a=>`${AGENT_NAMEN[a.naam]||a.naam}: ${oud(a.geluktTs)}${a.melding&&a.ok===false?' — '+esc(a.melding):''}`).join(' · ')}.
         Wat hieronder staat kan verouderd zijn.</div></div></div>`;
+}
+// De openstaande werkbon van een auto, als die een afleverdatum heeft. Gebruikt op Lopende en op
+// de auto zelf, zodat de afleverdatum niet alleen op de Carport-pagina staat.
+function afleverBonVan(vehicleId){
+  return [...(carportData.planning||[]),...(carportData.afgemeld||[])]
+    .find(b=>b.vehicleId===vehicleId&&b.afleverdatum)||null;
 }
 let afleverOpen=null;
 function afleverKlap(id){ afleverOpen = (afleverOpen===id ? null : id); rerender(); }
@@ -1894,6 +2015,10 @@ const isCarport=()=>currentUser&&currentUser.role==='carport';
 
 function bonKaart(bon,sleepbaar){
   const a=bon.auto||{};
+  // Vanaf een werkbon door naar de auto. Alleen voor Prieva: Carport heeft geen autopagina, en tot nu
+  // toe moest je het kenteken overtypen in de zoekbalk om van de planning naar het dossier te komen.
+  const naarAuto=magPlannen()&&bon.vehicleId
+    ? `<button class="btn btn-ghost btn-sm" title="De auto openen in PVP" onclick="event.stopPropagation();openVeh('${bon.vehicleId}')">Naar de auto →</button>` : '';
   const open=bon.taken.filter(t=>!t.klaar).length;
   const taken=bon.taken.length
     ? bon.taken.map(t=>`<div class="taak ${t.klaar?'af':''}">
@@ -1916,6 +2041,7 @@ function bonKaart(bon,sleepbaar){
       ${deadlineChip(bon)}
       <span class="note" style="margin:0">${bon.afleverdatum?'aflevering '+esc(bon.afleverdatum):''}</span>
       ${magPlannen()?`<button class="btn btn-ghost btn-sm" onclick="carportDatum(${bon.id},'${esc(bon.afleverdatum||'')}')">Datum</button>`:''}
+      ${naarAuto}
       <span class="note" style="margin:0">${open?open+' open':'alles af'}</span>
       <button class="btn btn-primary btn-sm" onclick="carportAfmelden(${bon.id})">Auto staat klaar</button>
     </div>
@@ -2362,7 +2488,7 @@ async function startFor(){
   if(foto){ state.view='foto'; loadAdphotos().then(loadStatusFoto).then(renderFoto); }
   else if(tax){ state.view='tax'; loadTaxState().then(loadBpm).then(renderTax); }
   else if(cp){ state.view='carport'; loadCarport().then(renderCarport); }
-  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie()]).then(()=>go('vandaag')); }
+  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil()]).then(()=>go('vandaag')); }
 }
 async function boot(){
   try{ const r=await fetch("/api/me",{cache:"no-store"});
