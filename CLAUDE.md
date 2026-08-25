@@ -409,6 +409,23 @@ Sinds 23-08-2026. Twee stuks, bedoeld om `CLAUDE.md` niet verder te laten uitdij
 - **`pvp-testen`** — het jsdom-recept zonder browser, de vallen die tijd hebben gekost, en wat je
   minimaal doorloopt vóór een deploy.
 
+## Taken per auto en de voortgangsring
+Sinds 25-08-2026. Een auto heeft twee soorten taken: de **extra taken** die Prieva zelf toevoegt
+(`vehicles.subtasks`) en het **werk op de Carport-bon** (`carport_taken`). `takenVan(id)` telt ze bij
+elkaar op — één teller, want twee percentages voor dezelfde auto zet mensen aan het rekenen.
+
+`takenRing(af, totaal)` tekent dat als een ringetje met `3/5` en `60%`, groen bij 100%. Hij staat op
+vier plekken: de statuskolom op *Lopende*, de afleverkaarten op *Vandaag*, de werkbonnen bij *Carport*
+en de kaart **Taken** op de auto zelf.
+
+- **Afvinken kan zonder de auto te openen.** Op Vandaag klap je een aflevering open en vink je daar af;
+  op de Carport-pagina staan de bonnen nu **dicht**, met de voortgang op de kop, en klap je open wat je
+  nodig hebt. Bij twaalf bonnen met elk vijf regels was die pagina anders een lijst om in te zoeken.
+- Op de auto zelf staan onder **Taken** eerst de eigen taken en daaronder het werk van de werkbon,
+  allebei afvinkbaar. Dat werk stond eerder alleen op de Carport-pagina.
+- De kaart verschijnt ook bij status `gemeld verkocht`: die auto is verkocht maar er wordt nog aan
+  gewerkt, en juist dan wil je zien wat er nog ligt.
+
 ## Carport: werkbonnen en planning
 Sinds 20-08-2026. Twee tabellen: `carport_bonnen` (één per auto die bij Carport staat) en
 `carport_taken` (de regels: reparatie, APK, beurt, onderdeel). Notities staan als jsonb op de bon.

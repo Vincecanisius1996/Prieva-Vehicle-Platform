@@ -312,6 +312,15 @@
   .fotocount{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--slate-soft);color:var(--slate)}
   .fotocount.has{background:var(--green-soft);color:var(--green)}
   /* sleep-bak (RDW-foto's in één keer) */
+  /* Voortgangsring bij de taken van een auto. Klein genoeg om in een tabelcel te passen. */
+  .tring{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .tring b{color:var(--ink);font-size:12px}
+  .tring svg{transform:rotate(-90deg);flex:none}
+  .tring .trbg{fill:none;stroke:var(--line);stroke-width:3}
+  .tring .trfg{fill:none;stroke:var(--accent);stroke-width:3;stroke-linecap:round;transition:stroke-dashoffset .25s}
+  .tring.af .trfg{stroke:var(--green)}
+  .tring.af b{color:var(--green)}
+  .trpct{font-variant-numeric:tabular-nums}
   .traybar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding:6px;border:1px dashed transparent;border-radius:10px;transition:background .12s,border-color .12s}
   /* Zichtbaar maken dát je hier kunt loslaten. Zonder terugkoppeling weet je bij een mislukte sleep
      niet of je op de goede plek zat of dat de app het bestand niet aankon. */
@@ -940,9 +949,11 @@ function renderLopende(){
     // hij alleen op de Carport-pagina te zien. Bewust géén extra kolom — de tabel telt er al vijftien
     // en past nu precies zonder horizontaal schuiven; dit past in de cel die er al is.
     const bon=afleverBonVan(v.id);
+    const tv=takenVan(v.id);
     return `<tr onclick="openVeh('${v.id}')" style="cursor:pointer">${boekCellen(v)}
       <td style="min-width:230px"><div class="pbar"><div class="pfill" style="width:${pct}%"></div></div><div style="margin-top:5px;white-space:nowrap">${cur} <span class="muted" style="font-size:11px">· ${s.done}/${s.total}</span></div>
-        ${bon?`<div style="margin-top:4px;white-space:nowrap">${tijdChip(dagUit(bon.afleverdatum),`Aflevering ${bon.afleverdatum}`)} <span class="muted" style="font-size:11px">aflevering ${esc(bon.afleverdatum)}</span></div>`:''}</td>
+        ${bon?`<div style="margin-top:4px;white-space:nowrap">${tijdChip(dagUit(bon.afleverdatum),`Aflevering ${bon.afleverdatum}`)} <span class="muted" style="font-size:11px">aflevering ${esc(bon.afleverdatum)}</span></div>`:''}
+        ${tv.totaal?`<div style="margin-top:4px">${takenRing(tv.af,tv.totaal,`${tv.af} van de ${tv.totaal} taken afgevinkt — open de auto om ze af te vinken`)}</div>`:''}</td>
       <td><span class="tag ${v.importAuto?'tag-imp':'tag-nl'}">${v.importAuto?'Import':'NL'}</span> ${rb}</td>
       <td>${v.owner?pav(v.owner):`<span class="pav" style="background:var(--slate)">?</span>`}</td></tr>`;}).join("");
   app.innerHTML=`
@@ -1011,7 +1022,7 @@ function openVehNu(id){
       </div>
       <div style="display:flex;flex-direction:column;gap:18px">
         ${v.status==='lopende'?`<div class="card"><h3>Verantwoordelijke</h3><div class="owner-box">${v.owner?pav(v.owner):`<span class="pav" style="background:var(--slate)">?</span>`}<div style="flex:1"><div style="font-weight:600;font-size:13px">${v.owner||'Niet toegewezen'}</div><div class="muted" style="font-size:12px">voor huidige fase</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div></div>`:''}
-        ${v.status==='lopende'?subtaskCard(v):''}
+        ${(v.status==='lopende'||v.status==='gemeld verkocht')?subtaskCard(v):''}
         <div class="card"><h3>Herkomst</h3><div class="card-body">
           <div class="spec"><span class="k">Leverancier</span><span class="v">${v.lev||'—'}</span></div>
           <div class="spec" style="border-bottom:0"><span class="k">Transport / status</span><span class="v" style="max-width:160px">${v.note||'—'}</span></div>
@@ -1475,8 +1486,19 @@ function subtaskCard(v){
       <select class="assign" onchange="assignSubtask('${v.id}',${st.id},this.value)">${opt(st)}</select>
       <button class="premove" style="position:static;background:#eef2f6;color:var(--slate)" title="Verwijderen" onclick="delSubtask('${v.id}',${st.id})">×</button>
     </div>`).join("") : `<div class="empty" style="padding:14px">Nog geen extra taken voor deze auto.</div>`;
-  return `<div class="card"><h3>Extra taken <span class="muted" style="font-weight:500;font-size:12px">deze auto</span></h3>
+  const tv=takenVan(v.id);
+  const carportRijen=tv.carport.length?`<div style="padding:2px 0;border-top:1px solid var(--line)">
+      <div class="note" style="margin:10px 16px 4px">Bij Carport op de werkbon${tv.bon&&tv.bon.afleverdatum?` · aflevering ${esc(tv.bon.afleverdatum)}`:''}</div>
+      ${tv.carport.map(t=>`<div class="todo">
+        <label class="chk"><input type="checkbox" ${t.klaar?'checked':''} onchange="carportTaakAf(${t.id},this.checked)"><span class="box"></span></label>
+        <div class="body" style="cursor:default"><div class="act" style="${t.klaar?'text-decoration:line-through;color:var(--muted)':''}">
+          <span class="soort ${t.soort}">${(SOORTEN.find(x=>x[0]===t.soort)||[,t.soort])[1]}</span> ${esc(t.tekst)}</div></div>
+        ${t.door==='mobilox'?`<span class="vanwie" title="Uit de verkoopovereenkomst">Overeenkomst</span>`:t.door==='carport'?`<span class="vanwie">Carport</span>`:''}
+      </div>`).join('')}</div>`:'';
+  return `<div class="card"><h3>Taken <span class="muted" style="font-weight:500;font-size:12px">deze auto</span>
+      <span style="float:right;font-weight:500">${takenRing(tv.af,tv.totaal)}</span></h3>
     <div style="padding:2px 0">${rows}</div>
+    ${carportRijen}
     <div style="display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line)">
       <input id="subin-${v.id}" placeholder="Bijv. wieldoppen bestellen, deuk uitdeuken…" style="flex:1;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px" onkeydown="if(event.key==='Enter')addSubtask('${v.id}')">
       <button class="btn btn-primary btn-sm" onclick="addSubtask('${v.id}')">Toevoegen</button>
@@ -1869,6 +1891,29 @@ function afleverBonVan(vehicleId){
   return [...(carportData.planning||[]),...(carportData.afgemeld||[])]
     .find(b=>b.vehicleId===vehicleId&&b.afleverdatum)||null;
 }
+/* ===== Voortgang van de taken van één auto =====
+   Een ring met het aantal en het percentage. Bewust compact en op één plek gedefinieerd: hij staat in
+   de tabel op Lopende, op de afleverkaarten van Vandaag én op de werkbonnen van Carport, en drie
+   varianten die net iets anders tellen is precies hoe je mensen aan het rekenen zet. */
+function takenVan(vehicleId){
+  const v=V.find(x=>x.id===vehicleId);
+  const bon=[...(carportData.planning||[]),...(carportData.afgemeld||[])].find(b=>b.vehicleId===vehicleId);
+  const carport=(bon&&bon.taken)||[];
+  const eigen=(v&&v.subtasks)||[];
+  return { carport, eigen, bon: bon||null,
+           totaal: carport.length+eigen.length,
+           af: carport.filter(t=>t.klaar).length+eigen.filter(t=>t.done).length };
+}
+function takenRing(af,totaal,titel){
+  if(!totaal) return '';
+  const pct=Math.round(af/totaal*100);
+  const r=9, omtrek=2*Math.PI*r;
+  return `<span class="tring${pct===100?' af':''}" title="${esc(titel||`${af} van de ${totaal} taken afgevinkt`)}">
+    <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+      <circle class="trbg" cx="12" cy="12" r="${r}"></circle>
+      <circle class="trfg" cx="12" cy="12" r="${r}" stroke-dasharray="${omtrek.toFixed(1)}" stroke-dashoffset="${(omtrek*(1-af/totaal)).toFixed(1)}"></circle>
+    </svg><b>${af}/${totaal}</b><span class="trpct">${pct}%</span></span>`;
+}
 let afleverOpen=null;
 function afleverKlap(id){ afleverOpen = (afleverOpen===id ? null : id); rerender(); }
 function tijdChip(tot, label){
@@ -1897,14 +1942,15 @@ function afleverPaneel(){
     const aflever=dagUit(b.afleverdatum);
     const carportTot=aflever!==null?aflever-marge*86400000:null;
     const carportTaken=b.taken.filter(t=>!POETSWERK(t)), poetsTaken=b.taken.filter(POETSWERK);
-    const open=b.taken.filter(t=>!t.klaar).length;
     const uit=afleverOpen===b.id;
+    const tv=takenVan(b.vehicleId);
     const takenlijst=(titel,taken,tot,uitleg)=>`
       <div style="flex:1;min-width:250px">
         <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">
           <span style="font-weight:700;font-size:12px">${titel}</span>${tijdChip(tot,uitleg)}
         </div>
         ${taken.length?taken.map(t=>`<div class="taak ${t.klaar?'af':''}" style="padding:4px 0">
+            <label class="chk" title="Afvinken"><input type="checkbox" ${t.klaar?'checked':''} onchange="carportTaakAf(${t.id},this.checked)"><span class="box"></span></label>
             <span class="soort ${t.soort}">${(SOORTEN.find(x=>x[0]===t.soort)||[,t.soort])[1]}</span>
             <span class="tk">${esc(t.tekst)}</span>
             ${t.door==='mobilox'?`<span class="vanwie" title="Uit de verkoopovereenkomst">Overeenkomst</span>`:''}
@@ -1918,7 +1964,7 @@ function afleverPaneel(){
           <div class="id">${a.kenteken&&a.kenteken!=='—'?esc(a.kenteken):esc(a.vin||'')} · aflevering ${esc(b.afleverdatum)}</div></div>
         ${tijdChip(aflever,`Aflevering ${b.afleverdatum}`)}
         ${b.status!=='open'?`<span class="badge b-lopende" title="Carport heeft dit werk afgemeld">Carport klaar</span>`:''}
-        <span class="note" style="margin:0">${open?open+' open':'alles af'} van ${b.taken.length}</span>
+        ${takenRing(tv.af,tv.totaal,`${tv.af} van de ${tv.totaal} taken afgevinkt`)||`<span class="note" style="margin:0">geen taken</span>`}
         ${magPlannen()?`<span onclick="event.stopPropagation()" style="display:flex;gap:6px;align-items:center">
           <input class="inp" id="afl-datum-${b.id}" style="width:118px;padding:4px 8px;font-size:12px" value="${esc(b.afleverdatum||'')}" title="Afleverdatum verzetten" onkeydown="if(event.key==='Enter')afleverDatum(${b.id})">
           <button class="btn btn-ghost btn-sm" onclick="afleverDatum(${b.id})" title="Nieuwe datum opslaan">Verzetten</button>
@@ -1928,6 +1974,14 @@ function afleverPaneel(){
       ${uit?`<div class="bon-body" style="display:flex;gap:26px;flex-wrap:wrap">
         ${takenlijst('Bij Carport',carportTaken,carportTot,`Klaar ${marge} dagen vóór aflevering, zodat de auto nog naar de poetser kan`)}
         ${takenlijst('Bij de poetser',poetsTaken,aflever,`Vóór de aflevering op ${b.afleverdatum}`)}
+        ${tv.eigen.length?`<div style="flex:1;min-width:250px">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span style="font-weight:700;font-size:12px">Bij Prieva</span>
+            <span class="note" style="margin:0">extra taken op deze auto</span></div>
+          ${tv.eigen.map(st=>`<div class="taak ${st.done?'af':''}" style="padding:4px 0">
+            <label class="chk" title="Afvinken"><input type="checkbox" ${st.done?'checked':''} onchange="toggleSubtask('${esc(b.vehicleId)}',${st.id},this.checked)"><span class="box"></span></label>
+            <span class="tk">${esc(st.text)}</span>${st.owner?`<span class="vanwie">${esc(st.owner)}</span>`:''}
+          </div>`).join('')}
+        </div>`:''}
       </div>`:''}
     </div>`;
   };
@@ -2074,8 +2128,14 @@ const POETSWERK=t=>t.soort==='poetsen';
 const magPlannen=()=>currentUser&&(currentUser.role==='team'||currentUser.role==='admin');
 const isCarport=()=>currentUser&&currentUser.role==='carport';
 
+/* Werkbonnen staan dicht, met de voortgang op de kop. Bij twaalf bonnen met elk vijf regels werd de
+   planning een lijst waarin je moest zoeken; nu zie je in één oogopslag hoe ver elke auto is en klap
+   je open wat je nodig hebt. De bon waar je aan werkt onthoudt zijn stand tijdens de sessie. */
+let bonOpen={};
+function bonKlap(id){ bonOpen[id]=!bonOpen[id]; rerenderCurrent(); }
 function bonKaart(bon,sleepbaar){
   const a=bon.auto||{};
+  const uit=!!bonOpen[bon.id];
   // Vanaf een werkbon door naar de auto. Alleen voor Prieva: Carport heeft geen autopagina, en tot nu
   // toe moest je het kenteken overtypen in de zoekbalk om van de planning naar het dossier te komen.
   const naarAuto=magPlannen()&&bon.vehicleId
@@ -2097,16 +2157,17 @@ function bonKaart(bon,sleepbaar){
   return `<div class="bon" data-bon="${bon.id}" ${sleepbaar?`draggable="true" ondragstart="bonSleepStart(event,${bon.id})" ondragover="bonSleepOver(event,${bon.id})" ondragleave="this.classList.remove('doel')" ondrop="bonSleepDrop(event,${bon.id})" ondragend="bonSleepEind()"`:''}>
     <div class="bon-kop">
       ${sleepbaar?`<span class="bon-greep" title="Sleep om de volgorde te wijzigen">⠿</span>`:''}
+      <span class="bon-greep" style="cursor:pointer" title="${uit?'Dichtklappen':'Openklappen — de taken staan erin'}" onclick="bonKlap(${bon.id})">${uit?'▾':'▸'}</span>
       <div class="bon-auto"><div class="nm">${esc(a.merk||'')} ${esc(a.model||'')}</div>
         <div class="id">${a.kenteken&&a.kenteken!=='—'?esc(a.kenteken):esc(a.vin||'')}${a.km!=null?' · '+Number(a.km).toLocaleString("nl-NL")+' km':''}</div></div>
       ${deadlineChip(bon)}
       <span class="note" style="margin:0">${bon.afleverdatum?'aflevering '+esc(bon.afleverdatum):''}</span>
       ${magPlannen()?`<button class="btn btn-ghost btn-sm" onclick="carportDatum(${bon.id},'${esc(bon.afleverdatum||'')}')">Datum</button>`:''}
       ${naarAuto}
-      <span class="note" style="margin:0">${open?open+' open':'alles af'}</span>
+      ${takenRing(bon.taken.filter(t=>t.klaar).length,bon.taken.length,`${bon.taken.filter(t=>t.klaar).length} van de ${bon.taken.length} taken afgevinkt`)||`<span class="note" style="margin:0">nog geen werk</span>`}
       <button class="btn btn-primary btn-sm" onclick="carportAfmelden(${bon.id})">Auto staat klaar</button>
     </div>
-    <div class="bon-body">
+    <div class="bon-body" style="${uit?'':'display:none'}">
       ${taken}
       <div style="display:flex;gap:7px;align-items:center;margin-top:8px;flex-wrap:wrap">
         <select id="soort-${bon.id}" class="assign">${SOORTEN.map(([w,l])=>`<option value="${w}">${l}</option>`).join("")}</select>
