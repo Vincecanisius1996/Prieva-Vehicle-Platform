@@ -623,6 +623,13 @@ versie haalde dat door elkaar en zag dertien inkoopprijzen aan voor verkoopdatum
   Back-up: `pg_hba.conf.bak-20260815-pvp`.
 - **`import-json.js` (in `/root/pvp/pg/`) is eenmalig geweest.** De JSON-bestanden zijn bevroren;
   opnieuw draaien overschrijft de database met oude data. Het script weigert dat zonder `--overschrijf`.
+- **Naar boven springen hoort bij navigeren, niet bij tekenen** (25-08-2026). `openVeh()`,
+  `renderLog()`, `renderTaxCar()` en `renderFotoCar()` riepen zélf `window.scrollTo(0,0)` aan. Omdat
+  elke handeling de pagina opnieuw tekent, sprong je bij élk vinkje terug naar boven: vinkje, sprong,
+  terugscrollen, volgend vinkje. Nu loopt alles door `scrollBewaard()`: die onthoudt de positie, en
+  laat hem alleen los als `state.view` verandert. Vandaar het paar `rerender`/`rerenderNu` en
+  `openVeh`/`openVehNu` — de eerste is de ingang met positiebewaking, de tweede tekent alleen.
+  Roep je een teken-functie rechtstreeks aan, dan springt de pagina weer.
 - **`window.history` i.p.v. `history`:** in `index.html` bestaat een lokale `const history = []`
   (de undo-stack) die de globale `history` overschaduwt. Gebruik voor routing altijd `window.history`.
 - **De catalogus komt uit de database** (sinds 17-08-2026, Fase 2): `loadVehicles()` in `index.html`

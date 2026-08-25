@@ -763,7 +763,6 @@ function renderLog(){
     <div class="back" onclick="go('vandaag')">← Terug naar Vandaag</div>
     <h1 class="page-title">Logboek</h1><p class="page-sub">Wie heeft wat wanneer afgevinkt. Alleen zichtbaar voor admins (Vince & Floris). Nieuwste bovenaan.</p>
     <div class="card"><div class="card-body" style="padding:0 4px"><table><thead><tr><th style="width:120px">Wanneer</th><th style="width:150px">Wie</th><th>Actie</th><th>Taak / auto</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
-  window.scrollTo(0,0);
 }
 
 /* ===== Komende ===== */
@@ -960,7 +959,10 @@ function renderLopende(){
 }
 
 /* ===== Detail ===== */
-function openVeh(id){
+// Klikken op een auto is navigeren (bovenaan beginnen); opnieuw tekenen na een handeling is dat niet.
+// Beide lopen door dezelfde functie, en scrollBewaard beslist op basis van het scherm dat je verlaat.
+function openVeh(id){ scrollBewaard(()=>openVehNu(id)); }
+function openVehNu(id){
   const v=V.find(x=>x.id===id); if(!v)return; state.view="veh:"+id; setNav(v.status==='lopende'?'lopende':'komende');
   const s=steps(v); const act=currentAction(v);
   // De advertentie in Mobilox. Het id komt van de agent; het adres is vast. Nieuw tabblad met
@@ -1028,7 +1030,6 @@ function openVeh(id){
       <button class="btn btn-ghost btn-sm" onclick="openAutoModal('${v.id}')" title="Merk, kenteken, kilometerstand — corrigeren wat er niet klopt">${ico("doc")} Gegevens wijzigen</button>
       ${isAdmin()?`<button class="btn btn-danger-o btn-sm" onclick="vraagVerwijderen('${v.id}')" title="Deze auto uit PVP halen">${ico("trash")} Auto verwijderen</button>`:''}
     </div>`;
-  window.scrollTo(0,0);
 }
 
 /* ===== Acties ===== */
@@ -1825,7 +1826,11 @@ function delGlobalTodo(id){const i=globalTodos.findIndex(x=>x.id===id); if(i<0)r
 /* ===== Advertentiefoto's ===== */
 async function loadAdphotos(){ if(!apiOk)return; try{ const r=await fetch("/api/adphotos",{cache:"no-store"}); if(r.ok){adPhotos=await r.json()||{};} }catch(_){} }
 function adList(id){ return Array.isArray(adPhotos[id])?adPhotos[id]:[]; }
-function rerenderCurrent(){ if(currentUser&&currentUser.role==='carport')renderCarport(); else if(currentUser&&currentUser.role==='foto')renderFoto(); else if(currentUser&&currentUser.role==='taxateur')renderTax(); else rerender(); }
+function rerenderCurrent(){ scrollBewaard(()=>{
+  if(currentUser&&currentUser.role==='carport')renderCarport();
+  else if(currentUser&&currentUser.role==='foto')renderFoto();
+  else if(currentUser&&currentUser.role==='taxateur')renderTax();
+  else rerenderNu(); }); }
 /* ===== BPM-taxatierapporten (S-TAX) ===== */
 let bpmData={vehicles:{},notifs:[]};
 async function loadBpm(){ if(!apiOk)return; try{ const r=await fetch("/api/bpmreports",{cache:"no-store"}); if(r.ok){ bpmData=await r.json()||{vehicles:{},notifs:[]}; if(!bpmData.vehicles)bpmData.vehicles={}; if(!Array.isArray(bpmData.notifs))bpmData.notifs=[]; } }catch(_){} }
@@ -2176,7 +2181,7 @@ async function carportDoe(pad,body,melding){
     const r=await fetch(pad,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const j=await r.json().catch(()=>({}));
     if(!r.ok){ showToast(j.melding||j.error||"Actie mislukt",false); return null; }
-    await loadCarport(); renderCarport();
+    await loadCarport(); rerenderCurrent();
     if(melding)showToast(melding,true);
     return j;
   }catch(_){ showToast("Geen verbinding met de server",false); return null; }
@@ -2358,7 +2363,7 @@ async function sorteerRapporten(files){
   bpmBezig=false;
   const goed=bpmUitslag.filter(r=>r.status==='geplaatst').length;
   await loadBpm();
-  renderTax();
+  rerenderCurrent();
   showToast(goed===lijst.length?`${goed} rapport${goed===1?'':'en'} geplaatst`:`${goed} van de ${lijst.length} geplaatst — kijk de rode regels na`, goed===lijst.length);
 }
 function openTaxCar(id){ taxState.car=id; renderTax(); window.scrollTo(0,0); }
@@ -2376,7 +2381,6 @@ function renderTaxCar(){ const v=V.find(x=>x.id===taxState.car); if(!v){taxState
         <label class="btn btn-primary" style="cursor:pointer"><input type="file" accept="${DOC_ACCEPT}" style="display:none" onchange="uploadBpm('${v.id}',this)">＋ Rapport uploaden (PDF)</label>
         <div class="note" style="margin-top:8px">Het Prieva-team krijgt automatisch een melding zodra je het rapport hebt geüpload.</div>
       </div></div>`;
-  window.scrollTo(0,0);
 }
 function taxPhotoCard(v,g){
   const items=g.items.filter(p=>v.photos[p.key]);
@@ -2498,7 +2502,6 @@ function renderFotoCar(){ const v=V.find(x=>x.id===fotoState.car); if(!v){fotoSt
         <div class="chips"><span class="chip"><b>Kenteken</b> ${v.kenteken}</span><span class="chip"><b>VIN</b> <span class="mono">${v.vin}</span></span><span class="chip"><b>Km</b> ${km(v.km)}</span></div></div></div>
     <div class="card"><h3>Advertentiefoto's <span class="muted" style="font-weight:500;font-size:12px">${n} foto${n===1?'':'’s'}</span></h3>
       <div class="card-body">${adGallery(v.id)}<div class="note" style="margin-top:10px">Maak of kies de foto's voor deze auto. Ze worden direct op de server bewaard.</div></div></div>`;
-  window.scrollTo(0,0);
 }
 
 /* ===== Login & rollen ===== */
@@ -2557,7 +2560,27 @@ async function boot(){
   }catch(_){ /* geen backend bereikbaar → demo/standalone */ }
   currentUser={name:'Demo',role:'team'}; apiOk=false; startFor();
 }
-function rerender(){
+/* ===== Blijven staan waar je stond =====
+   Elke handeling — een vinkje, een foto die klaar is met uploaden, een taak die je afvinkt — tekent
+   de pagina opnieuw. Dat gebeurde met een sprong naar de bovenkant, want de teken-functies riepen
+   zelf window.scrollTo(0,0) aan. Bij tien foto's onderaan een auto betekende dat: vinkje, sprong,
+   terugscrollen, volgende vinkje.
+   Naar boven springen hoort bij NAVIGEREN, niet bij tekenen. Daarom wordt de positie bewaard zolang
+   je op hetzelfde scherm blijft, en alleen losgelaten als het scherm verandert. */
+let laatsteWeergave=null;
+function scrollBewaard(fn){
+  const y=window.scrollY||document.documentElement.scrollTop||0;
+  const vorige=laatsteWeergave;
+  fn();
+  laatsteWeergave=state.view;
+  // Anders scherm: bovenaan beginnen. Zelfde scherm: terug naar waar je stond. Het kan zijn dat de
+  // pagina korter is geworden; de browser knipt dan vanzelf af op de nieuwe hoogte.
+  if(state.view!==vorige) window.scrollTo(0,0);
+  else if(y) window.scrollTo(0,y);
+}
+
+function rerender(){ scrollBewaard(rerenderNu); }
+function rerenderNu(){
   // Kolom E t/m P past niet in 1160px. Alleen de drie boekpagina's gaan de breedte in; de rest
   // blijft leesbaar smal, want een formulier van 1560px breed leest niemand prettig.
   app.classList.toggle("breed",["komende","lopende","verkocht"].includes(state.view));
@@ -2567,7 +2590,7 @@ function rerender(){
   else if(state.view==="lopende")renderLopende();
   else if(state.view==="verkocht")renderVerkocht();
   else if(state.view==="logboek")renderLog();
-  else if(state.view.startsWith("veh:"))openVeh(state.view.split(":")[1]);
+  else if(state.view.startsWith("veh:"))openVehNu(state.view.split(":")[1]);
   updateUndoUI(); syncHistory();
 }
 function setNav(view){document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===view));}
