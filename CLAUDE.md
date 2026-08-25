@@ -572,9 +572,16 @@ binnen een kwartier weer — de werkbon staat immers nog open.
   geweest is.
 - **Meer dan tien afspraken weghalen in één ronde wordt geweigerd** — dat is een fout, geen opruiming.
   Bewust doorgaan kan met `--forceer`.
-- **Nog te doen vóór dit werkt:** de Google Calendar API aanzetten in het Google-project, de agenda
-  delen met het service-account (recht *Wijzigingen aan afspraken aanbrengen*) en `AGENDA_ID` invullen.
-  Zie `agenda/LEESMIJ.md`.
+- **Stand 25-08-2026:** de Calendar API staat aan, `AGENDA_ID` is gevuld (agenda *Prieva (Algemeen)*)
+  en het service-account is gedeeld — maar met recht **`reader`**, en daarmee kan het niets schrijven.
+  Twee wegen, allebei ondersteund in de code:
+  1. het deelrecht ophogen naar *Wijzigingen aan afspraken aanbrengen*. Lukt dat niet, dan staat in de
+     beheerconsole bij **Agenda → Opties voor extern delen** een beleid dat een account van buiten het
+     domein geen wijzigingen laat maken;
+  2. **domeinbrede delegatie**: client-ID `100724149126125369873` toelaten met de calendar-scope, en
+     `AGENDA_ALS=<e-mailadres>` in `/var/pvp/agenda.env`. Het account handelt dan namens die collega en
+     komt dus niet meer van buiten — ongevoelig voor het deelbeleid.
+  `node agenda/sync.js --toets <agenda-id>` zegt welke weg actief is en wat er nog mist.
 
 ## Een auto wijzigen
 Sinds 23-08-2026. `PUT /api/vehicle` (team en admin), en in de app de knop **Gegevens wijzigen**

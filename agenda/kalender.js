@@ -47,7 +47,12 @@ async function vraag(tok, pad, opties) {
   return j;
 }
 
-const inloggen = () => token(SCOPE);
+/* Twee manieren om bij de agenda te mogen:
+   1. de agenda is met het service-account gedeeld als "Wijzigingen aan afspraken aanbrengen";
+   2. AGENDA_ALS staat op het e-mailadres van een collega, en het account handelt namens die persoon.
+   De tweede is nodig als het beheerbeleid geen schrijfrechten geeft aan een account van buiten het
+   domein — dan is delen op elk niveau kansloos, hoe vaak je het ook instelt. */
+const inloggen = () => token(SCOPE, (instellingen().AGENDA_ALS || '').trim() || undefined);
 
 // Welke agenda's kan dit account zien? Alleen om het ID op te zoeken bij het inrichten.
 //

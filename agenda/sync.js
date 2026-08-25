@@ -41,9 +41,26 @@ const naArg = n => { const i = process.argv.indexOf(n); return i > -1 ? process.
       process.exitCode = 1; return;
     }
     console.log(`gevonden: ${a.summary}  (tijdzone ${a.timeZone})`);
-    try { const l = await K.aanmelden(tok, toets); console.log(`aangemeld in de lijst, recht: ${l.accessRole}`);
-      if (l.accessRole !== 'writer' && l.accessRole !== 'owner')
-        console.log('LET OP: dit recht is niet genoeg om afspraken te schrijven — deel de agenda als "Wijzigingen aan afspraken aanbrengen".');
+    const als = (K.instellingen().AGENDA_ALS || '').trim();
+    if (als) console.log(`handelt namens: ${als} (domeinbrede delegatie)`);
+    try {
+      const l = await K.aanmelden(tok, toets);
+      console.log(`aangemeld in de lijst, recht: ${l.accessRole}`);
+      if (l.accessRole === 'writer' || l.accessRole === 'owner') { console.log('\nSchrijfrecht is in orde — de koppeling kan afspraken zetten.'); return; }
+      console.log(`
+LET OP: "${l.accessRole}" is niet genoeg om afspraken te schrijven. Twee wegen:
+
+ 1. Deel de agenda met het service-account als "Wijzigingen aan afspraken aanbrengen".
+    Blijft het op bekijken staan, dan verbiedt het beheerbeleid dat: een account van
+    buiten het domein mag dan niets wijzigen. In de beheerconsole staat dat bij
+    Apps > Google Workspace > Agenda > Opties voor extern delen; die moet op
+    "Alle informatie delen en anderen kunnen agenda's beheren" (of hoger).
+
+ 2. Of laat de koppeling namens een collega handelen — dan komt hij niet meer van
+    buiten. In de beheerconsole bij Beveiliging > API-beheer > Domeinbrede delegatie
+    de client-ID toelaten met scope https://www.googleapis.com/auth/calendar, en
+    daarna AGENDA_ALS=<e-mailadres van die collega> in /var/pvp/agenda.env zetten.
+    Deze weg is ongevoelig voor het deelbeleid.`);
     } catch (e) { console.log('aanmelden in de lijst lukte niet: ' + e.message); }
     return;
   }

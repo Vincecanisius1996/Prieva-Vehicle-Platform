@@ -42,6 +42,22 @@ werkbon staat immers nog open.
 `AGENDA_ID` leeg = koppeling uit; er gaat dan niets naar Google. Zelfde patroon als
 `AUTOBOEK_FILE_ID`.
 
+## Als delen niet genoeg is
+Blijft het recht op *bekijken* staan hoe vaak je het ook op "Wijzigingen aan afspraken aanbrengen"
+zet, dan verbiedt het beheerbeleid het: een account van **buiten het domein** mag dan niets wijzigen.
+In de beheerconsole staat dat bij **Apps → Google Workspace → Agenda → Opties voor extern delen**;
+dat moet minstens *"Alle informatie delen en anderen kunnen agenda's beheren"* zijn.
+
+Wil je dat beleid niet verruimen — begrijpelijk, want het geldt domeinbreed — dan is er een tweede
+weg: **de koppeling namens een collega laten handelen**. Dan komt hij niet meer van buiten.
+
+1. Beheerconsole → **Beveiliging → API-beheer → Domeinbrede delegatie** → client-ID
+   `100724149126125369873` toelaten met scope `https://www.googleapis.com/auth/calendar`.
+2. `AGENDA_ALS=<e-mailadres van die collega>` in `/var/pvp/agenda.env`.
+
+`node agenda/sync.js --toets <agenda-id>` zegt welke weg actief is en wat er nog mist. De afspraken
+komen dan op naam van die collega te staan; verder verandert er niets.
+
 Er wordt bewust **geen genodigde** aan een afspraak toegevoegd. Een service-account mag zonder
 domeinbrede delegatie geen uitnodigingen versturen, en dat willen we ook niet: dit is een planning,
 geen vergadering.

@@ -6,12 +6,21 @@ const crypto = require('crypto');
 const SLEUTEL = process.env.AUTOBOEK_SLEUTEL || '/var/pvp/autoboek-sleutel.json';
 const b64url = b => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-async function token(scope) {
+/**
+ * @param {string} scope
+ * @param {string} [namensWie]  e-mailadres van een gebruiker in het Google-domein. Is dit gezet, dan
+ *   handelt het service-account namens die persoon (domeinbrede delegatie). Nodig als het
+ *   beheerbeleid geen schrijfrechten toestaat aan een account van buiten het domein: dan komt de
+ *   koppeling niet meer van buiten, maar van een collega. Vereist dat de client-ID van het
+ *   service-account met deze scope in de beheerconsole is toegelaten.
+ */
+async function token(scope, namensWie) {
   const k = JSON.parse(fs.readFileSync(SLEUTEL, 'utf8'));
   const nu = Math.floor(Date.now() / 1000);
   const kop = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
   const eis = b64url(JSON.stringify({
     iss: k.client_email, scope, aud: 'https://oauth2.googleapis.com/token',
+    ...(namensWie ? { sub: namensWie } : {}),
     iat: nu, exp: nu + 3600,
   }));
   const handtekening = b64url(crypto.createSign('RSA-SHA256').update(kop + '.' + eis).sign(k.private_key));
@@ -20,7 +29,14 @@ async function token(scope) {
     body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: `${kop}.${eis}.${handtekening}` }),
   });
   const j = await r.json();
-  if (!r.ok || !j.access_token) throw new Error('inloggen mislukt: ' + JSON.stringify(j));
+  if (!r.ok || !j.access_token) {
+    // De meest voorkomende fout bij delegatie in gewone taal, want "unauthorized_client" zegt niets.
+    if (namensWie && /unauthorized_client/.test(JSON.stringify(j)))
+      throw new Error(`domeinbrede delegatie staat nog niet aan voor ${namensWie} — voeg client-ID ${k.client_id} met deze scope toe in de beheerconsole (Beveiliging → API-beheer → Domeinbrede delegatie)`);
+    if (namensWie && /invalid_grant/.test(JSON.stringify(j)))
+      throw new Error(`${namensWie} bestaat niet in het Google-domein, of de scope is niet toegelaten`);
+    throw new Error('inloggen mislukt: ' + JSON.stringify(j));
+  }
   return j.access_token;
 }
 
