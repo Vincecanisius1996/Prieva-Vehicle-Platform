@@ -517,7 +517,7 @@ const server = http.createServer(async (req, res) => {
       const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
       // Carport krijgt alleen de auto's die op hun eigen planning staan. Zelfde gedachte als bij de
       // taxateur: een afgeschermde rol hoort de catalogus niet te kunnen ophalen.
-      const kolommen = 'id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,import_auto,batch,note,status,factuurnr,inkoopprijs,verkoopdatum,docs,autoboek_status,autoboek_rij,autoboek_fout,verkoop_factuurnr,verkoop_factuurdatum,verkoopprijs,verkocht_gemeld_ts,verkocht_bevestigd_door,mobilox_id,mobilox_prijs,mobilox_online';
+      const kolommen = 'id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,import_auto,batch,note,status,factuurnr,inkoopprijs,verkoopdatum,docs,autoboek_status,autoboek_rij,autoboek_fout,verkoop_factuurnr,verkoop_factuurdatum,verkoopprijs,verkocht_gemeld_ts,verkocht_bevestigd_door,verkoop_bron,mobilox_id,mobilox_prijs,mobilox_online';
       const r = u.r === 'carport'
         ? await pool.query(`SELECT ${kolommen} FROM vehicles WHERE id IN (SELECT vehicle_id FROM carport_bonnen) ORDER BY sort_order NULLS LAST, id`)
         : await pool.query(`SELECT ${kolommen} FROM vehicles ORDER BY sort_order NULLS LAST, id`);
@@ -525,6 +525,7 @@ const server = http.createServer(async (req, res) => {
       // type-parser, want dan raak je ook iedere toekomstige numeric elders in de app.
       return sendJson(res, 200, r.rows.map(v => ({ id: v.id, vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model, uitv: v.uitv, kleur: v.kleur, brandstof: v.brandstof, transm: v.transm, reg: v.reg, km: v.km, inkoopdatum: v.inkoopdatum, lev: v.lev, importAuto: v.import_auto, batch: v.batch, note: v.note, status: v.status, factuurnr: v.factuurnr, inkoopprijs: v.inkoopprijs === null ? null : Number(v.inkoopprijs), verkoopdatum: v.verkoopdatum, docs: Array.isArray(v.docs) ? v.docs : [],
         mobiloxId: v.mobilox_id, mobiloxPrijs: v.mobilox_prijs === null ? null : Number(v.mobilox_prijs), mobiloxOnline: v.mobilox_online,
+        verkoopBron: v.verkoop_bron,
         autoboekStatus: v.autoboek_status, autoboekRij: v.autoboek_rij, autoboekFout: v.autoboek_fout,
         verkoopFactuurnr: v.verkoop_factuurnr, verkoopFactuurdatum: v.verkoop_factuurdatum,
         verkoopprijs: v.verkoopprijs === null ? null : Number(v.verkoopprijs),
@@ -929,6 +930,20 @@ const server = http.createServer(async (req, res) => {
       const v = r.rows[0];
       if (v.status !== 'gemeld verkocht' && v.status !== 'verkocht') {
         return sendJson(res, 409, { error: 'deze auto is niet gemeld als verkocht', status: v.status });
+      }
+      // Een auto gaat pas op 'verkocht' als er een FACTUURnummer voor is aangemaakt. Een
+      // verkoopovereenkomst zegt dat de auto verkocht is en wanneer hij weg moet — daar hoort hij
+      // zichtbaar te blijven bij de lopende auto's, want er moet nog aan gewerkt worden. Zonder deze
+      // grens belandt een overeenkomstnummer in de kolom Fact. Nr. en verhuist de regel te vroeg.
+      const gegeven = (b.factuurnummer === undefined || b.factuurnummer === null) ? null : String(b.factuurnummer).trim();
+      if (gegeven) {
+        await pool.query('UPDATE vehicles SET verkoop_factuurnr=$2, verkoop_bron=$3 WHERE id=$1', [v.id, gegeven, 'factuur']);
+        v.verkoop_factuurnr = gegeven; v.verkoop_bron = 'factuur';
+      }
+      if (!v.verkoop_factuurnr || v.verkoop_bron === 'overeenkomst') {
+        return sendJson(res, 409, {
+          error: 'deze auto heeft nog geen factuurnummer — bevestigen kan pas als de factuur er is',
+          nummerNodig: true, bestaand: v.verkoop_factuurnr, bron: v.verkoop_bron });
       }
       if (v.status !== 'verkocht') {
         await pool.query(

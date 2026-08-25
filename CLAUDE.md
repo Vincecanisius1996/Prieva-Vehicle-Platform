@@ -94,6 +94,11 @@ de Mobilox-koppeling, óf een gewone sessie. Bewust hetzelfde endpoint als de ap
 maar één set regels is rond idempotentie, dubbelcontrole en het Autoboek. Zonder token ingesteld geeft
 `/api/verkocht` **503** — uit staan is nooit hetzelfde als vrije toegang.
 
+**De regel in één zin** (opgave Prieva, 25-08-2026): *een verkoopovereenkomst zegt dat de auto verkocht
+is en wanneer hij afgeleverd wordt; de auto gaat pas op **verkocht** als er een **factuurnummer** voor
+is aangemaakt.* Daar hangt alles aan vast — de afleverdatum en de taken komen uit de overeenkomst, de
+verhuizing naar *Verkochte* in het Autoboek gebeurt op de factuur.
+
 Wat `/api/verkocht` doet hangt af van het soort document (23-08-2026):
 - **verkoopovereenkomst** → `gemeld verkocht`. Die kan nog wijzigen of vervallen; het Autoboek blijft
   ongemoeid.
@@ -102,6 +107,12 @@ Wat `/api/verkocht` doet hangt af van het soort document (23-08-2026):
   bevestiging betekende in de praktijk dat PVP en het boek achterliepen.
 - Met `vervangt:true` mag een factuur het nummer uit de overeenkomst overschrijven, maar alleen zolang
   de verkoop nog niet bevestigd is.
+
+**`/api/verkoop-bevestigen` weigert zonder factuurnummer** (25-08-2026): staat er geen nummer, of komt
+het uit een overeenkomst (`verkoop_bron='overeenkomst'`), dan volgt **409** met `nummerNodig:true`. De
+app vraagt er dan om. Zonder die grens kon een beheerder een auto met een overeenkomstnummer op
+*verkocht* zetten — en dan verhuisde de regel te vroeg naar *Verkochte*, met een nummer dat botste
+met een echte factuur. Zo stonden 176, 180 en 182 dubbel in het boek.
 
 `definitief` mag alleen via het token of door een **admin**; een `team`-sessie krijgt **403**. Melden en
 bevestigen blijven twee handelingen met twee verantwoordelijkheden. Terugdraaien kan met
@@ -570,6 +581,22 @@ handelingen die nergens bereikbaar waren. Vijf dingen erbij:
   de regel zelf nooit is overgenomen). **Overnemen gaat langs hetzelfde `POST /api/vehicle`** als de
   knop *Auto* rechtsboven — dezelfde dubbelcontrole, dezelfde regel naar het Autoboek. Een tweede weg
   om een auto aan te maken zou daar vroeg of laat van afwijken.
+
+## Controle: het Autoboek naast PVP
+`beheer/autoboek-controle.js` (25-08-2026). Leest alleen. Meldt zes dingen: hetzelfde factuurnummer op
+meer dan één regel, dezelfde auto op meer dan één regel, PVP en het boek oneens over het tabblad, een
+auto die het boek kent en PVP niet, een verkoopdatum op *Komende* of een factuurnummer op *Lopende*, en
+verkochte regels zonder factuurnummer. Met `--stil` legt hij de uitkomst vast in `agent_runs`.
+
+Twee dingen die géén fout zijn en er daarom uit gefilterd worden:
+- **een auto die vaker verkocht is** hoort meerdere regels te hebben, elk met een eigen factuurnummer;
+- **een verkoopdatum en -prijs op *Lopende*** is normaal: dat is een auto die op een overeenkomst
+  verkocht is en waar nog aan gewerkt wordt. Pas als er óók een factuurnummer staat, had hij moeten
+  verhuizen.
+
+De kolommen staan niet op alle bladen gelijk: op *Komende* is **Q** de verkoopdatum en **R** de
+inkoopprijs, op *Lopende* en *Verkochte* is **R** de verkoopdatum en **U** de verkoopprijs. De eerste
+versie haalde dat door elkaar en zag dertien inkoopprijzen aan voor verkoopdatums.
 
 ## Regels & valkuilen (belangrijk)
 - **Houd PVP strikt gescheiden van CRP.** Op dezelfde droplet draait een aparte reporting-tool (CRP)

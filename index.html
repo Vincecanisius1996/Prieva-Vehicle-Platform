@@ -1268,12 +1268,12 @@ function verkoopCard(v){
     ${regel("Status", bevestigd
         ? `<span style="color:var(--green)">✓ bevestigd${v.verkochtDoor?` door ${v.verkochtDoor}`:''}</span>`
         : `<span style="color:var(--amber)">verkocht op overeenkomst — factuur volgt</span>`)}
-    ${regel("Factuurnummer", v.verkoopFactuurnr)}
+    ${regel("Factuurnummer", v.verkoopFactuurnr ? esc(v.verkoopFactuurnr)+(v.verkoopBron==='overeenkomst'?` <span class="muted" style="font-weight:500">— nummer van de verkoopovereenkomst, de factuur volgt</span>`:'') : null)}
     ${regel("Factuurdatum", v.verkoopFactuurdatum)}
     ${regel("Verkoopprijs", euro(v.verkoopprijs))}
     ${!bevestigd&&isAdmin()?`<button class="btn btn-primary" style="margin-top:12px;width:100%;justify-content:center"
        onclick="bevestigVerkoop('${v.id}',this)">Verkoop bevestigen</button>
-      <div class="muted" style="font-size:12px;margin-top:8px">Meestal hoeft dit niet: zodra de factuur in Mobilox staat, doet de agent dit vanzelf. Gebruik deze knop als de verkoop buiten Mobilox om loopt.</div>`:''}
+      <div class="muted" style="font-size:12px;margin-top:8px">Meestal hoeft dit niet: zodra de factuur in Mobilox staat, doet de agent dit vanzelf. Gebruik deze knop als de verkoop buiten Mobilox om loopt — je hebt er wel een <b>factuurnummer</b> voor nodig.</div>`:''}
     ${!bevestigd&&!isAdmin()?`<div class="muted" style="font-size:12px;margin-top:8px">Zodra de factuur in Mobilox staat, gaat deze auto vanzelf op verkocht.</div>`:''}
     ${bevestigd&&isAdmin()?`<button class="btn btn-ghost btn-sm" style="margin-top:12px;width:100%;justify-content:center"
        onclick="zetTerugNaarLopend('${v.id}',this)">Terugzetten naar Lopende</button>
@@ -1284,10 +1284,20 @@ function verkoopCard(v){
 async function bevestigVerkoop(id,knop){
   if(!apiOk)return;
   const v=V.find(x=>x.id===id); if(!v)return;
+  // Een auto gaat pas op verkocht als er een factuurnummer is. Staat er nog een nummer uit de
+  // verkoopovereenkomst, dan vraagt hij om het factuurnummer — dat is wat er in het Autoboek komt.
+  let nummer=null;
+  if(!v.verkoopFactuurnr||v.verkoopBron==='overeenkomst'){
+    nummer=window.prompt(`Factuurnummer van ${v.merk} ${v.model}?\n\nEen auto gaat pas op verkocht als de factuur er is. `+
+      (v.verkoopFactuurnr?`Nu staat er ${v.verkoopFactuurnr} — dat is het nummer van de verkoopovereenkomst, niet van de factuur.`:''),'');
+    if(nummer===null)return;
+    nummer=String(nummer).trim();
+    if(!nummer){ showToast("Zonder factuurnummer kan de verkoop niet bevestigd worden",false); return; }
+  }
   if(!window.confirm(`Verkoop van ${v.merk} ${v.model} bevestigen?\n\nDe auto gaat op verkocht en de regel verhuist in het Autoboek van Lopende naar Verkochte.`))return;
   knop.disabled=true; knop.textContent="Bezig…";
   try{
-    const r=await fetch("/api/verkoop-bevestigen",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});
+    const r=await fetch("/api/verkoop-bevestigen",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(nummer?{id,factuurnummer:nummer}:{id})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok){ const f=document.getElementById('vk-fout'); if(f)f.textContent=j.error||"Bevestigen mislukt.";
       knop.disabled=false; knop.textContent="Verkoop bevestigen"; return; }

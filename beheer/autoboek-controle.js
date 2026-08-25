@@ -84,9 +84,14 @@ const leeg = x => x === null || x === undefined || String(x).trim() === '' || St
   rijen.filter(r => r.blad !== 'Verkochte Autos' && !bijRij(r)).forEach(r =>
     meldPunt('niet in PVP', `${r.auto} (${r.kent || r.vin}) staat op ${r.blad.split(' ')[0]} ${r.rij} maar niet in PVP`));
 
-  // 5. Een verkoopprijs of verkoopdatum op een regel die niet op Verkochte staat.
-  rijen.filter(r => r.blad !== 'Verkochte Autos' && (!leeg(r.verkoopprijs) || !leeg(r.verkoopdatum))).forEach(r =>
-    meldPunt('verkoopgegevens buiten Verkochte', `${r.auto} (${r.kent || r.vin}) op ${r.blad.split(' ')[0]} ${r.rij} heeft een verkoopdatum of -prijs`));
+  // 5. Verkoopgegevens waar ze niet horen. Op *Lopende* is een verkoopdatum en -prijs juist normaal:
+  //    dat is een auto die verkocht is op een overeenkomst en waar nog aan gewerkt wordt. Staat er
+  //    óók al een factuurnummer, dan had de regel naar Verkochte moeten verhuizen. Op *Komende* slaat
+  //    een verkoopdatum nergens op — die auto is nog niet eens binnen.
+  rijen.filter(r => r.blad === 'Komende Autos' && !leeg(r.verkoopdatum)).forEach(r =>
+    meldPunt('verkoopdatum op Komende', `${r.auto} (${r.kent || r.vin}) op Komende ${r.rij} heeft een verkoopdatum`));
+  rijen.filter(r => r.blad === 'Lopende Autos' && r.fact).forEach(r =>
+    meldPunt('factuur op Lopende', `${r.auto} (${r.kent || r.vin}) op Lopende ${r.rij} heeft factuurnummer ${r.fact} — die regel hoort op Verkochte`));
 
   // 6. Verkochte regels zonder factuurnummer.
   const zonder = rijen.filter(r => r.blad === 'Verkochte Autos' && !r.fact);
