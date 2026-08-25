@@ -510,6 +510,18 @@ uren oud is wel. Een waarschuwing op zondagavond is ruis.
   laten lopen is erger dan een verouderd nummer. Nasleep hiervan: **vijf auto's dragen nog het
   overeenkomstnummer** (o.a. BMW J-699-DX 183 i.p.v. 336, Renault Twingo KST-45-P 181 i.p.v. 333) —
   die zijn bevestigd vóór deze wijziging en worden niet vanzelf bijgewerkt.
+- **De afspraken uit de overeenkomst worden elke ronde bijgehouden** (`mobilox/afspraken.js`,
+  25-08-2026). Een verkoopovereenkomst wordt na het opmaken nog gewijzigd; tot nu toe kwam er alleen
+  bij, ging er nooit iets af, en liep de werkbon dus uit de pas met wat er met de koper is afgesproken.
+  - **Erbij** wat erbij is gekomen, **eraf** wat eruit is gehaald. Een gewijzigde regel is die twee na
+    elkaar: de oude tekst staat niet meer in de overeenkomst, de nieuwe wel.
+  - **Nooit werk van Carport of Prieva** — alleen regels met `door='mobilox'`.
+  - **Nooit een afgevinkte taak.** Dat werk ís gedaan; dat uit de administratie halen omdat de
+    verkoper de tekst heeft aangepast, wist geschiedenis. Die blijft staan, mét een melding.
+  - Wat vervalt, krijgt een **notitie op de bon** met de oude tekst erbij. Geen stille verdwijning.
+  - **Meer dan `MAX_WEG` (10) verwijderingen in één ronde wordt geweigerd** — dat is geen wijziging
+    maar een fout, bijvoorbeeld een regressie in `taken.js` die ineens niets meer uitleest. Toevoegen
+    gaat dan wél door; dat maakt niets stuk.
 - **De afleverdatum wordt elke ronde bijgehouden** (`mobilox/planning.js`), niet alleen bij een regel
   die de agent voor het eerst ziet. Mobilox wint bewust van wat er in PVP staat: die datum is met de
   koper afgesproken. Een verzetting komt wél als notitie op de werkbon, zodat het geen stille

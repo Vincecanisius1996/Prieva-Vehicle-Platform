@@ -12,6 +12,7 @@ const { takenUit } = require('./taken.js');
 const { meld } = require('../agentrun.js');
 const planning = require('./planning.js');
 const inruil = require('./inruil.js');
+const afspraken = require('./afspraken.js');
 
 const ECHT = process.argv.includes('--echt');
 const SESSIE = '/var/pvp/mobilox-sessie.json';
@@ -173,7 +174,7 @@ function uitRegel(r, soort) {
       ? (/^PVP_VERKOOP_TOKEN=(.*)$/m.exec(fs.readFileSync('/var/pvp/verkoop.env','utf8')) || [])[1] : '') || '';
     if (ECHT && !token) throw new Error('PVP_VERKOOP_TOKEN ontbreekt — zonder token weigert /api/verkocht terecht');
 
-    const uitkomsten = { gemeld:0, verkocht:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0, advertentie:0, aangevuld:0 };
+    const uitkomsten = { gemeld:0, verkocht:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0, advertentie:0, aangevuld:0, vervallen:0, notitie:0 };
     for (const { r, a } of perAuto.values()) {
       const regel = `${(a.merk+' '+a.model).padEnd(24)} ${String(a.kenteken).padEnd(11)} ${r.soort} ${r.nummer}`;
       if (!ECHT) { console.log('  zou melden: ' + regel + `  € ${r.prijs} · ${r.datum}` + (r.afleverdatum?` · aflever ${r.afleverdatum}`:'')); continue; }
@@ -323,32 +324,18 @@ function uitRegel(r, soort) {
       if (ECHT) uitkomsten.carport += regels.length;
     }
 
-    // Afspraken uit de overeenkomst als regels op de werkbon. Dit gebeurt elke ronde over álle
-    // gekoppelde auto's, niet alleen bij een nieuw verwerkte regel: wordt er later in Mobilox een
-    // afspraak bijgeschreven, dan komt die er alsnog bij. Dubbelen worden voorkomen door de tekst te
-    // vergelijken, niet door te onthouden wat we al gedaan hebben.
-    if (ECHT) for (const { r, a } of raak) {
-      if (!r.taken.length) continue;
-      const bon = (await pool.query("SELECT id FROM carport_bonnen WHERE vehicle_id=$1 AND status='open' ORDER BY id DESC LIMIT 1", [a.id])).rows[0];
-      if (!bon) continue;
-      const { rows: al } = await pool.query('SELECT lower(tekst) t FROM carport_taken WHERE bon_id=$1', [bon.id]);
-      const bestaat = new Set(al.map(x => x.t));
-      const { rows: [bn] } = await pool.query('SELECT notities::text n FROM carport_bonnen WHERE id=$1', [bon.id]);
-      let bij = 0;
-      for (const t of r.taken) {
-        if (bestaat.has(t.tekst.toLowerCase())) continue;
-        if (t.soort === 'notitie') {
-          if (bn && bn.n && bn.n.toLowerCase().includes(t.tekst.toLowerCase())) continue;
-          await pool.query('UPDATE carport_bonnen SET notities = notities || $2::jsonb, updated_at=now() WHERE id=$1',
-            [bon.id, JSON.stringify([{ ts: Date.now(), door: 'mobilox-agent', rol: 'prieva', soort: 'technisch', tekst: t.tekst }])]);
-        } else {
-          await pool.query("INSERT INTO carport_taken (bon_id, soort, tekst, door, aangemaakt_ts) VALUES ($1,$2,$3,'mobilox',$4)",
-            [bon.id, t.soort, t.tekst, Date.now()]);
-          bestaat.add(t.tekst.toLowerCase());
-          uitkomsten.taken = (uitkomsten.taken || 0) + 1; bij++;
-        }
-      }
-      if (bij) console.log(`  ${bij} afspraak/afspraken op de werkbon van ${a.merk} ${a.model}`);
+    // De afspraken uit de verkoopovereenkomst bijhouden op de werkbon: erbij wat erbij is gekomen,
+    // eraf wat eruit is gehaald. Elke ronde over álle gekoppelde auto's, want overeenkomsten worden
+    // gewijzigd nadat ze zijn opgemaakt — en dan liep PVP achter op wat er met de koper is afgesproken.
+    // Zie afspraken.js.
+    {
+      const w = await afspraken.bijwerken(pool, raak, { proef: !ECHT });
+      w.regels.forEach(x => console.log(x));
+      if (ECHT) {
+        if (w.bij) uitkomsten.taken = (uitkomsten.taken || 0) + w.bij;
+        if (w.weg) uitkomsten.vervallen = w.weg;
+        if (w.notities) uitkomsten.notitie = w.notities;
+      } else if (w.bij || w.weg) console.log(`  (${w.bij} erbij, ${w.weg} eraf)`);
     }
 
     // Een inruil op een verkoopovereenkomst is een FEIT: die auto komt bij de aflevering binnen.
