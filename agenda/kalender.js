@@ -52,7 +52,9 @@ async function vraag(tok, pad, opties) {
    2. AGENDA_ALS staat op het e-mailadres van een collega, en het account handelt namens die persoon.
    De tweede is nodig als het beheerbeleid geen schrijfrechten geeft aan een account van buiten het
    domein — dan is delen op elk niveau kansloos, hoe vaak je het ook instelt. */
-const inloggen = () => token(SCOPE, (instellingen().AGENDA_ALS || '').trim() || undefined);
+let namensWie = null;                 // met --als te overschrijven, om te toetsen zonder agenda.env aan te raken
+const zetNamens = w => { namensWie = (w || '').trim() || null; };
+const inloggen = () => token(SCOPE, namensWie || (instellingen().AGENDA_ALS || '').trim() || undefined);
 
 // Welke agenda's kan dit account zien? Alleen om het ID op te zoeken bij het inrichten.
 //
@@ -95,4 +97,4 @@ async function verwijder(tok, agendaId, id) {
   catch (e) { if (e.status !== 404 && e.status !== 410) throw e; }
 }
 
-module.exports = { SCOPE, MERK, instellingen, inloggen, agendas, agenda, aanmelden, onzeAfspraken, maak, wijzig, verwijder, netteFout };
+module.exports = { SCOPE, MERK, instellingen, inloggen, zetNamens, agendas, agenda, aanmelden, onzeAfspraken, maak, wijzig, verwijder, netteFout };

@@ -13,6 +13,9 @@ const arg = n => process.argv.includes(n);
 const naArg = n => { const i = process.argv.indexOf(n); return i > -1 ? process.argv[i + 1] : null; };
 
 (async () => {
+  // Namens wie handelen we? Met --als kun je een adres toetsen zonder /var/pvp/agenda.env aan te raken.
+  if (naArg('--als')) K.zetNamens(naArg('--als'));
+
   if (arg('--agendas')) {
     const tok = await K.inloggen();
     const lijst = await K.agendas(tok);
@@ -25,7 +28,11 @@ const naArg = n => { const i = process.argv.indexOf(n); return i > -1 ? process.
   // een service-account, en zonder die stap blijft --agendas leeg terwijl alles werkt.
   const toets = naArg('--toets');
   if (toets) {
-    const tok = await K.inloggen();
+    let tok;
+    // Ook het inloggen kan mislukken — bij delegatie is dat juist de stap die stukgaat. Dan hoort er
+    // één zin te staan, niet een stapel regels uit node.
+    try { tok = await K.inloggen(); }
+    catch (e) { console.log('inloggen lukt niet: ' + e.message); process.exitCode = 1; return; }
     let a;
     // Een nette regel in plaats van een stapel regels uit node: dit is de stap waar iemand die de
     // koppeling inricht op vastloopt, en die heeft aan een foutmelding met bestandsnaam niets.
@@ -41,7 +48,7 @@ const naArg = n => { const i = process.argv.indexOf(n); return i > -1 ? process.
       process.exitCode = 1; return;
     }
     console.log(`gevonden: ${a.summary}  (tijdzone ${a.timeZone})`);
-    const als = (K.instellingen().AGENDA_ALS || '').trim();
+    const als = naArg('--als') || (K.instellingen().AGENDA_ALS || '').trim();
     if (als) console.log(`handelt namens: ${als} (domeinbrede delegatie)`);
     try {
       const l = await K.aanmelden(tok, toets);

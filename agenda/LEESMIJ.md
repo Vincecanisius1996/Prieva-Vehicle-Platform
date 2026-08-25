@@ -55,8 +55,19 @@ weg: **de koppeling namens een collega laten handelen**. Dan komt hij niet meer 
    `100724149126125369873` toelaten met scope `https://www.googleapis.com/auth/calendar`.
 2. `AGENDA_ALS=<e-mailadres van die collega>` in `/var/pvp/agenda.env`.
 
-`node agenda/sync.js --toets <agenda-id>` zegt welke weg actief is en wat er nog mist. De afspraken
-komen dan op naam van die collega te staan; verder verandert er niets.
+`node agenda/sync.js --toets <agenda-id>` zegt welke weg actief is en wat er nog mist. Toetsen kan
+ook zonder `agenda.env` aan te raken:
+
+```
+node agenda/sync.js --als <e-mail> --toets <agenda-id>
+```
+
+De afspraken komen op naam van die collega te staan; verder verandert er niets. Twee foutmeldingen
+die je onderweg kunt krijgen, in gewone taal:
+* *"domeinbrede delegatie staat nog niet aan"* — de client-ID is nog niet toegelaten, of nog niet met
+  deze scope. Het duurt bij Google soms een paar minuten voordat een net toegevoegde scope werkt.
+* *"bestaat niet in het Google-domein"* — het adres klopt niet, of het is geen account in het domein
+  (een alias of een groep werkt niet; het moet een echte gebruiker zijn).
 
 Er wordt bewust **geen genodigde** aan een afspraak toegevoegd. Een service-account mag zonder
 domeinbrede delegatie geen uitnodigingen versturen, en dat willen we ook niet: dit is een planning,
