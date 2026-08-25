@@ -189,7 +189,7 @@ function uitRegel(r, soort) {
           // De auto is hierboven al gevonden, dus sturen we het PVP-id en niet het VIN uit Mobilox.
           // Er staan auto's in PVP met een streepje in het VIN-veld (oude inruilers); die koppelen op
           // kenteken, en dan wijst het VIN uit Mobilox naar niets en kreeg de melding een 404.
-          body: JSON.stringify({ voertuig: a.id, factuurnummer: String(r.nummer),
+          body: JSON.stringify({ voertuig: a.id, factuurnummer: String(r.nummer), soort: r.soort,
             vervangt: r.soort === 'factuur', definitief: r.soort === 'factuur',
             factuurdatum: r.datum, verkoopprijs: r.prijs, bron: 'mobilox-agent (' + r.soort + ')' }) });
         const j = await res.json().catch(()=>({}));

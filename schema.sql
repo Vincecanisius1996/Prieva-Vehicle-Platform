@@ -281,3 +281,10 @@ ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS mobilox_id     bigint;
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS mobilox_prijs  numeric(12,2);
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS mobilox_online boolean;
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS mobilox_ts     bigint;
+
+-- ===== Waar het verkoopnummer vandaan komt (23-08-2026) =====
+-- Mobilox telt verkoopovereenkomsten en facturen elk apart vanaf 1. Overeenkomst 182 en factuur 182
+-- bestaan dus allebei, en zijn verschillende auto's. Zonder te weten uit welk soort document het
+-- nummer komt, kwam een overeenkomstnummer in de kolom "Fact. Nr." van het Autoboek terecht en botste
+-- daar met een echte factuur van eerder in het jaar.
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS verkoop_bron text;   -- 'overeenkomst' | 'factuur' | NULL (onbekend/handmatig)

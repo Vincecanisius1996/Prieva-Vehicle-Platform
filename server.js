@@ -244,9 +244,14 @@ async function verkoopNaarAutoboek(id) {
     const r = await pool.query('SELECT * FROM vehicles WHERE id=$1', [id]);
     if (!r.rowCount) return { status: 'fout', rij: null, fout: 'auto niet gevonden' };
     const v = r.rows[0];
+    // Alleen een échte factuur krijgt een nummer in de kolom "Fact. Nr.". Een overeenkomstnummer
+    // hoort daar niet: Mobilox telt overeenkomsten en facturen apart, dus overeenkomst 182 zou daar
+    // botsen met factuur 182 van een heel andere auto. Het nummer staat wel gewoon in PVP; zodra de
+    // factuur binnenkomt vult de agent het alsnog in het boek in.
     const uit = await autoboek.verplaatsNaarVerkocht(
       { vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model },
-      { factuurnr: v.verkoop_factuurnr, factuurdatum: v.verkoop_factuurdatum,
+      { factuurnr: v.verkoop_bron === 'overeenkomst' ? null : v.verkoop_factuurnr,
+        factuurdatum: v.verkoop_factuurdatum,
         verkoopprijs: v.verkoopprijs === null ? null : Number(v.verkoopprijs) });
     return await bewaar('ok', uit.rij, null);
   } catch (e) {
@@ -775,7 +780,7 @@ const server = http.createServer(async (req, res) => {
       // PVP JJ285K heeft. De lege sleutel mag nooit matchen op auto's met een kastlijntje in het veld.
       const plat = String(sleutel).toUpperCase().replace(/[^A-Z0-9]/g, '');
       const gev = await pool.query(
-        `SELECT id,status,verkoop_factuurnr FROM vehicles
+        `SELECT id,status,verkoop_factuurnr,verkoop_bron,vin,kenteken FROM vehicles
           WHERE id=$1
              OR ($2 <> '' AND upper(regexp_replace(coalesce(vin,''),      '[^A-Za-z0-9]', '', 'g')) = $2)
              OR ($2 <> '' AND upper(regexp_replace(coalesce(kenteken,''), '[^A-Za-z0-9]', '', 'g')) = $2)
@@ -790,6 +795,12 @@ const server = http.createServer(async (req, res) => {
       // 'gemeld verkocht' tot er een factuur of een beheerder achteraan komt.
       //
       // Terugdraaien kan met /api/verkoop-terug (alleen admin), dat de regel ook in het boek terugzet.
+      // Uit welk soort document komt dit nummer? Mobilox telt overeenkomsten en facturen elk apart
+      // vanaf 1, dus overeenkomst 182 en factuur 182 bestaan allebei en zijn verschillende auto's.
+      // Zonder dit onderscheid belandt een overeenkomstnummer in de kolom "Fact. Nr." van het
+      // Autoboek en botst het daar met een echte factuur.
+      const soort = ['overeenkomst', 'factuur'].includes(body.soort) ? body.soort
+                  : (body.definitief === true ? 'factuur' : null);
       const definitief = body.definitief === true;
       // Bevestigen blijft voorbehouden aan een beheerder of aan de koppeling met een token. Een
       // gewone collega die in de app op "Verkocht melden" drukt, meldt — bevestigen is een andere
@@ -828,13 +839,34 @@ const server = http.createServer(async (req, res) => {
         // melder dat uitdrukkelijk zegt (vervangt:true), zodat het geen stille overschrijving is.
         // Een BEVESTIGDE verkoop blijft geweigerd: die regel staat al in het Autoboek met dit
         // nummer, en PVP en het boek uit elkaar laten lopen is erger dan een verouderd nummer.
-        if (v.status === 'gemeld verkocht' && body.vervangt === true) {
+        // Een factuur mag een OVEREENKOMSTnummer altijd vervangen, ook als de verkoop al bevestigd
+        // is: dat nummer hoort niet in de kolom Fact. Nr. en botst daar met een echte factuur. Wat
+        // geweigerd blijft, is een factuurnummer dat een ánder factuurnummer overschrijft — dan
+        // gaan PVP en het boek uit elkaar lopen zonder dat iemand weet welke de goede is.
+        const overeenkomstnr = v.verkoop_bron === 'overeenkomst';
+        if ((v.status === 'gemeld verkocht' || (overeenkomstnr && soort === 'factuur')) && body.vervangt === true) {
           await pool.query(`UPDATE vehicles SET verkoop_factuurnr=$2, verkoop_factuurdatum=coalesce($3,verkoop_factuurdatum),
-                              verkoopprijs=coalesce($4,verkoopprijs), verkocht_gemeld_ts=$5 WHERE id=$1`,
-            [v.id, factuurnr, factuurdatum, Number.isFinite(prijs) ? prijs : null, Date.now()]);
+                              verkoopprijs=coalesce($4,verkoopprijs), verkocht_gemeld_ts=$5, verkoop_bron=$6 WHERE id=$1`,
+            [v.id, factuurnr, factuurdatum, Number.isFinite(prijs) ? prijs : null, Date.now(), soort]);
           // Eerst het nummer bijwerken, dán bevestigen: het Autoboek leest die velden uit de database,
           // dus andersom zou het definitieve factuurnummer net te laat komen.
-          const ab = definitief ? await bevestig(false) : null;
+          //
+          // Stond de auto al op 'verkocht', dan staat zijn regel al op Verkochte en is verplaatsen
+          // geen optie meer; dan wordt alleen de cel Fact. Nr. bijgewerkt.
+          let ab = null;
+          if (definitief && v.status === 'verkocht') {
+            try {
+              const w = await autoboek.wijzigAuto({ vin: v.vin, kenteken: v.kenteken }, {
+                verkoopFactuurnr: factuurnr,
+                ...(factuurdatum ? { verkoopFactuurdatum: factuurdatum } : {}),
+                ...(Number.isFinite(prijs) ? { verkoopprijs: prijs } : {}) });
+              ab = { status: w.status, rij: w.rij, blad: w.blad, kolommen: w.kolommen, fout: null };
+              await pool.query('UPDATE vehicles SET autoboek_status=$2, autoboek_rij=$3, autoboek_ts=$4, autoboek_fout=NULL WHERE id=$1', [v.id, 'ok', w.rij, Date.now()]);
+            } catch (e) {
+              ab = { status: 'fout', rij: null, fout: String(e.message).slice(0, 400) };
+              await pool.query('UPDATE vehicles SET autoboek_status=$2, autoboek_ts=$3, autoboek_fout=$4 WHERE id=$1', [v.id, 'fout', Date.now(), ab.fout]);
+            }
+          } else if (definitief) ab = await bevestig(false);
           await spoor(v.id, definitief ? 'vervangen en bevestigd' : 'vervangen');
           return sendJson(res, 200, { ok: true, vervangen: true, bevestigd: definitief, id: v.id,
             status: definitief ? 'verkocht' : v.status, was: v.verkoop_factuurnr, autoboek: ab });
@@ -845,8 +877,8 @@ const server = http.createServer(async (req, res) => {
 
       await pool.query(
         `UPDATE vehicles SET status='gemeld verkocht', verkoop_factuurnr=$2, verkoop_factuurdatum=$3,
-                verkoopprijs=$4, verkocht_gemeld_ts=$5, updated_at=now() WHERE id=$1`,
-        [v.id, factuurnr, factuurdatum, prijs, Date.now()]);
+                verkoopprijs=$4, verkocht_gemeld_ts=$5, verkoop_bron=$6, updated_at=now() WHERE id=$1`,
+        [v.id, factuurnr, factuurdatum, prijs, Date.now(), soort]);
       if (definitief) {
         const ab = await bevestig(false);
         await spoor(v.id, 'gemeld en bevestigd');

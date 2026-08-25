@@ -108,6 +108,19 @@ bevestigen blijven twee handelingen met twee verantwoordelijkheden. Terugdraaien
 `/api/verkoop-terug` (alleen admin), dat de regel ook in het boek terugzet. Elke melding, ook een
 mislukte, komt in de tabel `verkoop_meldingen`.
 
+**`soort` bepaalt of het nummer in het Autoboek mag** (25-08-2026). Mobilox telt verkoopovereenkomsten
+en facturen **elk apart vanaf 1**: overeenkomst 182 en factuur 182 bestaan allebei en zijn
+verschillende auto's. Daarom:
+- `vehicles.verkoop_bron` legt vast waar het nummer vandaan komt (`overeenkomst` | `factuur`);
+- bij het verplaatsen naar *Verkochte* wordt de kolom **Fact. Nr. alleen gevuld met een factuurnummer**.
+  Een overeenkomstnummer staat wél in PVP, maar niet in het boek — daar zou het botsen;
+- een **factuur mag een overeenkomstnummer altijd vervangen**, ook als de verkoop al bevestigd is; dan
+  wordt alleen de cel Fact. Nr. bijgewerkt (`wijzigAuto`), want verplaatsen kan dan niet meer. Een
+  factuurnummer over een ánder factuurnummer heen blijft **409**.
+
+Dit is niet theoretisch: op 25-08-2026 stonden 176, 180 en 182 elk twee keer in het boek — één keer als
+factuur uit maart, één keer als overeenkomstnummer dat PVP er in augustus bij schreef.
+
 `/api/vehicle` zoekt bij het aanmaken op de **genormaliseerde** VIN en kenteken, niet alleen op het id:
 Mobilox schrijft `kv115l` waar PVP `KV-115-L` heeft. Op het oog twee sleutels, dezelfde auto — en een
 dubbele regel in de catalogus werkt door naar het Autoboek en naar Power BI.
@@ -613,6 +626,14 @@ handelingen die nergens bereikbaar waren. Vijf dingen erbij:
   het rijnummer terug; die regel haal je met de hand weg. Bewust: verwijderen is een correctie op een
   vergissing, geen stap in het proces. Een auto die écht verkocht is loopt via de verkoopbevestiging,
   en dáár verplaatst PVP de regel wél zelf.
+- **Een verplaatsing weigert nu als de auto al op het doelblad staat.** Stond een verkoop met de hand
+  in het boek én bleef de regel op *Lopende* staan, dan zette de verplaatsing hem er een tweede keer
+  op — met hetzelfde factuurnummer. Zo ontstonden op 23-08-2026 de dubbelen bij de Toyota Yaris en de
+  Volkswagen Polo. Nu volgt een duidelijke fout bij de auto in plaats van een stille tweede regel.
+- **De nieuwe regel komt ná álles wat inhoud heeft**, niet na de laatste regel met een gevulde
+  kernkolom. Er staan regels waar alleen een kostenkolom is ingevuld; die zijn voor de kernkolommen
+  "leeg" maar bevatten wel degelijk iets, en die werden overschreven. De eindcontrole ving dat op (het
+  aantal regels groeide niet) met een melding waar niemand iets van begreep.
 - **Een auto met alléén een VIN en een auto met alléén een kenteken zijn niet als dubbel te
   herkennen.** De controle bij `POST /api/vehicle` vergelijkt beide sleutels genormaliseerd, maar twee
   regels die elkaar op geen van beide overlappen, botsen nergens. Zo ontstonden op 23-08-2026 twee

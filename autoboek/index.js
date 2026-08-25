@@ -237,6 +237,24 @@ async function verplaats(v, welke, extra) {
   }
   if (!bron) throw new Error(`auto staat niet in "${R.van}" — niets verplaatst`);
 
+  // Staat hij al op het doelblad? Dan niet nog een keer toevoegen. Dit gebeurt als iemand de verkoop
+  // met de hand in het boek heeft gezet én de regel op Lopende heeft laten staan: de verplaatsing
+  // vond hem dan op Lopende, zette hem op Verkochte, en daar stond hij ineens twee keer met hetzelfde
+  // factuurnummer. Zo zijn op 23-08-2026 de Toyota Yaris en de Volkswagen Polo dubbel komen te staan.
+  // Liever luid falen — dat komt als 'fout' bij de auto te staan en is te herstellen — dan stil een
+  // tweede regel maken die niemand ziet.
+  // Bewust niet op r.gevuld filteren zoals bij het bronblad: een half ingevulde regel telt hier óók
+  // als "hij staat er al". Het gaat er alleen om of dit chassisnummer of kenteken er voorkomt.
+  for (const r of bouw.rijenUit(naar.xml)) {
+    if (r.nr < 2) continue;
+    const c = celsUit(r.binnen, gedeeld);
+    for (const k of [K_VIN, K_KENTEKEN]) {
+      const w = plat(c[k] && c[k].w);
+      if (w && sleutels.includes(w))
+        throw new Error(`deze auto staat al op "${R.naar}" (rij ${r.nr}) — niets verplaatst, haal daar eerst de dubbele regel weg`);
+    }
+  }
+
   // 2. De nieuwe regel opbouwen.
   const waarden = new Array(R.tot).fill('');
   const zet = (i, c) => { if (c) waarden[i] = (c.soort === 'getal' ? { v: c.w } : c.w); };
@@ -247,14 +265,22 @@ async function verplaats(v, welke, extra) {
 
   // 3. Toevoegen op de eerste vrije regel, met de opmaak van de regel erboven.
   const naarRijen = bouw.rijenUit(naar.xml);
-  const gevuld = naarRijen.filter(r => r.gevuld).map(r => r.nr);
-  if (!gevuld.length) throw new Error(`geen gevulde regels in "${R.naar}" — verkeerd blad?`);
-  const laatste = Math.max(...gevuld);
-  const doelNr = laatste + 1;
+  const kern = naarRijen.filter(r => r.gevuld).map(r => r.nr);
+  if (!kern.length) throw new Error(`geen gevulde regels in "${R.naar}" — verkeerd blad?`);
+  const laatsteKern = Math.max(...kern);
+  // De nieuwe regel komt ná ALLES wat inhoud heeft, niet alleen na de laatste regel met een gevulde
+  // kernkolom. Er staan regels waar alleen een kostenkolom is ingevuld; die zijn voor de kernkolommen
+  // "leeg" maar bevatten wel degelijk iets. Schreven we daaroverheen, dan verdween die inhoud —
+  // de eindcontrole ving dat op (het aantal regels groeide niet), maar dan was de verplaatsing al
+  // mislukt met een melding waar niemand iets van begreep.
+  const breed = naarRijen.filter(r => r.gevuldBreed).map(r => r.nr);
+  const doelNr = Math.max(laatsteKern, ...(breed.length ? breed : [0])) + 1;
   const bestaand = naarRijen.find(r => r.nr === doelNr);
-  if (bestaand && bestaand.gevuld) throw new Error(`rij ${doelNr} in "${R.naar}" is niet leeg`);
-  const stijl = bouw.stijlenUit((naarRijen.find(r => r.nr === laatste) || {}).heel || '');
-  if (Object.keys(stijl).length < 10) throw new Error(`kon de opmaak van rij ${laatste} niet aflezen`);
+  if (bestaand && (bestaand.gevuld || bestaand.gevuldBreed)) throw new Error(`rij ${doelNr} in "${R.naar}" is niet leeg`);
+  // De opmaak komt van de laatste regel met echte inhoud in de kernkolommen: die heeft de juiste
+  // getal- en datumnotatie, een regel met alleen een kostenkolom niet.
+  const stijl = bouw.stijlenUit((naarRijen.find(r => r.nr === laatsteKern) || {}).heel || '');
+  if (Object.keys(stijl).length < 10) throw new Error(`kon de opmaak van rij ${laatsteKern} niet aflezen`);
   const nieuweRij = bouw.maakRij(doelNr, waarden, stijl);
 
   let naarXml = naar.xml;
@@ -350,6 +376,12 @@ const WIJZIGBAAR = [
   ['uitv',        10, 'tekst'], ['brandstof',   11, 'tekst'], ['transm',     12, 'tekst'],
   ['reg',         13, 'datum'], ['km',          14, 'getal'], ['inkoopdatum', 15, 'datum'],
   ['inkoopprijs', null, 'getal'],
+  // De verkoopvelden. Die staan bewust onder een eigen naam: het correctieformulier raakt ze niet
+  // aan, maar een factuur die een overeenkomstnummer vervangt moet ze wél kunnen bijwerken op een
+  // regel die al op Verkochte staat — daar is verplaatsen geen optie meer.
+  ['verkoopFactuurnr',    3,  'tekstOfGetal'],
+  ['verkoopFactuurdatum', 17, 'datum'],
+  ['verkoopprijs',        20, 'getal'],
 ];
 
 // Eén cel zetten in een bestaande rij. Bestaat de cel niet (een lege kolom heeft vaak helemaal geen
@@ -364,6 +396,11 @@ function zetCel(rijXml, rijNr, kolIndex, waarde, soort) {
   if (leeg) cel = `<c r="${ref}"${s}/>`;
   else if (soort === 'datum') { const n = bouw.serie(waarde); cel = n ? `<c r="${ref}"${s}><v>${n}</v></c>` : `<c r="${ref}"${s} t="inlineStr"><is><t>${bouwEsc(waarde)}</t></is></c>`; }
   else if (soort === 'getal') cel = `<c r="${ref}"${s}><v>${Number(waarde)}</v></c>`;
+  // Een factuurnummer is meestal een getal maar hoeft dat niet te zijn; als getal blijft het
+  // sorteerbaar en telt het mee in de rapportage.
+  else if (soort === 'tekstOfGetal') cel = Number.isFinite(Number(waarde)) && String(waarde).trim() !== ''
+    ? `<c r="${ref}"${s}><v>${Number(waarde)}</v></c>`
+    : `<c r="${ref}"${s} t="inlineStr"><is><t>${bouwEsc(waarde)}</t></is></c>`;
   else cel = `<c r="${ref}"${s} t="inlineStr"><is><t>${bouwEsc(waarde)}</t></is></c>`;
 
   const bestaand = new RegExp(`<c r="${ref}"(?:[^>]*?)(?:/>|>[\\s\\S]*?</c>)`);
