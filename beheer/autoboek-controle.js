@@ -65,9 +65,16 @@ const leeg = x => x === null || x === undefined || String(x).trim() === '' || St
   const groepen = {};
   rijen.forEach((r, i) => (groepen[vind('r' + i)] ||= []).push(r));
   Object.values(groepen).filter(l => l.length > 1).forEach(l => {
-    const facturen = new Set(l.map(r => r.fact).filter(Boolean));
-    // Verschillende factuurnummers = de auto is vaker verkocht; dat mag.
-    if (facturen.size === l.filter(r => r.fact).length && facturen.size === l.length) return;
+    // Wat wél mag: een auto die eerder verkocht is en nu opnieuw wordt ingekocht. Die heeft één regel
+    // per verkoop, elk met een eigen factuurnummer, plus hooguit één regel op Komende of Lopende voor
+    // de nieuwe ronde. De Tesla Model Y KJB-99-J is daar het voorbeeld van: verkocht in mei, komt
+    // terug als inruil.
+    const verkocht = l.filter(r => r.blad === 'Verkochte Autos');
+    const lopend = l.filter(r => r.blad !== 'Verkochte Autos');
+    const nummers = verkocht.map(r => r.fact);
+    const elkEigenNummer = nummers.every(Boolean) && new Set(nummers).size === nummers.length;
+    const perBlad = new Set(lopend.map(r => r.blad));
+    if (elkEigenNummer && lopend.length <= 1 && perBlad.size === lopend.length) return;
     meldPunt('auto meer dan één keer', `${l[0].auto} (${l[0].kent || l[0].vin}) staat op ` +
       l.map(r => `${r.blad.split(' ')[0]} ${r.rij}${r.fact ? ' fact ' + r.fact : ' zonder factuurnummer'}`).join(' en '));
   });
