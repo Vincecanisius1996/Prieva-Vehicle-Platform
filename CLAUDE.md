@@ -355,6 +355,18 @@ Hoe het nu werkt:
 - De twee HEIC-bestanden die er al lagen zijn omgezet en de URL's in `photos` bijgewerkt; de originelen
   blijven als wees liggen tot de nachtelijke opruimer ze naar de prullenbak verplaatst.
 
+**Slepen werkte niet** (25-08-2026, opgave Prieva). Twee dingen los daarvan, allebei nu gerepareerd:
+- **Een fotovakje deed niets met een bestand van buiten.** `slotDrop()` keerde meteen terug als er geen
+  interne sleep uit de bak liep — terwijl het vakje wél "sleep hierheen" als tooltip had. Je sleepte,
+  er gebeurde niets, en er kwam geen melding. Nu gaat een gesleept bestand door dezelfde weg als de
+  knop (`fotoNaarVakje`), en sleep je er meer dan één, dan gaat de eerste in het vakje en de rest naar
+  de bak in plaats van weggegooid te worden.
+- **De bak "Meerdere foto's tegelijk" was helemaal geen sleepzone.** De tooltip beloofde het, er zat
+  geen `ondrop` op. Nu wel, met een stippellijn zodra je erboven hangt.
+- **`accept="image/*"` grijst .heic uit** in het keuzevenster van Chrome op de Mac. De extensies staan
+  er nu expliciet bij (`FOTO_ACCEPT` / `DOC_ACCEPT`), dus kiezen kan ook.
+- Een bestand dat geen foto is wordt overgeslagen **met een melding**, niet stilzwijgend.
+
 **Blijft staan:** in de bak "Meerdere foto's tegelijk" en bij de documentenlijst toont de browser het
 bestand vóór het uploaden uit zijn eigen geheugen. Een HEIC is daar nog steeds een leeg miniatuurtje —
 de server heeft het dan nog niet gezien. Na het uploaden klopt het beeld wel.

@@ -312,7 +312,10 @@
   .fotocount{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--slate-soft);color:var(--slate)}
   .fotocount.has{background:var(--green-soft);color:var(--green)}
   /* sleep-bak (RDW-foto's in één keer) */
-  .traybar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .traybar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding:6px;border:1px dashed transparent;border-radius:10px;transition:background .12s,border-color .12s}
+  /* Zichtbaar maken dát je hier kunt loslaten. Zonder terugkoppeling weet je bij een mislukte sleep
+     niet of je op de goede plek zat of dat de app het bestand niet aankon. */
+  .traybar.drag{border-color:var(--accent);background:var(--blue-soft)}
   .traygrid{display:flex;gap:8px;flex-wrap:wrap;padding:10px;background:#f2f8fa;border:1px dashed #bcd6de;border-radius:10px;margin-bottom:12px}
   .traythumb{position:relative;width:64px;height:48px;border-radius:6px;overflow:hidden;border:1px solid var(--line);cursor:grab;background:#fff}
   .traythumb:active{cursor:grabbing}
@@ -1149,19 +1152,56 @@ async function setPhotoData(id,key,dataUrl){const v=V.find(x=>x.id===id); if(!v)
   if(apiOk){ try{ const res=await fetch("/api/photo",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,key,dataUrl})}); if(res.ok){const j=await res.json(); if(j&&j.url)v.photos[key]=j.url;} }catch(_){} delete photoUp[id+'|'+key]; }
   pushUndo(`${v.merk} ${v.model} — foto: ${PHOTO_BY_KEY[key].label}`, ()=>{ if(prev)v.photos[key]=prev; else delete v.photos[key]; });
   rerender();}
-async function setPhoto(id,key,input){ const f=input.files&&input.files[0]; input.value=""; if(!f)return; let d=null; try{ d=await leesFoto(f); }catch(_){} if(d)setPhotoData(id,key,d); }
+/* Eén weg voor een bestand naar een vakje, of het nu via de knop of via slepen binnenkomt. Twee
+   wegen zouden uiteenlopen — en dat is precies wat er gebeurde: kiezen werkte, slepen niet. */
+async function fotoNaarVakje(id,key,f){
+  if(!f)return false;
+  if(!isImg(f)){ showToast(`“${f.name||'dit bestand'}” lijkt geen foto — overgeslagen`,false); return false; }
+  let d=null; try{ d=await leesFoto(f); }catch(_){}
+  if(!d){ showToast(`“${f.name||'dit bestand'}” kon niet gelezen worden`,false); return false; }
+  setPhotoData(id,key,d); return true;
+}
+async function setPhoto(id,key,input){ const f=input.files&&input.files[0]; input.value=""; await fotoNaarVakje(id,key,f); }
 /* Sleep-bak: meerdere foto's tegelijk, dan per stuk naar het juiste vakje slepen */
 let photoTray={}; let dragTray=null; let photoTrayLoading={};
-async function addToTray(vid,gname,input){ const files=[...input.files]; input.value=""; if(!files.length)return; const k=vid+'|'+gname; if(!photoTray[k])photoTray[k]=[]; let pending=files.length; photoTrayLoading[k]=files.length; rerender();
-  /* Eén voor één, niet allemaal tegelijk: een reeks van 29-megapixelfoto's parallel verkleinen kan de
-     tab het geheugen uit werken. De teller loopt hoe dan ook af, ook als er één stuk is. */
+async function addToTray(vid,gname,input){ const files=[...input.files]; input.value=""; await bestandenNaarBak(vid,gname,files); }
+/* Foto's in de bak zetten, of ze nu gekozen of gesleept zijn.
+   Eén voor één, niet allemaal tegelijk: een reeks van 29-megapixelfoto's parallel verkleinen kan de
+   tab het geheugen uit werken. De teller loopt hoe dan ook af, ook als er één stuk is. */
+async function bestandenNaarBak(vid,gname,lijst){
+  const files=[...(lijst||[])].filter(isImg);
+  const geweigerd=[...(lijst||[])].length-files.length;
+  if(geweigerd)showToast(`${geweigerd} bestand${geweigerd===1?'':'en'} overgeslagen — dat lijkt geen foto`,false);
+  if(!files.length)return;
+  const k=vid+'|'+gname; if(!photoTray[k])photoTray[k]=[];
+  let pending=files.length; photoTrayLoading[k]=files.length; rerender();
   for(const f of files){ let d=null; try{ d=await leesFoto(f); }catch(_){}
-    if(d)photoTray[k].push(d); if(--pending===0)delete photoTrayLoading[k]; else photoTrayLoading[k]=pending; rerender(); } }
+    if(d)photoTray[k].push(d); if(--pending===0)delete photoTrayLoading[k]; else photoTrayLoading[k]=pending; rerender(); }
+}
+async function bakDrop(ev,vid,gname){ ev.preventDefault(); ev.currentTarget.classList.remove('drag');
+  const files=await entriesFromDrop(ev.dataTransfer); await bestandenNaarBak(vid,gname,files); }
 function removeTray(vid,gname,idx){ const k=vid+'|'+gname; if(photoTray[k])photoTray[k].splice(idx,1); rerender(); }
 function clearTray(vid,gname){ const k=vid+'|'+gname; const arr=photoTray[k]; if(!arr||!arr.length)return; if(!window.confirm(arr.length+" foto"+(arr.length===1?'':"'s")+" uit de bak weghalen?"))return; photoTray[k]=[]; rerender(); }
 function clearGroupPhotos(id,gi){ const v=V.find(x=>x.id===id); if(!v)return; const g=PHOTO_GROUPS[gi]; const filled=g.items.filter(p=>v.photos[p.key]); if(!filled.length)return; if(!window.confirm("Alle "+filled.length+" foto"+(filled.length===1?'':"'s")+" van “"+g.step+"” wissen? Dit kan met Ongedaan worden teruggezet."))return; const prev={}; filled.forEach(p=>{prev[p.key]=v.photos[p.key]; delete v.photos[p.key];}); pushUndo(`${v.merk} ${v.model} — ${g.step}: alle foto's gewist`, ()=>{Object.assign(v.photos,prev);}); rerender(); }
 function trayDragStart(ev,vid,gname,idx){ dragTray={k:vid+'|'+gname,idx}; try{ev.dataTransfer.effectAllowed='move'; ev.dataTransfer.setData('text/plain','x');}catch(_){} }
-function slotDrop(ev,id,key){ ev.preventDefault(); if(!dragTray)return; const arr=photoTray[dragTray.k]; if(!arr)return; const dataUrl=arr[dragTray.idx]; const dt=dragTray; dragTray=null; if(!dataUrl)return; arr.splice(dt.idx,1); setPhotoData(id,key,dataUrl); }
+/* Op een vakje kun je twee dingen laten vallen: een foto uit de bak hierboven (binnen de app), of een
+   bestand uit de Finder of Verkenner. Dat tweede deed niets terwijl het vakje wél "sleep hierheen"
+   zei — je sleepte, er gebeurde niets, en er kwam geen enkele melding. */
+async function slotDrop(ev,id,key){
+  ev.preventDefault();
+  if(dragTray){ const arr=photoTray[dragTray.k]; const dt=dragTray; dragTray=null;
+    if(!arr)return; const dataUrl=arr[dt.idx]; if(!dataUrl)return;
+    arr.splice(dt.idx,1); setPhotoData(id,key,dataUrl); return; }
+  const files=await entriesFromDrop(ev.dataTransfer);
+  if(!files.length)return;
+  // Eén vakje is één foto. Sleep je er meer, dan gaat de eerste in dit vakje en de rest naar de bak,
+  // zodat je ze zelf kunt verdelen — beter dan er stilletjes vier weggooien.
+  const gelukt=await fotoNaarVakje(id,key,files[0]);
+  if(files.length>1){
+    const g=PHOTO_GROUPS.find(x=>x.items.some(p=>p.key===key));
+    if(g)await bestandenNaarBak(id,g.group,files.slice(gelukt?1:0));
+  }
+}
 function backToKomend(id){const v=V.find(x=>x.id===id); if(!v)return; const ps=v.status,pk=v.klaar,pr=v.route,pa=v.arrivedAt;
   v.status='komende'; v.klaar=0; v.route=null; v.arrivedAt=null;
   pushUndo(`${v.merk} ${v.model} teruggezet naar Komend`, ()=>{v.status=ps; v.klaar=pk; v.route=pr; v.arrivedAt=pa;});
@@ -1394,13 +1434,13 @@ function photoCard(v,g){
              :`<span class="pcam">${ico("camera",26)}</span><span class="padd">Toevoegen</span>`}
         ${uploading?`<span class="puploading"><span class="spin"></span></span>`:''}
       </div>
-      <input id="${inputId}" type="file" accept="image/*" capture="environment" style="display:none" onchange="setPhoto('${v.id}','${p.key}',this)">
+      <input id="${inputId}" type="file" accept="${FOTO_ACCEPT}" capture="environment" style="display:none" onchange="setPhoto('${v.id}','${p.key}',this)">
       <div class="plabel">${p.label} ${p.req?`<span class="preq">verplicht</span>`:`<span class="popt">optioneel</span>`}</div>
       ${p.instr?`<div class="pinstr">${p.instr}</div>`:''}
     </div>`;}).join("");
   return `<div class="card"><h3>${g.step} <span class="muted" style="font-weight:500;font-size:12px">${reqDone}/${reqTot} verplicht${optDone?` · ${optDone} extra`:''}</span></h3>
     <div class="card-body">
-      ${(()=>{const tk=v.id+'|'+g.group; const tray=photoTray[tk]||[]; const loading=photoTrayLoading[tk]; const anyFilled=g.items.some(p=>v.photos[p.key]); return `<div class="traybar"><label class="btn btn-ghost btn-sm" title="Kies of sleep meerdere foto's tegelijk"><input type="file" accept="image/*" multiple style="display:none" onchange="addToTray('${v.id}','${g.group}',this)">${ico("plus")} Meerdere foto's tegelijk</label>${loading?`<span class="note" style="margin:0;display:inline-flex;align-items:center;gap:7px"><span class="spin"></span>Foto's laden… (${loading})</span>`:tray.length?`<span class="note" style="margin:0">Sleep elke foto naar het juiste vakje ↓</span><button class="btn btn-danger-o btn-sm" onclick="clearTray('${v.id}','${g.group}')">${ico("trash")} Bak legen (${tray.length})</button>`:''}<span style="flex:1"></span>${anyFilled?`<button class="btn btn-ghost btn-sm" title="Alle foto's van deze stap als zip downloaden" onclick="downloadFotoGroep('${v.id}','${g.group}')">${ico("download")} Download alle (${g.items.filter(p=>v.photos[p.key]).length})</button>`:''}${anyFilled?`<button class="btn btn-danger-o btn-sm" title="Wis alle foto's van deze stap" onclick="clearGroupPhotos('${v.id}',${g.stepIdx})">Alle foto's wissen</button>`:''}</div>${tray.length?`<div class="traygrid">${tray.map((d,i)=>`<div class="traythumb" draggable="true" ondragstart="trayDragStart(event,'${v.id}','${g.group}',${i})"><img src="${d}" alt=""><button class="premove" title="Weghalen" onclick="removeTray('${v.id}','${g.group}',${i})">×</button></div>`).join('')}</div>`:''}`;})()}
+      ${(()=>{const tk=v.id+'|'+g.group; const tray=photoTray[tk]||[]; const loading=photoTrayLoading[tk]; const anyFilled=g.items.some(p=>v.photos[p.key]); return `<div class="traybar" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="bakDrop(event,'${v.id}','${g.group}')" title="Sleep hier meerdere foto's tegelijk"><label class="btn btn-ghost btn-sm" title="Kies of sleep meerdere foto's tegelijk"><input type="file" accept="${FOTO_ACCEPT}" multiple style="display:none" onchange="addToTray('${v.id}','${g.group}',this)">${ico("plus")} Meerdere foto's tegelijk</label>${loading?`<span class="note" style="margin:0;display:inline-flex;align-items:center;gap:7px"><span class="spin"></span>Foto's laden… (${loading})</span>`:tray.length?`<span class="note" style="margin:0">Sleep elke foto naar het juiste vakje ↓</span><button class="btn btn-danger-o btn-sm" onclick="clearTray('${v.id}','${g.group}')">${ico("trash")} Bak legen (${tray.length})</button>`:''}<span style="flex:1"></span>${anyFilled?`<button class="btn btn-ghost btn-sm" title="Alle foto's van deze stap als zip downloaden" onclick="downloadFotoGroep('${v.id}','${g.group}')">${ico("download")} Download alle (${g.items.filter(p=>v.photos[p.key]).length})</button>`:''}${anyFilled?`<button class="btn btn-danger-o btn-sm" title="Wis alle foto's van deze stap" onclick="clearGroupPhotos('${v.id}',${g.stepIdx})">Alle foto's wissen</button>`:''}</div>${tray.length?`<div class="traygrid">${tray.map((d,i)=>`<div class="traythumb" draggable="true" ondragstart="trayDragStart(event,'${v.id}','${g.group}',${i})"><img src="${d}" alt=""><button class="premove" title="Weghalen" onclick="removeTray('${v.id}','${g.group}',${i})">×</button></div>`).join('')}</div>`:''}`;})()}
       <div class="pgrid">${slots}</div>
       ${allReq
         ? (stepDone
@@ -1472,6 +1512,11 @@ function closeTodoModal(){const ov=document.getElementById('todoModal'); if(ov)o
    De documenten worden pas ná het opslaan geüpload: ze horen bij een auto-id, en dat id (de VIN, of
    het kenteken als er geen VIN is) staat pas vast als het formulier is ingevuld. */
 let nieuweDocs=[];   // [{name,dataUrl}] — in het geheugen tot er een id is
+/* accept="image/*" alleen is niet genoeg: Chrome op de Mac grijst .heic-bestanden dan uit in het
+   keuzevenster, want HEIC staat daar niet in de lijst met bekende afbeeldingstypen. De extensies
+   er expliciet bij zetten lost dat op, en schaadt niets op andere systemen. */
+const FOTO_ACCEPT="image/*,.heic,.heif,.HEIC,.HEIF";
+const DOC_ACCEPT="application/pdf,image/*,.heic,.heif,.HEIC,.HEIF";
 const BRANDSTOFFEN=["Benzine","Diesel","Elektrisch","PHEV","Hybride","LPG"];
 const TRANSMISSIES=["Handgeschakeld","Automaat"];
 // Datums in PVP zijn tekst in de vorm dd-mm-jjjj. Accepteer wat mensen typen en maak er dat van.
@@ -1509,7 +1554,7 @@ function openAutoModal(wijzigId){
           Koopovereenkomst, proforma, screenshots — klik of sleep hierheen.<br>
           <span style="font-size:11px">Ze worden bij de auto bewaard en meteen uitgelezen; kijk daarna na wat er is ingevuld.</span>
         </div>
-        <input type="file" id="na-files" multiple accept="application/pdf,image/*" style="display:none" onchange="autoDocsKiezen(this.files); this.value='';">
+        <input type="file" id="na-files" multiple accept="${DOC_ACCEPT}" style="display:none" onchange="autoDocsKiezen(this.files); this.value='';">
         <div class="doclist" id="na-doclist"></div>
         <div id="na-uitlees" style="margin-top:9px"></div>
       </div>
@@ -1550,7 +1595,7 @@ function openAutoModal(wijzigId){
   const d=document.getElementById('na-drop');
   ['dragenter','dragover'].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault(); d.classList.add('over');}));
   ['dragleave','drop'].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault(); d.classList.remove('over');}));
-  d.addEventListener('drop',ev=>autoDocsKiezen(ev.dataTransfer.files));
+  d.addEventListener('drop',async ev=>{ ev.preventDefault(); autoDocsKiezen(await entriesFromDrop(ev.dataTransfer)); });
   // Bij corrigeren staat alles al ingevuld; anders zou je het hele formulier moeten overtypen om
   // één kilometerstand recht te zetten.
   if(bestaand){
@@ -2328,7 +2373,7 @@ function renderTaxCar(){ const v=V.find(x=>x.id===taxState.car); if(!v){taxState
     <div class="card"><h3>BPM-taxatierapport <span class="muted" style="font-weight:500;font-size:12px">${reps.length} geüpload</span></h3>
       <div class="card-body">
         ${reps.length?`<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">${reps.map(rr=>bpmRapportRegel(v.id,rr)).join('')}</div>`:''}
-        <label class="btn btn-primary" style="cursor:pointer"><input type="file" accept="application/pdf,image/*" style="display:none" onchange="uploadBpm('${v.id}',this)">＋ Rapport uploaden (PDF)</label>
+        <label class="btn btn-primary" style="cursor:pointer"><input type="file" accept="${DOC_ACCEPT}" style="display:none" onchange="uploadBpm('${v.id}',this)">＋ Rapport uploaden (PDF)</label>
         <div class="note" style="margin-top:8px">Het Prieva-team krijgt automatisch een melding zodra je het rapport hebt geüpload.</div>
       </div></div>`;
   window.scrollTo(0,0);
@@ -2405,7 +2450,7 @@ async function delAdPhoto(id,url){ const arr=adList(id).filter(u=>u!==url); adPh
   rerenderCurrent(); }
 function adGallery(id){ const arr=adList(id); const sel=adSelSet(id); const up=adUp[id]; const selCount=[...sel].filter(u=>arr.includes(u)).length;
   const tiles=arr.map((url,idx)=>{const on=sel.has(url); return `<div class="adtile${on?' sel':''}"><img src="${url}" alt="foto ${idx+1}"><label class="adcheck" title="Selecteren" onclick="event.stopPropagation()"><input type="checkbox" ${on?'checked':''} onchange="toggleAdSel('${id}','${url}',this.checked)"><span class="adcbox"></span></label><a class="addl" href="${url}" target="_blank" download title="Downloaden">${ico("download",14)}</a><button class="premove" title="Verwijderen" onclick="delAdPhoto('${id}','${url}')">×</button></div>`;}).join("");
-  const addTile=`<label class="adtile adadd"><input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="addAdPhoto('${id}',this)"><span class="pcam">${ico("camera",26)}</span><span class="padd">Foto's</span></label>`;
+  const addTile=`<label class="adtile adadd"><input type="file" accept="${FOTO_ACCEPT}" capture="environment" multiple style="display:none" onchange="addAdPhoto('${id}',this)"><span class="pcam">${ico("camera",26)}</span><span class="padd">Foto's</span></label>`;
   const progress = up? `<div class="aduploading" id="adprog-${id}"><span class="spin"></span><span>Bezig met uploaden… <b>${up.done}/${up.total}</b> — even wachten, niet nogmaals uploaden.</span></div>` : '';
   const selBar = arr.length? `<div class="adselbar">
         <button class="btn btn-ghost btn-sm" onclick="adSelAll('${id}')">Selecteer alles (${arr.length})</button>
