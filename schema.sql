@@ -288,3 +288,9 @@ ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS mobilox_ts     bigint;
 -- nummer komt, kwam een overeenkomstnummer in de kolom "Fact. Nr." van het Autoboek terecht en botste
 -- daar met een echte factuur van eerder in het jaar.
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS verkoop_bron text;   -- 'overeenkomst' | 'factuur' | NULL (onbekend/handmatig)
+
+-- ===== Handmatig verplaatst werk (25-08-2026) =====
+-- Sleept iemand een taak van Carport naar de poetser (of terug), dan is dat een oordeel van een mens.
+-- De agent leidt de soort af uit de tekst van de overeenkomst en zou hem elke ronde terugzetten;
+-- deze vlag zegt: van deze regel blijf je af.
+ALTER TABLE carport_taken ADD COLUMN IF NOT EXISTS soort_hand boolean NOT NULL DEFAULT false;

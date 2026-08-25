@@ -461,6 +461,30 @@ Sinds 20-08-2026. Twee tabellen: `carport_bonnen` (één per auto die bij Carpor
   vertaling richting de koper. Bewust twee soorten: monteurstaal hoort niet ongefilterd bij een klant
   terecht te komen.
 
+## Wat is poetswerk en wat is werk voor Carport
+`mobilox/taken.js` leidt de soort af uit de tekst van de overeenkomst. **De volgorde in `SOORT` is het
+hele verhaal**: veel regels bevatten woorden uit twee soorten en de eerste die past, wint. Van
+specifiek naar algemeen:
+
+1. **schade** — `uitgedeukt|inlak|lakschade|bijtippen|steenslag|kras|revisie|richten`. Móét vóór poetsen
+   en beurt: *"linkerzijde uitgedeukt … na polijstbeurt"* is plaatwerk, geen poetsbeurt.
+2. **poetsen** — `poets|polijst|wassen|zuigen|reinig|schoonmaak|schoongemaak|stofferen|detailing`, plus
+   *interieur én exterieur* in één zin. Let op **`schoongemaak`**: het woord in de overeenkomsten is
+   "schoongemaakt" en dat matcht níét op "schoonmaak" — precies daardoor stond de interieur- en
+   exterieurbeurt van de Opel Astra bij Carport in plaats van bij de poetser (25-08-2026).
+3. **apk** — ná schade, want *"APK en lakschade herstellen"* is werkplaatswerk.
+4. **onderdeel**, dan **beurt** (`beurt` zit óók in polijstbeurt, poetsbeurt en afleverbeurt), dan
+   **reparatie** als vangnet.
+
+`INFO` vangt regels die iets vertéllen in plaats van iets opdragen — *"verkoop onder
+handelsvoorwaarden"*, *"de auto zit nog in een importproces"*. Die worden een **notitie** op de bon:
+als taak vragen ze om een vinkje dat nooit gezet kan worden.
+
+**Verslepen tussen Carport en de poetser.** Op de afleverkaart van Vandaag zijn de twee kolommen
+sleepdoelen. Een regel naar de poetser slepen zet hem op `poetsen`, terugslepen op `reparatie`; binnen
+dezelfde kolom slepen verandert niets, zodat een APK een APK blijft. Elke handmatige verplaatsing zet
+`soort_hand`, en dáár blijft de agent vanaf.
+
 ## De Mobilox-koppeling draait elk kwartier
 Sinds 23-08-2026 draait `pvp-mobilox.timer` **maandag t/m zaterdag, 07:00–18:45 Nederlandse tijd, elk
 kwartier**. Daarvoor moest de agent met de hand gestart worden. De reden voor die frequentie is niet
@@ -519,6 +543,9 @@ uren oud is wel. Een waarschuwing op zondagavond is ruis.
   - **Nooit een afgevinkte taak.** Dat werk ís gedaan; dat uit de administratie halen omdat de
     verkoper de tekst heeft aangepast, wist geschiedenis. Die blijft staan, mét een melding.
   - Wat vervalt, krijgt een **notitie op de bon** met de oude tekst erbij. Geen stille verdwijning.
+  - **De soort wordt bijgesteld als het uitlezen slimmer wordt** — behalve bij een regel die iemand
+    met de hand naar de poetser of naar Carport heeft gesleept (`carport_taken.soort_hand`). Dat is
+    een oordeel van een mens en dat hoort een patroon in een reguliere expressie niet terug te draaien.
   - **Meer dan `MAX_WEG` (10) verwijderingen in één ronde wordt geweigerd** — dat is geen wijziging
     maar een fout, bijvoorbeeld een regressie in `taken.js` die ineens niets meer uitleest. Toevoegen
     gaat dan wél door; dat maakt niets stuk.

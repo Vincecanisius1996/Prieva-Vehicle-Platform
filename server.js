@@ -457,7 +457,7 @@ async function getCarport() {
   ]);
   const perBon = {};
   for (const t of taak.rows) (perBon[t.bon_id] ||= []).push({
-    id: t.id, soort: t.soort, tekst: t.tekst, door: t.door,
+    id: t.id, soort: t.soort, tekst: t.tekst, door: t.door, soortHand: t.soort_hand,
     klaar: t.klaar, klaarTs: t.klaar_ts, klaarDoor: t.klaar_door, ts: t.aangemaakt_ts });
   const maak = r => ({
     id: r.id, vehicleId: r.vehicle_id, afleverdatum: r.afleverdatum, deadline: deadlineVan(r.afleverdatum),
@@ -1202,6 +1202,17 @@ const server = http.createServer(async (req, res) => {
         if (!b.id) return sendJson(res, 400, { error: 'missing' });
         await pool.query('UPDATE carport_taken SET klaar=$2, klaar_ts=$3, klaar_door=$4 WHERE id=$1',
           [b.id, !!b.klaar, b.klaar ? Date.now() : null, b.klaar ? (u.n || u.u) : null]);
+        return sendJson(res, 200, { ok: true });
+      }
+      // Een regel naar de poetser of terug naar Carport slepen. De soort is verder het domein van het
+      // uitlezen; dit is de uitzondering waarin een mens het beter weet, en dat wordt vastgelegd zodat
+      // de agent het niet de volgende ronde terugdraait.
+      if (b.actie === 'soort') {
+        const toegestaan = ['reparatie', 'apk', 'beurt', 'onderdeel', 'poetsen'];
+        if (!b.id || !toegestaan.includes(b.soort)) return sendJson(res, 400, { error: 'missing' });
+        const r = await pool.query('UPDATE carport_taken SET soort=$2, soort_hand=true WHERE id=$1 RETURNING bon_id', [b.id, b.soort]);
+        if (!r.rows.length) return sendJson(res, 404, { error: 'onbekende taak' });
+        console.log('carport: taak', b.id, 'verplaatst naar', b.soort, 'door', u.u);
         return sendJson(res, 200, { ok: true });
       }
       if (b.actie === 'weg') {

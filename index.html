@@ -321,6 +321,9 @@
   .tring.af .trfg{stroke:var(--green)}
   .tring.af b{color:var(--green)}
   .trpct{font-variant-numeric:tabular-nums}
+  .taakkolom{border:1px dashed transparent;border-radius:10px;padding:6px;transition:background .12s,border-color .12s}
+  .taakkolom.doel{border-color:var(--accent);background:var(--blue-soft)}
+  .taak[draggable="true"]{cursor:grab}
   .traybar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding:6px;border:1px dashed transparent;border-radius:10px;transition:background .12s,border-color .12s}
   /* Zichtbaar maken dát je hier kunt loslaten. Zonder terugkoppeling weet je bij een mislukte sleep
      niet of je op de goede plek zat of dat de app het bestand niet aankon. */
@@ -1914,6 +1917,25 @@ function takenRing(af,totaal,titel){
       <circle class="trfg" cx="12" cy="12" r="${r}" stroke-dasharray="${omtrek.toFixed(1)}" stroke-dashoffset="${(omtrek*(1-af/totaal)).toFixed(1)}"></circle>
     </svg><b>${af}/${totaal}</b><span class="trpct">${pct}%</span></span>`;
 }
+/* Een regel van Carport naar de poetser slepen, of terug. Het uitlezen leidt de soort af uit de
+   tekst van de overeenkomst en zit er soms naast — "het interieur en exterieur worden grondig
+   schoongemaakt" belandde bij Carport. Wie het beter weet, sleept hem. Dat oordeel wordt vastgelegd
+   (soort_hand) zodat de agent het de volgende ronde niet terugdraait. */
+let taakSleep=null;
+function taakSleepStart(ev,id,soort){ taakSleep={id,soort}; try{ev.dataTransfer.effectAllowed='move'; ev.dataTransfer.setData('text/plain',String(id));}catch(_){} }
+function taakSleepEind(){ taakSleep=null; document.querySelectorAll('.taakkolom.doel').forEach(e=>e.classList.remove('doel')); }
+function taakSleepOver(ev,el){ if(!taakSleep)return; ev.preventDefault(); el.classList.add('doel'); }
+function taakSleepDrop(ev,el){
+  ev.preventDefault(); el.classList.remove('doel');
+  const t=taakSleep; taakSleep=null; if(!t)return;
+  const naar=el.dataset.kant;
+  // Alleen iets doen als de regel écht van kant wisselt. Binnen dezelfde kolom slepen verandert niets,
+  // en dan hoeft de soort ook niet overschreven te worden — een APK blijft dan gewoon een APK.
+  const soort = naar==='poetser' ? 'poetsen' : (t.soort==='poetsen' ? 'reparatie' : null);
+  if(!soort) return;
+  carportDoe('/api/carport-taak',{actie:'soort',id:t.id,soort},
+    naar==='poetser'?"Naar de poetser verplaatst":"Terug naar Carport verplaatst");
+}
 let afleverOpen=null;
 function afleverKlap(id){ afleverOpen = (afleverOpen===id ? null : id); rerender(); }
 function tijdChip(tot, label){
@@ -1944,12 +1966,13 @@ function afleverPaneel(){
     const carportTaken=b.taken.filter(t=>!POETSWERK(t)), poetsTaken=b.taken.filter(POETSWERK);
     const uit=afleverOpen===b.id;
     const tv=takenVan(b.vehicleId);
-    const takenlijst=(titel,taken,tot,uitleg)=>`
-      <div style="flex:1;min-width:250px">
+    const takenlijst=(titel,taken,tot,uitleg,kant)=>`
+      <div class="taakkolom" style="flex:1;min-width:250px" data-kant="${kant}"
+           ondragover="taakSleepOver(event,this)" ondragleave="this.classList.remove('doel')" ondrop="taakSleepDrop(event,this)">
         <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">
           <span style="font-weight:700;font-size:12px">${titel}</span>${tijdChip(tot,uitleg)}
         </div>
-        ${taken.length?taken.map(t=>`<div class="taak ${t.klaar?'af':''}" style="padding:4px 0">
+        ${taken.length?taken.map(t=>`<div class="taak ${t.klaar?'af':''}" style="padding:4px 0" draggable="true" ondragstart="taakSleepStart(event,${t.id},'${t.soort}')" ondragend="taakSleepEind()" title="Sleep naar de andere kolom als dit werk daar hoort">
             <label class="chk" title="Afvinken"><input type="checkbox" ${t.klaar?'checked':''} onchange="carportTaakAf(${t.id},this.checked)"><span class="box"></span></label>
             <span class="soort ${t.soort}">${(SOORTEN.find(x=>x[0]===t.soort)||[,t.soort])[1]}</span>
             <span class="tk">${esc(t.tekst)}</span>
@@ -1972,8 +1995,8 @@ function afleverPaneel(){
         </span>`:''}
       </div>
       ${uit?`<div class="bon-body" style="display:flex;gap:26px;flex-wrap:wrap">
-        ${takenlijst('Bij Carport',carportTaken,carportTot,`Klaar ${marge} dagen vóór aflevering, zodat de auto nog naar de poetser kan`)}
-        ${takenlijst('Bij de poetser',poetsTaken,aflever,`Vóór de aflevering op ${b.afleverdatum}`)}
+        ${takenlijst('Bij Carport',carportTaken,carportTot,`Klaar ${marge} dagen vóór aflevering, zodat de auto nog naar de poetser kan`,'carport')}
+        ${takenlijst('Bij de poetser',poetsTaken,aflever,`Vóór de aflevering op ${b.afleverdatum}`,'poetser')}
         ${tv.eigen.length?`<div style="flex:1;min-width:250px">
           <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span style="font-weight:700;font-size:12px">Bij Prieva</span>
             <span class="note" style="margin:0">extra taken op deze auto</span></div>

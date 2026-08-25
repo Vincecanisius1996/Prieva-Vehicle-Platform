@@ -30,7 +30,7 @@ const MAX_WEG = 10;
  */
 async function bijwerken(pool, raak, opties) {
   const proef = !!(opties && opties.proef);
-  const uit = { bij: 0, weg: 0, notities: 0, regels: [] };
+  const uit = { bij: 0, weg: 0, soort: 0, notities: 0, regels: [] };
 
   // Alle afspraken per auto bij elkaar: een auto kan zowel een overeenkomst als een factuur hebben,
   // en allebei kunnen regels bevatten. Wat op één van beide staat, geldt.
@@ -70,7 +70,7 @@ async function bijwerken(pool, raak, opties) {
     const notities = taken.filter(t => t.soort === 'notitie');
 
     const { rows: staat } = await pool.query(
-      'SELECT id, soort, tekst, door, klaar FROM carport_taken WHERE bon_id=$1', [bon.id]);
+      'SELECT id, soort, tekst, door, klaar, soort_hand FROM carport_taken WHERE bon_id=$1', [bon.id]);
     const bestaat = new Set(staat.map(x => sleutel(x.tekst)));
     const naam = `${auto.merk} ${auto.model}`.trim();
 
@@ -82,6 +82,18 @@ async function bijwerken(pool, raak, opties) {
         [bon.id, t.soort, t.tekst, Date.now()]);
       bestaat.add(k); uit.bij++;
       uit.regels.push(`  + ${naam}: ${t.tekst.slice(0, 70)}`);
+    }
+
+    // 1b. de soort bijstellen als het uitlezen slimmer is geworden. Niet bij een regel die iemand met
+    //     de hand naar de poetser of naar Carport heeft gesleept: dat is een oordeel van een mens en
+    //     dat hoort een patroon in een reguliere expressie niet elke ronde terug te draaien.
+    for (const t of staat) {
+      if (t.door !== 'mobilox' || t.soort_hand) continue;
+      const wilT = wil.get(sleutel(t.tekst));
+      if (!wilT || wilT.soort === t.soort || wilT.soort === 'notitie') continue;
+      if (!proef) await pool.query('UPDATE carport_taken SET soort=$2 WHERE id=$1', [t.id, wilT.soort]);
+      uit.soort = (uit.soort || 0) + 1;
+      uit.regels.push(`  ~ ${naam}: "${t.tekst.slice(0, 50)}" van ${t.soort} naar ${wilT.soort}`);
     }
 
     // 2. eraf — alleen wat van Mobilox kwam en nog niet is afgevinkt
