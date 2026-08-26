@@ -51,7 +51,7 @@ Draait live op **https://pvp.prieva.nl**. Meerdere gebruikers, met rollen en log
   van vóór deze opschoning en niet meer in gebruik. Bron van waarheid is `index.html`.
 - **Niet in de repo, met opzet:** `/var/pvp/pg.env`, `/var/pvp/restic.env`, `/var/pvp/secret`,
   `/var/pvp/autoboek.env`, `/var/pvp/autoboek-sleutel.json`, `/var/pvp/verkoop.env`,
-  `/var/pvp/mobilox.env`, `/var/pvp/mobilox-sessie.json`, `/var/pvp/agenda.env`, `/var/pvp/ai.env`,
+  `/var/pvp/mobilox.env`, `/var/pvp/mobilox-sessie.json`, `/var/pvp/agenda.env`, `/var/pvp/ai.env`, `/var/pvp/rdw.env`,
   `/var/pvp/uploads`, de JSON-back-ups en alles wat `.gitignore` uitsluit.
 
 ## Rollen (server dwingt af)
@@ -81,6 +81,7 @@ node /opt/pvp-api/setpw.js <gebruiker> <team|admin|foto|taxateur> "<wachtwoord>"
 uit), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
 `/api/adphotos-set`, `/api/taxstate` (taxateur+team+admin), `/api/bpmreports`, `/api/bpmreport`,
 `/api/bpmnotif-seen`, `/api/bpmreport-del`, `/api/vehicle` (team+admin, nieuwe auto),
+`/api/rdw-dossier` (GET, team+admin+RDW-token), `/api/rdw-dossier-status` (POST, **alleen team+admin**),
 `PUT /api/vehicle` (team+admin, auto corrigeren), `/api/inruil` (GET+POST, team+admin),
 `/api/carport-afgeleverd` (**alleen team+admin**),
 `/api/vehicle-del` (**alleen admin**), `/api/vehicledoc`, `/api/uitlezen`, `/api/autoboek-retry`,
@@ -293,9 +294,61 @@ Hoe het nu loopt:
 tussenstap: het gat is dicht, en fijnmazige toegang (een taxateur alleen zijn eigen auto's) hangt aan
 `vehicles`/`bpm_reports` en is een volgende stap.
 
+**Sinds 26-08-2026 is er een tweede sleutel op deze deur: het RDW-token** (`PVP_RDW_TOKEN`, zie
+"Het importdossier" hieronder). Dat is een bewuste verruiming, gekozen door Prieva boven de nauwere
+variant waarbij het token alleen bij bestanden uit een importdossier zou mogen: wie het token heeft,
+komt bij **alle** uploads. Vandaar een eigen token in plaats van hergebruik van `PVP_VERKOOP_TOKEN` —
+intrekken is `/var/pvp/rdw.env` leegmaken plus `systemctl restart pvp-api`, zonder de
+Mobilox-koppeling te raken. De nauwere variant (toetsen dat het pad in een dossier voorkomt) blijft
+open staan als vervolgstap.
+
 Nagemeten bij de omzetting: alle **261** upload-URL's uit de database geven `200` mét sessie en
 `401` zonder. De configuratie staat als kopie in `beheer/nginx-default.conf`; het CRP-blok is een
 apart bestand en is byte-voor-byte ongewijzigd gebleven.
+
+## Het importdossier (RDW) — Fase A
+Sinds 26-08-2026. Per importauto op één plek: de voertuiggegevens, de stukken die de RDW wil zien, wat
+er nog ontbreekt en hoe ver het dossier is. **Nog niets richting de RDW zelf** — dit is de PVP-kant.
+Zie `rdw/LEESMIJ.md`.
+
+- **De eisenlijst staat in `rdw/velden.js`**, gelijk aan `PHOTO_GROUPS` in `index.html`, met twee
+  toevoegingen: `bron` (het BPM-rapport staat in `bpm_reports`, niet in `photos`) en een `req` die een
+  functie mag zijn — het taxatierapport is **alleen verplicht op route JA**. Op route NEE bestaat dat
+  rapport niet en zou de eis onzin zijn. Route JA telt 8 verplichte stukken, route NEE 7.
+  **De lijst staat dus op twee plekken; wijzig je er een, wijzig ze allebei** (net als
+  `BPM_GELDIG_DAGEN`). Het endpoint stuurt de lijst mee als `eisen`, zodat de frontend hem later kan
+  overnemen en de kopie kan verdwijnen.
+- **Twee tabellen: `rdw_dossier` (één rij per auto) en `rdw_dossier_log` (append-only).** Bewust géén
+  kolommen op `vehicles`: die rij wordt door `PUT /api/state` in zijn geheel vanuit de frontend
+  overschreven — precies zo gingen op 20-08-2026 de statusvelden van 64 auto's verloren.
+  **Geen rij = status `dossier`**, dus er hoefde voor de bestaande importauto's niets aangemaakt te
+  worden.
+- **Statussen:** `dossier` → `klaar` → `ingediend` → `keuring` → `ingeschreven`. `klaar` en
+  `ingediend` worden **geweigerd bij een onvolledig dossier** (409 met de lijst); bewust doorgaan kan
+  met `toch:true` en dán staat in het log wát er ontbrak. Bij `keuring` en `ingeschreven` wordt niet
+  meer gecontroleerd — daar heeft de RDW het dossier al aangenomen. `ingediend` eist een `dossiernr`,
+  `keuring` een bestáánde `keuringDatum`. Alles is omkeerbaar, alles komt in het log.
+- **Mijlpaalmomenten horen bij de mijlpaal, niet bij de laatste klik.** Van `keuring` terug naar
+  `ingediend` laat de indieningsdatum staan (dat was een vergissing herstellen); helemaal terug naar
+  `klaar` en opnieuw indienen geeft wél een nieuwe datum. Valt een auto terug vóór een mijlpaal, dan
+  gaat dat moment eraf — mét de oude waarde in het log, nooit stilzwijgend.
+- **Een stuk telt alleen als het bestand er ook echt is.** Lijst én dossier doen een `fs.stat` per
+  aanwezig stuk: een URL waarvan het bestand naar de prullenbak is verhuisd zou anders "compleet"
+  opleveren. Lijst en detail doen bewust dezelfde controle — een overzicht dat iets anders beweert dan
+  de detailpagina gelooft niemand meer. Gemeten op 104 auto's met 832 bestanden: 26–60 ms; live met
+  59 auto's 12–20 ms.
+- **Het kenteken uit de RDW-mail komt alleen in het dossier** (`ingeschreven_kenteken`).
+  `vehicles.kenteken` blijft via de Mobilox-agent lopen; twee wegen naar hetzelfde veld lopen vroeg of
+  laat uiteen.
+- **Toegang:** lezen mag met een sessie (team/admin) of het **RDW-token** uit `/var/pvp/rdw.env`
+  (`PVP_RDW_TOKEN`, chmod 600, **niet committen**, via `EnvironmentFile=` in de unit). Carport,
+  fotograaf en taxateur krijgen 403 — hier liggen kentekenbewijzen en koopovereenkomsten met
+  persoonsgegevens. **De status zetten kan alleen met een sessie**: er is nog geen tegenpartij die dat
+  mag, en schrijfrechten geef je als er iets aan de andere kant staat. Het token geeft óók toegang tot
+  `/uploads/` — zie de waarschuwing daar.
+- **Stand bij de ingebruikname:** 59 importauto's in beeld (de verkochte eruit), waarvan **9 compleet
+  en 50 onvolledig**; bij 48 ontbreken alle voertuigfoto's en bij 49 het buitenlandse kentekenbewijs.
+  Dat is geen meetfout maar de reden dat dit gebouwd is: het dossier zat tot nu toe in de mailbox.
 
 ## Wees-bestanden in uploads
 De app verwijdert URL's uit de database zonder het bestand van schijf te halen — zowel via
@@ -870,5 +923,15 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
 - Bekend gat: **PVP schrijft alleen bij het aanmaken naar het Autoboek.** Latere wijzigingen aan een
   auto komen daar niet in terecht.
 - ~~`/uploads/` staat open.~~ **Dicht sinds 26-08-2026** — zie "Uploads achter de sessie" hierboven.
+- ~~Fase A van de RDW-import: het importdossier in PVP.~~ **Klaar 26-08-2026** — `rdw/velden.js`,
+  `rdw_dossier`, `GET /api/rdw-dossier` en `POST /api/rdw-dossier-status`. Zie hierboven.
+- **Open na Fase A**, in volgorde van nut:
+  1. **Het dossier op het scherm.** De importstatus is nu alleen via het endpoint te zetten en nergens
+     te zien. Een kaart op de autopagina en de stand in de statuskolom op *Lopende* is de eerste stap.
+  2. **De eisenlijst uit `index.html` halen** en `PHOTO_GROUPS` laten vallen ten gunste van `eisen`
+     uit het endpoint, zodat de dubbeling verdwijnt.
+  3. **Het RDW-token nauwer maken**: alleen bestanden die in een importdossier voorkomen, in plaats
+     van heel `/uploads/`.
+  4. Pas daarna Fase B: iets richting de RDW zelf.
 - ~~Geen enkele auto is in PVP te wijzigen.~~ **Klaar 23-08-2026:** `PUT /api/vehicle` en de knop
   *Gegevens wijzigen* op de auto zelf. Zie hieronder.

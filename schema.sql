@@ -294,3 +294,41 @@ ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS verkoop_bron text;   -- 'overeenko
 -- De agent leidt de soort af uit de tekst van de overeenkomst en zou hem elke ronde terugzetten;
 -- deze vlag zegt: van deze regel blijf je af.
 ALTER TABLE carport_taken ADD COLUMN IF NOT EXISTS soort_hand boolean NOT NULL DEFAULT false;
+
+-- Het importdossier (Fase A van de RDW-import, 26-08-2026). De stand van een importauto bij de RDW.
+--
+-- Bewust een EIGEN tabel en geen kolommen op `vehicles`: die rij wordt door PUT /api/state in zijn
+-- geheel vanuit de frontend overschreven — precies zo gingen op 20-08-2026 de statusvelden van 64
+-- auto's verloren. Wat hier staat komt van mensen (en straks van de RDW) en hoort buiten dat
+-- schrijfpad te blijven.
+--
+-- Geen rij = status 'dossier'. Zo hoeft er voor de 73 bestaande importauto's niets aangemaakt te
+-- worden; de tabel vult zich vanzelf zodra iemand een stap zet.
+CREATE TABLE IF NOT EXISTS rdw_dossier (
+  vehicle_id      text PRIMARY KEY,        -- geen FK: net als bpm_reports, huisstijl van dit schema
+  status          text NOT NULL DEFAULT 'dossier',
+                  -- dossier | klaar | ingediend | keuring | ingeschreven
+  dossiernr       text,                    -- nummer dat de RDW teruggeeft bij het indienen
+  ingediend_ts    bigint,
+  ingediend_door  text,
+  keuring_datum   text,                    -- dd-mm-jjjj, als alle andere datums in PVP
+  keuring_plaats  text,
+  ingeschreven_ts bigint,
+  ingeschreven_kenteken text,
+  opmerking       text,
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+
+-- Elke overgang, append-only. Wordt nooit opgeschoond: dit is de plek om terug te kijken wat wanneer
+-- is ingediend en door wie — zelfde regel als de Carport-logboeken. `melding` legt ook vast dat er
+-- met `toch` langs de compleetheidscheck is gegaan, en wat er op dat moment ontbrak.
+CREATE TABLE IF NOT EXISTS rdw_dossier_log (
+  id         bigserial PRIMARY KEY,
+  vehicle_id text NOT NULL,
+  ts         bigint,
+  van        text,
+  naar       text,
+  door       text,
+  melding    text
+);
+CREATE INDEX IF NOT EXISTS rdw_dossier_log_vid ON rdw_dossier_log (vehicle_id, id);

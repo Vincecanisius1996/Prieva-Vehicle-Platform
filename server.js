@@ -22,6 +22,11 @@ try { uitlezen = require('./uitlezen'); } catch (e) { console.error('uitlezen ni
 // werkt uploaden gewoon door — alleen het automatisch sorteren en de geldigheidsteller vallen weg.
 let bpmlezen = null;
 try { bpmlezen = require('./bpmlezen'); } catch (e) { console.error('bpmlezen niet geladen:', e.message); }
+// Het importdossier (RDW): de lijst met stukken die de RDW wil zien, plus het rekenwerk of ze er
+// zijn. Geen netwerk en geen sleutel — puur een tabel en een functie. Ontbreekt de map, dan vallen
+// de dossier-endpoints weg met een 503 en draait de rest van PVP gewoon door.
+let rdw = null;
+try { rdw = require('./rdw/velden'); } catch (e) { console.error('rdw/velden niet geladen:', e.message); }
 
 const DATA_DIR = process.env.PVP_DATA || '/var/pvp';
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
@@ -171,8 +176,44 @@ const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
  * Voorlopig is elke geldige sessie genoeg; per rol of per auto beperken is een volgende stap.
  */
 const INTERNE_UPLOADS = '/intern-uploads/';
+/* Toegang met het RDW-token: een ander systeem dat het importdossier mag lezen. Eigen token in
+   /var/pvp/rdw.env (chmod 600, niet in de repo) en bewust niet PVP_VERKOOP_TOKEN hergebruikt — een
+   andere partij, een ander doel, en apart in te trekken zonder de Mobilox-koppeling te breken.
+   Geen token ingesteld = deze weg staat uit. Nooit "geen token dus vrije toegang". */
+function rdwToken(req) {
+  const token = (process.env.PVP_RDW_TOKEN || '').trim();
+  if (!token) return false;
+  const kop = String(req.headers.authorization || '');
+  const gegeven = kop.startsWith('Bearer ') ? kop.slice(7).trim() : '';
+  const a = Buffer.from(gegeven), b = Buffer.from(token);
+  // Lengte eerst: timingSafeEqual gooit bij ongelijke lengte.
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/* Staat het bestand er nog? Een URL in de database waarvan het bestand naar de prullenbak is
+   verhuisd (de nachtelijke wezenopruimer) zou anders als een aanwezig stuk tellen, en dan meldt het
+   dossier "compleet" terwijl de RDW straks een lege hand krijgt. Zelfde padcontroles als
+   serveUpload: een dossier mag geen weg zijn om buiten de uploadmap te kijken. */
+function bestandStaatEr(u) {
+  return new Promise(klaar => {
+    let rel;
+    try { rel = decodeURIComponent(String(u || '').replace(/^\/uploads\//, '')); }
+    catch (_) { return klaar('onbekend'); }
+    if (!rel || rel.indexOf('..') >= 0 || rel.indexOf('\0') >= 0) return klaar('onbekend');
+    const fp = path.resolve(UPLOAD_DIR, rel);
+    if (fp !== UPLOAD_DIR && !fp.startsWith(UPLOAD_DIR + path.sep)) return klaar('onbekend');
+    fs.stat(fp, (e, st) => klaar(e || !st.isFile() ? 'weg' : 'ok'));
+  });
+}
+
 function serveUpload(req, res, url) {
-  if (!userFromReq(req)) return sendJson(res, 401, { error: 'auth' });
+  // Naast de sessiecookie geeft ook het RDW-token toegang (weg 2, gekozen door Prieva op
+  // 26-08-2026). Dat verruimt bewust wat eerder diezelfde dag is dichtgezet: het token is een tweede
+  // sleutel op dezelfde deur en geeft toegang tot ALLE uploads, niet alleen tot de importdossiers.
+  // Vandaar een eigen token dat apart in te trekken is; wordt PVP_RDW_TOKEN leeggemaakt en de service
+  // herstart, dan is deze weg meteen weer dicht.
+  if (!userFromReq(req) && !rdwToken(req)) return sendJson(res, 401, { error: 'auth' });
   let rel;
   try { rel = decodeURIComponent(url.replace(/^\/uploads\//, '')); }
   catch (_) { return sendJson(res, 400, { error: 'bad' }); }
@@ -1376,6 +1417,246 @@ const server = http.createServer(async (req, res) => {
 
     if (url === '/api/bpmnotif-seen' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); await pool.query('UPDATE bpm_notifs SET seen=true WHERE seen=false'); return sendJson(res, 200, { ok: true }); }
     if (url === '/api/bpmreport-del' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.url) return sendJson(res, 400, { error: 'missing' }); await pool.query('DELETE FROM bpm_reports WHERE vehicle_id=$1 AND url=$2', [b.id, b.url]); try { const rel = decodeURIComponent(String(b.url).replace(/^\/uploads\//, '')); if (rel.indexOf('..') < 0) fs.unlink(path.join(UPLOAD_DIR, rel), () => {}); } catch (_) {} return sendJson(res, 200, { ok: true }); }
+
+    /* ===== Het importdossier (RDW) — Fase A, 26-08-2026 ======================================
+       Per importauto: de voertuiggegevens, de stukken die de RDW wil zien, wat er nog ontbreekt en
+       hoe het dossier ervoor staat. Nog niets richting de RDW zelf — dit is alleen de PVP-kant.
+
+       Toegang: een ingelogde collega van Prieva (team/admin) of een ander systeem met het RDW-token.
+       Carport, fotograaf en taxateur krijgen 403: in dit dossier zitten kentekenbewijzen en
+       koopovereenkomsten met persoonsgegevens van particuliere verkopers.
+
+       De status zetten kan in Fase A alléén met een sessie. Er is nog geen tegenpartij die dat mag,
+       en schrijfrechten geef je op het moment dat er iets aan de andere kant staat — niet alvast. */
+
+    if (url === '/api/rdw-dossier' && method === 'GET') {
+      const u = userFromReq(req);
+      const viaApp = u && (u.r === 'team' || u.r === 'admin');
+      if (!viaApp && !rdwToken(req)) return sendJson(res, u ? 403 : 401, { error: u ? 'forbidden' : 'auth' });
+      if (!rdw) return sendJson(res, 503, { error: 'importdossier staat uit' });
+      const vraag = new URL(req.url, 'http://x').searchParams;
+      const id = (vraag.get('id') || '').trim();
+
+      // De eisenlijst gaat mee in elk antwoord. Zo kan de frontend hem later hiervandaan halen in
+      // plaats van uit zijn eigen kopie (PHOTO_GROUPS), en verdwijnt die dubbeling vanzelf.
+      const eisen = rdw.STUKKEN.map(s => ({ key: s.key, groep: s.groep, label: s.label,
+        req: typeof s.req === 'function' ? 'soms' : s.req, waarom: s.waarom || null }));
+
+      // Eén auto: het volledige dossier.
+      if (id) {
+        const v = (await pool.query('SELECT * FROM vehicles WHERE id=$1', [id])).rows[0];
+        if (!v) return sendJson(res, 404, { error: 'onbekende auto' });
+        const [dos, rap] = await Promise.all([
+          pool.query('SELECT * FROM rdw_dossier WHERE vehicle_id=$1', [id]),
+          // Nieuwste eerst: bij een verlopen rapport is een nieuwer rapport het rapport dat telt.
+          pool.query('SELECT url,name,ts,by_name,opname_datum FROM bpm_reports WHERE vehicle_id=$1 ORDER BY id DESC', [id])
+        ]);
+        const d = dos.rows[0] || null;
+        const oordeel = rdw.beoordeel(v, v.photos || {}, rap.rows);
+
+        // Alleen bij de detailaanroep nagaan of de bestanden er echt nog liggen: dat zijn er hooguit
+        // een stuk of twintig. De lijst hieronder doet dat bewust niet — die gaat over alle auto's.
+        const bijlagen = Array.isArray(v.docs) ? v.docs : [];
+        await Promise.all([
+          ...oordeel.stukken.filter(s => s.url).map(async s => { s.bestand = await bestandStaatEr(s.url); }),
+          ...bijlagen.map(async b => { b.bestand = await bestandStaatEr(b.url); })
+        ]);
+        // Een stuk waarvan het bestand weg is telt niet als aanwezig: anders meldt het dossier
+        // "compleet" en krijgt de RDW straks een lege hand.
+        for (const s of oordeel.stukken) if (s.aanwezig && s.bestand === 'weg') s.aanwezig = false;
+        const ontbreekt = oordeel.stukken.filter(s => s.verplicht && !s.aanwezig).map(s => ({ key: s.key, label: s.label }));
+
+        return sendJson(res, 200, {
+          auto: { id: v.id, vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model, uitv: v.uitv,
+                  kleur: v.kleur, brandstof: v.brandstof, transm: v.transm, reg: v.reg,
+                  km: v.km, inkoopdatum: v.inkoopdatum, lev: v.lev, importAuto: v.import_auto,
+                  status: v.status, klaar: v.klaar, route: v.route },
+          dossier: {
+            status: d ? d.status : 'dossier',
+            label: rdw.STATUS_LABEL[d ? d.status : 'dossier'],
+            dossiernr: d ? d.dossiernr : null,
+            ingediendTs: d ? d.ingediend_ts : null, ingediendDoor: d ? d.ingediend_door : null,
+            keuringDatum: d ? d.keuring_datum : null, keuringPlaats: d ? d.keuring_plaats : null,
+            ingeschrevenTs: d ? d.ingeschreven_ts : null, ingeschrevenKenteken: d ? d.ingeschreven_kenteken : null,
+            opmerking: d ? d.opmerking : null
+          },
+          stukken: oordeel.stukken,
+          bijlagen,
+          compleet: ontbreekt.length === 0,
+          ontbreekt,
+          telling: { verplicht: oordeel.telling.verplicht, aanwezig: oordeel.telling.verplicht - ontbreekt.length },
+          eisen,
+          log: (await pool.query('SELECT ts,van,naar,door,melding FROM rdw_dossier_log WHERE vehicle_id=$1 ORDER BY id DESC LIMIT 50', [id]))
+                 .rows.map(r => ({ ts: r.ts, van: r.van, naar: r.naar, door: r.door, melding: r.melding }))
+        });
+      }
+
+      // De lijst: alleen importauto's, standaard zonder de verkochte. Geen URL's — die horen bij het
+      // dossier zelf, niet bij een overzicht.
+      //
+      // De bestandscontrole doet de lijst wél, net als de detailaanroep. Anders meldt het overzicht
+      // "compleet" voor een auto waarvan de detailpagina zegt dat er een stuk mist, en dan gelooft
+      // niemand meer welk van de twee. Het kost een fs.stat per aanwezig stuk — op de hele vloot een
+      // paar honderd, parallel, en dat valt weg tegen de databasevraag ervoor.
+      const alles = vraag.get('alles') === '1';
+      const autos = await pool.query(
+        `SELECT id,vin,kenteken,merk,model,route,status,klaar,photos FROM vehicles
+          WHERE import_auto = true ${alles ? '' : "AND status NOT IN ('verkocht')"}
+          ORDER BY sort_order NULLS LAST, id`);
+      const [dossiers, rapporten] = await Promise.all([
+        pool.query('SELECT * FROM rdw_dossier'),
+        pool.query('SELECT vehicle_id,url,name,ts FROM bpm_reports ORDER BY id DESC')
+      ]);
+      const perId = new Map(dossiers.rows.map(r => [r.vehicle_id, r]));
+      const rapPerId = new Map();
+      for (const r of rapporten.rows) { if (!rapPerId.has(r.vehicle_id)) rapPerId.set(r.vehicle_id, []); rapPerId.get(r.vehicle_id).push(r); }
+
+      const oordelen = autos.rows.map(v => ({ v, o: rdw.beoordeel(v, v.photos || {}, rapPerId.get(v.id) || []) }));
+      await Promise.all(oordelen.flatMap(({ o }) => o.stukken.filter(s => s.url).map(async s => {
+        if (await bestandStaatEr(s.url) === 'weg') s.aanwezig = false;
+      })));
+
+      return sendJson(res, 200, {
+        eisen,
+        autos: oordelen.map(({ v, o }) => {
+          const d = perId.get(v.id) || null;
+          const mist = o.stukken.filter(s => s.verplicht && !s.aanwezig);
+          return { id: v.id, vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model,
+                   route: v.route, status: v.status, klaar: v.klaar,
+                   dossier: d ? d.status : 'dossier',
+                   dossierLabel: rdw.STATUS_LABEL[d ? d.status : 'dossier'],
+                   keuringDatum: d ? d.keuring_datum : null,
+                   compleet: mist.length === 0,
+                   telling: { verplicht: o.telling.verplicht, aanwezig: o.telling.verplicht - mist.length },
+                   ontbreekt: mist.map(s => s.key) };
+        })
+      });
+    }
+
+    // De stand van het dossier zetten. Alleen team en admin — zie de kop hierboven.
+    if (url === '/api/rdw-dossier-status' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      if (!rdw) return sendJson(res, 503, { error: 'importdossier staat uit' });
+      const b = await readBody(req) || {};
+      const tekst = x => { const t = (x === undefined || x === null) ? '' : String(x).trim(); return t === '' ? null : t; };
+      const id = tekst(b.id);
+      const naar = tekst(b.status);
+      if (!id || !naar) return sendJson(res, 400, { error: 'missing' });
+      if (rdw.STATUSSEN.indexOf(naar) < 0) return sendJson(res, 400, { error: 'onbekende status', mag: rdw.STATUSSEN });
+
+      const v = (await pool.query('SELECT * FROM vehicles WHERE id=$1', [id])).rows[0];
+      if (!v) return sendJson(res, 404, { error: 'onbekende auto' });
+      const d = (await pool.query('SELECT * FROM rdw_dossier WHERE vehicle_id=$1', [id])).rows[0] || null;
+      const van = d ? d.status : 'dossier';
+
+      // Niet alleen de vorm maar ook of de dag bestaat: 31-31-2026 heeft de goede vorm. Zelfde
+      // controle als bij het wijzigen van een auto.
+      const datum = x => {
+        const t = tekst(x); if (t === null) return null;
+        const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(t); if (!m) return NaN;
+        const dt = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
+        return (dt.getUTCDate() === +m[1] && dt.getUTCMonth() === +m[2] - 1 && dt.getUTCFullYear() === +m[3]) ? t : NaN;
+      };
+      const keuringDatum = datum(b.keuringDatum);
+      if (Number.isNaN(keuringDatum)) return sendJson(res, 400, { error: 'ongeldige waarde', velden: ['keuringDatum'] });
+
+      // Wat er ná deze wijziging in het dossier staat.
+      const na = {
+        dossiernr:  b.dossiernr     !== undefined ? tekst(b.dossiernr)     : (d ? d.dossiernr : null),
+        keuring_datum:  b.keuringDatum  !== undefined ? keuringDatum       : (d ? d.keuring_datum : null),
+        keuring_plaats: b.keuringPlaats !== undefined ? tekst(b.keuringPlaats) : (d ? d.keuring_plaats : null),
+        // Het kenteken uit de RDW-mail. Bewust alleen hier vastgelegd: vehicles.kenteken blijft via
+        // Mobilox lopen, en twee wegen naar hetzelfde veld lopen vroeg of laat uiteen.
+        ingeschreven_kenteken: b.kenteken !== undefined ? tekst(b.kenteken) : (d ? d.ingeschreven_kenteken : null),
+        opmerking:  b.opmerking     !== undefined ? tekst(b.opmerking)     : (d ? d.opmerking : null),
+      };
+
+      // Een status die iets belooft wat er niet is, is erger dan geen status.
+      const eist = rdw.STATUS_EIST[naar];
+      // veldNodig is de naam zoals hij in de body heet, niet de kolomnaam: de client moet weten
+      // welk veld hij moet meesturen.
+      const VELDNAAM = { dossiernr: 'dossiernr', keuring_datum: 'keuringDatum' };
+      if (eist && !na[eist]) return sendJson(res, 400, {
+        error: eist === 'dossiernr' ? 'dossiernummer nodig' : 'keuringsdatum nodig', veldNodig: VELDNAAM[eist] });
+
+      // "Klaar voor RDW" en "ingediend" zeggen allebei dat de stukken binnen zijn. Zijn ze dat niet,
+      // dan volgt 409 met de lijst — bewust doorgaan kan met toch:true, en dán staat in het log wát
+      // er ontbrak. Bij keuring en ingeschreven wordt niet meer gecontroleerd: op dat punt heeft de
+      // RDW het dossier al aangenomen en zou PVP een oordeel overdoen dat niet meer van hem is.
+      let melding = tekst(b.melding) || null;
+      if (naar === 'klaar' || naar === 'ingediend') {
+        const rap = (await pool.query('SELECT url,name,ts FROM bpm_reports WHERE vehicle_id=$1 ORDER BY id DESC', [id])).rows;
+        const o = rdw.beoordeel(v, v.photos || {}, rap);
+        await Promise.all(o.stukken.filter(s => s.url).map(async s => {
+          if (await bestandStaatEr(s.url) === 'weg') s.aanwezig = false;
+        }));
+        const ontbreekt = o.stukken.filter(s => s.verplicht && !s.aanwezig).map(s => ({ key: s.key, label: s.label }));
+        if (ontbreekt.length && b.toch !== true) return sendJson(res, 409, { error: 'dossier onvolledig', ontbreekt });
+        if (ontbreekt.length) melding = `toch op ${naar} gezet, ontbrak: ${ontbreekt.map(x => x.label).join(', ')}`
+          + (melding ? ' — ' + melding : '');
+      }
+
+      const nu = Date.now();
+      const wie = u.n || u.u;
+      /* De momenten horen bij het bereiken van een mijlpaal, niet bij de laatste klik. Zet iemand een
+         auto van "keuring" terug op "ingediend" omdat hij zich vergiste, dan blijft de indieningsdatum
+         staan — die auto is nog steeds op diezelfde dag ingediend. Pas wie helemaal terugvalt naar
+         "dossier" of "klaar" en daarna opnieuw indient, dient ook echt opnieuw in en krijgt een
+         nieuwe datum.
+
+         En andersom: valt een auto terug vóór een mijlpaal, dan hoort het moment van die mijlpaal
+         eraf. Een auto die op "ingediend" staat met een inschrijfdatum en een toegekend kenteken
+         eronder is een tegenstrijdigheid die niemand meer uitlegt. Wat vervalt verdwijnt niet
+         stilletjes maar staat in het logboek — zelfde regel als bij de afspraken op de werkbon. */
+      const ORDE = { dossier: 0, klaar: 1, ingediend: 2, keuring: 3, ingeschreven: 4 };
+      const bereikt = m => ORDE[naar] >= ORDE[m];
+      const had = m => !!d && ORDE[van] >= ORDE[m];
+      const nlDatum = ts => { const x = new Date(ts); return String(x.getUTCDate()).padStart(2, '0') + '-'
+        + String(x.getUTCMonth() + 1).padStart(2, '0') + '-' + x.getUTCFullYear(); };
+      const vervallen = [];
+      let ingediendTs = null, ingediendDoor = null, ingeschrTs = null;
+      if (bereikt('ingediend')) {
+        ingediendTs   = had('ingediend') ? d.ingediend_ts   : nu;
+        ingediendDoor = had('ingediend') ? d.ingediend_door : wie;
+      } else if (d && d.ingediend_ts) vervallen.push('ingediend op ' + nlDatum(d.ingediend_ts));
+      if (bereikt('ingeschreven')) {
+        ingeschrTs = had('ingeschreven') ? d.ingeschreven_ts : nu;
+      } else if (d && d.ingeschreven_ts) vervallen.push('ingeschreven op ' + nlDatum(d.ingeschreven_ts));
+      // Het kenteken uit de RDW-mail hoort bij "ingeschreven". Valt die status weg, dan is het geen
+      // toegekend kenteken meer — tenzij iemand er in dezelfde handeling zelf een meegeeft.
+      if (!bereikt('ingeschreven') && na.ingeschreven_kenteken && b.kenteken === undefined) {
+        vervallen.push('kenteken ' + na.ingeschreven_kenteken);
+        na.ingeschreven_kenteken = null;
+      }
+      if (vervallen.length) melding = 'vervallen bij stap terug: ' + vervallen.join(', ')
+        + (melding ? ' — ' + melding : '');
+
+      await pool.query(
+        `INSERT INTO rdw_dossier (vehicle_id,status,dossiernr,ingediend_ts,ingediend_door,
+                                  keuring_datum,keuring_plaats,ingeschreven_ts,ingeschreven_kenteken,
+                                  opmerking,updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
+         ON CONFLICT (vehicle_id) DO UPDATE SET status=EXCLUDED.status, dossiernr=EXCLUDED.dossiernr,
+           ingediend_ts=EXCLUDED.ingediend_ts, ingediend_door=EXCLUDED.ingediend_door,
+           keuring_datum=EXCLUDED.keuring_datum, keuring_plaats=EXCLUDED.keuring_plaats,
+           ingeschreven_ts=EXCLUDED.ingeschreven_ts, ingeschreven_kenteken=EXCLUDED.ingeschreven_kenteken,
+           opmerking=EXCLUDED.opmerking, updated_at=now()`,
+        [id, naar, na.dossiernr, ingediendTs, ingediendDoor, na.keuring_datum, na.keuring_plaats,
+         ingeschrTs, na.ingeschreven_kenteken, na.opmerking]);
+
+      // Alles wat er verandert komt in het log, ook een stap terug. Dit logboek wordt nooit
+      // opgeschoond: het is de plek om terug te kijken wat wanneer is ingediend en door wie.
+      const veranderd = !d || d.status !== naar
+        || d.dossiernr !== na.dossiernr || d.keuring_datum !== na.keuring_datum
+        || d.keuring_plaats !== na.keuring_plaats || d.ingeschreven_kenteken !== na.ingeschreven_kenteken
+        || d.opmerking !== na.opmerking;
+      if (veranderd) await pool.query(
+        'INSERT INTO rdw_dossier_log (vehicle_id,ts,van,naar,door,melding) VALUES ($1,$2,$3,$4,$5,$6)',
+        [id, nu, van, naar, wie, melding]);
+
+      return sendJson(res, 200, { ok: true, id, van, status: naar, label: rdw.STATUS_LABEL[naar], melding });
+    }
 
     // Alleen voor lokaal testen: serveer de frontend als PVP_FRONTEND is gezet. In productie doet nginx dit.
     if (process.env.PVP_FRONTEND && method === 'GET') {

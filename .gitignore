@@ -34,3 +34,6 @@ mobilox/verkenning.txt
 mobilox/verkenning.txt
 mobilox/menu.txt
 mobilox/schermen.txt
+
+# Token voor het RDW-importdossier (staat in /var/pvp/, buiten de repo). Tweede grendel:
+rdw.env

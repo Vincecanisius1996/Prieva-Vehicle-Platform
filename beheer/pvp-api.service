@@ -1,0 +1,24 @@
+[Unit]
+Description=PVP API
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/pvp-api
+ExecStart=/usr/bin/node /opt/pvp-api/server.js
+Restart=always
+Environment=NODE_ENV=production
+EnvironmentFile=/var/pvp/pg.env
+# Koppeling met het Autoboek. Ontbreekt dit bestand, dan start de service gewoon en staat de
+# koppeling uit — vandaar het minteken.
+EnvironmentFile=-/var/pvp/autoboek.env
+# Sleutel voor het uitlezen van inkoopstukken. Ontbreekt hij, dan blijft die functie simpelweg uit.
+EnvironmentFile=-/var/pvp/ai.env
+# Token waarmee een ander systeem een verkoop mag melden. Ontbreekt het, dan geeft /api/verkocht 503.
+EnvironmentFile=-/var/pvp/verkoop.env
+# Token waarmee een ander systeem het RDW-importdossier mag lezen (en de bijbehorende uploads mag
+# ophalen). Ontbreekt het bestand of is de regel leeg, dan staat die weg dicht en werkt alleen de
+# sessiecookie. Zo is de toegang in te trekken door dit bestand leeg te maken en te herstarten.
+EnvironmentFile=-/var/pvp/rdw.env
+
+[Install]
+WantedBy=multi-user.target
