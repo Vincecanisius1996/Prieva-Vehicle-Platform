@@ -158,15 +158,41 @@ function readBody(req) {
 }
 const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.heic': 'image/heic', '.pdf': 'application/pdf', '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
 
+/* Een geüpload bestand afgeven — alleen aan wie is ingelogd.
+ *
+ * nginx serveerde /uploads/ tot 26-08-2026 rechtstreeks van schijf met een `alias`, waardoor deze
+ * controle werd overgeslagen: een fotoURL gaf 200 zonder cookie, ook op een BPM-rapport of een
+ * koopovereenkomst met persoonsgegevens erin. Nu loopt /uploads/ via de app.
+ *
+ * Het bestand wordt niet door Node gestuurd maar met **X-Accel-Redirect** aan nginx doorgegeven: die
+ * levert het af vanaf de interne locatie /intern-uploads/. Node doet dus alleen de cookiecontrole —
+ * stateless HMAC, geen database — en een autopagina met vijftig foto's blijft snel.
+ *
+ * Voorlopig is elke geldige sessie genoeg; per rol of per auto beperken is een volgende stap.
+ */
+const INTERNE_UPLOADS = '/intern-uploads/';
 function serveUpload(req, res, url) {
   if (!userFromReq(req)) return sendJson(res, 401, { error: 'auth' });
-  const rel = decodeURIComponent(url.replace(/^\/uploads\//, ''));
-  if (rel.indexOf('..') >= 0) return sendJson(res, 400, { error: 'bad' });
-  const fp = path.join(UPLOAD_DIR, rel);
+  let rel;
+  try { rel = decodeURIComponent(url.replace(/^\/uploads\//, '')); }
+  catch (_) { return sendJson(res, 400, { error: 'bad' }); }
+  if (!rel || rel.indexOf('..') >= 0 || rel.indexOf('\0') >= 0) return sendJson(res, 400, { error: 'bad' });
+  const fp = path.resolve(UPLOAD_DIR, rel);
+  // Tweede slot naast de ..-controle: het opgeloste pad moet écht binnen de uploadmap liggen. Een
+  // symlink of een rare codering mag nooit buiten die map uitkomen.
+  if (fp !== UPLOAD_DIR && !fp.startsWith(UPLOAD_DIR + path.sep)) return sendJson(res, 400, { error: 'bad' });
   fs.stat(fp, (e, st) => {
     if (e || !st.isFile()) return sendJson(res, 404, { error: 'notfound' });
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(fp).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'private, max-age=300' });
-    fs.createReadStream(fp).pipe(res);
+    // Elk paddeel apart coderen: nginx decodeert de URI weer, en een bestandsnaam mag geen / bevatten.
+    const intern = INTERNE_UPLOADS + rel.split('/').map(encodeURIComponent).join('/');
+    // Content-Type zelf zetten en niet aan nginx overlaten: .heic staat niet in mime.types, en dan
+    // gaat een foto als application/octet-stream de deur uit — een leeg vak in Chrome.
+    res.writeHead(200, {
+      'X-Accel-Redirect': intern,
+      'Content-Type': MIME[path.extname(fp).toLowerCase()] || 'application/octet-stream',
+      'Cache-Control': 'private, max-age=300',
+    });
+    res.end();
   });
 }
 
@@ -501,7 +527,8 @@ const server = http.createServer(async (req, res) => {
     if (method === 'POST' && url === '/api/logout') return sendJson(res, 200, { ok: true }, { 'Set-Cookie': 'pvp_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' });
     if (method === 'GET' && url === '/api/me') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); return sendJson(res, 200, { name: u.n, role: u.r, uitlezen: !!(uitlezen && uitlezen.aan()) }); }
 
-    if (method === 'GET' && url.indexOf('/uploads/') === 0) return serveUpload(req, res, url);
+    // Ook HEAD: een browser of een controle die alleen de headers opvraagt hoort geen 404 te krijgen.
+    if ((method === 'GET' || method === 'HEAD') && url.indexOf('/uploads/') === 0) return serveUpload(req, res, url);
 
     if (url === '/api/state' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); return sendJson(res, 200, await getState()); }
     if (url === '/api/state' && method === 'PUT') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req); if (b === null) return sendJson(res, 400, { error: 'bad' });

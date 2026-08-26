@@ -269,6 +269,34 @@ Backblaze-sleutel heeft en de back-ups kan wissen. Zie `PVP-uploads-backup-voors
 afweging; echte onveranderlijkheid vraagt een sleutel zonder verwijderrecht plus een tweede,
 losstaande opruimtaak.
 
+## Uploads achter de sessie (X-Accel-Redirect)
+Sinds 26-08-2026. nginx serveerde `/uploads/` rechtstreeks van schijf met een `alias`, waardoor de
+controle in `serveUpload()` werd overgeslagen: **een BPM-rapport gaf `200` zonder cookie**, gemeten op
+de live server. In dezelfde map liggen koopovereenkomsten met persoonsgegevens van particuliere
+verkopers. De namen zijn 12 willekeurige tekens en dus niet te raden, maar een gelekte URL is genoeg —
+en dat maakte het een AVG-punt.
+
+Hoe het nu loopt:
+- `location /uploads/` **proxyt naar de app**; `location /intern-uploads/` is `internal` en heeft de
+  `alias` naar `/var/pvp/uploads/`. Van buiten geeft dat pad **404**.
+- `serveUpload()` controleert de sessiecookie en antwoordt met een lege body plus
+  **`X-Accel-Redirect: /intern-uploads/<pad>`**. nginx levert het bestand daarna zelf af.
+- **Node stuurt dus geen bytes.** Alleen de cookiecontrole (stateless HMAC, geen database) raakt de
+  app; een autopagina met vijftig foto's blijft snel. `Cache-Control: private, max-age=300` blijft.
+- **`Content-Type` komt uit de `MIME`-tabel in `server.js`**, niet van nginx: `.heic` staat niet in
+  `mime.types` en ging daardoor als `application/octet-stream` de deur uit. Nu `image/heic`.
+- Twee sloten op het pad: de bestaande `..`-controle, plus `path.resolve()` met de eis dat het
+  resultaat binnen `UPLOAD_DIR` valt. Getoetst met `../`, `%2e%2e%2f` en `%00` — allemaal 400/404.
+- `HEAD` wordt naast `GET` afgehandeld.
+
+**Elke geldige sessie is genoeg**; er wordt niet op rol of op auto gefilterd. Dat is een bewuste
+tussenstap: het gat is dicht, en fijnmazige toegang (een taxateur alleen zijn eigen auto's) hangt aan
+`vehicles`/`bpm_reports` en is een volgende stap.
+
+Nagemeten bij de omzetting: alle **261** upload-URL's uit de database geven `200` mét sessie en
+`401` zonder. De configuratie staat als kopie in `beheer/nginx-default.conf`; het CRP-blok is een
+apart bestand en is byte-voor-byte ongewijzigd gebleven.
+
 ## Wees-bestanden in uploads
 De app verwijdert URL's uit de database zonder het bestand van schijf te halen — zowel via
 `/api/adphotos-set` (advertentiefoto weggegooid) als via `PUT /api/state` (keuringsfoto verwijderd
@@ -841,13 +869,6 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
   alleen met de hand, in PVP én in het boek.
 - Bekend gat: **PVP schrijft alleen bij het aanmaken naar het Autoboek.** Latere wijzigingen aan een
   auto komen daar niet in terecht.
-- **Zwaarder geworden op 17-08-2026: `/uploads/` staat open.** nginx serveert die map rechtstreeks met
-  `alias`, dus de auth-controle in `serveUpload()` wordt overgeslagen. Nagemeten: een fotoURL geeft via
-  nginx `200` zonder cookie, terwijl de backend op dezelfde URL `401` geeft. De bestandsnamen bevatten
-  12 willekeurige tekens en zijn dus niet te raden, maar een gelekte URL (mail, appje,
-  browsergeschiedenis) is genoeg. Sinds vandaag liggen daar ook **koopovereenkomsten met
-  persoonsgegevens van particuliere verkopers**, en dat maakt dit van een schoonheidsfout een
-  AVG-punt. Op te lossen met `auth_request` naar de backend, of door `/uploads/` via `serveUpload()`
-  te laten lopen in plaats van via `alias`.
+- ~~`/uploads/` staat open.~~ **Dicht sinds 26-08-2026** — zie "Uploads achter de sessie" hierboven.
 - ~~Geen enkele auto is in PVP te wijzigen.~~ **Klaar 23-08-2026:** `PUT /api/vehicle` en de knop
   *Gegevens wijzigen* op de auto zelf. Zie hieronder.
