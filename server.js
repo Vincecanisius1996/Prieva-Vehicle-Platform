@@ -1473,6 +1473,35 @@ const server = http.createServer(async (req, res) => {
     if (url === '/api/bpmnotif-seen' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); await pool.query('UPDATE bpm_notifs SET seen=true WHERE seen=false'); return sendJson(res, 200, { ok: true }); }
     if (url === '/api/bpmreport-del' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.url) return sendJson(res, 400, { error: 'missing' }); await pool.query('DELETE FROM bpm_reports WHERE vehicle_id=$1 AND url=$2', [b.id, b.url]); try { const rel = decodeURIComponent(String(b.url).replace(/^\/uploads\//, '')); if (rel.indexOf('..') < 0) fs.unlink(path.join(UPLOAD_DIR, rel), () => {}); } catch (_) {} return sendJson(res, 200, { ok: true }); }
 
+    /* ===== Afgeronde taxaties (28-08-2026) ===============================================
+       Auto's waarvoor een taxatierapport is ingeleverd. Bewust GEEN nieuwe tabel: "afgerond" is
+       geen nieuwe status maar een feit dat er al ligt — er hoort een rapport bij in bpm_reports.
+       Een tweede administratie ernaast zou onvermijdelijk uit de pas gaan lopen.
+
+       Waarom dit een eigen endpoint is: /api/taxstate stuurt de taxateur alleen auto's op route JA
+       zónder kenteken, en zodra een auto een kenteken krijgt valt hij daar uit. Zijn eigen afgeronde
+       werk verdween daarmee uit beeld. Hier komt dat terug — beperkt tot wat hij zelf al gezien
+       heeft: merk, model, chassisnummer en het rapport. Geen prijzen, geen koopovereenkomsten. */
+    if (url === '/api/taxafgerond' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const r = await pool.query(
+        `SELECT v.id, v.merk, v.model, v.vin, v.kenteken, v.route, v.status,
+                b.url, b.name, b.ts, b.by_name, b.opname_datum, b.taxateur
+           FROM bpm_reports b JOIN vehicles v ON v.id = b.vehicle_id
+          ORDER BY b.ts DESC NULLS LAST, b.id DESC`);
+      const per = new Map();
+      for (const x of r.rows) {
+        if (!per.has(x.id)) per.set(x.id, {
+          id: x.id, merk: x.merk, model: x.model, vin: x.vin, kenteken: x.kenteken,
+          route: x.route, status: x.status, rapporten: []
+        });
+        per.get(x.id).rapporten.push({ url: x.url, naam: x.name, ts: x.ts, door: x.by_name,
+                                       opname: x.opname_datum, taxateur: x.taxateur });
+      }
+      return sendJson(res, 200, { autos: [...per.values()] });
+    }
+
     /* ===== Snelle notities (28-08-2026) ==================================================
        Een briefje onder de to-do's: iets dat je even kwijt moet en dat geen taak met een eigenaar
        is. Team en admin; verwijderen alleen admin, want afvinken is de gewone weg en dat is

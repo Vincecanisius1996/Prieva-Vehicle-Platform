@@ -2545,11 +2545,11 @@ async function loadTaxState(){ if(!apiOk)return; try{ const r=await fetch("/api/
 async function uploadBpm(id,input){ const f=input.files&&input.files[0]; input.value=''; if(!f)return;
   showToast("BPM-rapport uploaden…",false);
   const r=new FileReader();
-  r.onload=async e=>{ if(apiOk){ try{ const rp=await fetch("/api/bpmreport",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,dataUrl:e.target.result,name:f.name})}); if(rp.ok){ await loadBpm(); showToast("BPM-rapport geüpload ✓",false); rerenderCurrent(); return; } }catch(_){} showToast("Upload mislukt — probeer opnieuw",false); } else { showToast("Geen server gevonden",false); } };
+  r.onload=async e=>{ if(apiOk){ try{ const rp=await fetch("/api/bpmreport",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,dataUrl:e.target.result,name:f.name})}); if(rp.ok){ await loadBpm(); await loadTaxAfgerond(); showToast("BPM-rapport geüpload ✓",false); rerenderCurrent(); return; } }catch(_){} showToast("Upload mislukt — probeer opnieuw",false); } else { showToast("Geen server gevonden",false); } };
   r.readAsDataURL(f);
 }
 async function markBpmSeen(){ if(apiOk){ try{ await fetch("/api/bpmnotif-seen",{method:"POST"}); }catch(_){} } (bpmData.notifs||[]).forEach(n=>n.seen=true); rerender(); }
-async function delBpm(id,url){ if(!window.confirm("Dit taxatierapport verwijderen?"))return; if(apiOk){ try{ const r=await fetch("/api/bpmreport-del",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,url})}); if(r.ok){ await loadBpm(); showToast("Rapport verwijderd",false); rerenderCurrent(); return; } }catch(_){} showToast("Verwijderen mislukt — probeer opnieuw",false); } }
+async function delBpm(id,url){ if(!window.confirm("Dit taxatierapport verwijderen?"))return; if(apiOk){ try{ const r=await fetch("/api/bpmreport-del",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,url})}); if(r.ok){ await loadBpm(); await loadTaxAfgerond(); showToast("Rapport verwijderd",false); rerenderCurrent(); return; } }catch(_){} showToast("Verwijderen mislukt — probeer opnieuw",false); } }
 /* ===== Taxateur-weergave (rol taxateur, login S-tax) ===== */
 function renderTax(){ if(taxState.car)renderTaxCar(); else renderTaxList(); syncHistory(); }
 // Een auto met een kenteken kan niet meer getaxeerd worden: het kenteken bestaat pas na
@@ -2557,8 +2557,28 @@ function renderTax(){ if(taxState.car)renderTaxCar(); else renderTaxList(); sync
 // mee, maar we filteren hier ook: het scherm moet kloppen, ook als er ooit meer binnenkomt.
 const heeftKenteken=v=>{ const k=String(v.kenteken||'').trim(); return k!=='' && k!=='—' && k!=='-'; };
 function taxCars(){ return V.filter(v=>v.status==='lopende'&&v.route==='JA'&&!heeftKenteken(v)); }
+/* Zoeken binnen het taxateur-portaal. De zoekbalk in de kop is voor de beperkte rollen verborgen,
+   dus dit is een eigen veld. Puur in beeld: de server stuurt deze taxateur toch al alleen zijn eigen
+   auto's, dus er valt hier niets af te schermen dat daar niet al gebeurt. */
+let taxZoek="";
+function zetTaxZoek(w){ taxZoek=String(w||"").trim(); renderTax(); }
+function taxPast(v){
+  if(!taxZoek)return true;
+  const n=taxZoek.toLowerCase().replace(/[^a-z0-9]/g,"");
+  const h=[v.merk,v.model,v.vin,v.kenteken].map(x=>String(x||"").toLowerCase().replace(/[^a-z0-9]/g,"")).join(" ");
+  return h.includes(n);
+}
+/* Afgeronde taxaties: auto's waar een rapport bij ligt. Komt uit een eigen endpoint omdat
+   /api/taxstate ze juist wegfiltert zodra er een kenteken is. */
+const taxAf = [];
+async function loadTaxAfgerond(){ if(!apiOk)return;
+  try{ const r=await fetch("/api/taxafgerond",{cache:"no-store"}); if(!r.ok)return;
+    const j=await r.json(); if(!j||!Array.isArray(j.autos))return;
+    taxAf.length=0; j.autos.forEach(a=>taxAf.push(a));
+  }catch(_){}
+}
 function renderTaxList(){
-  const list=taxCars();
+  const list=taxCars().filter(taxPast);
   const rows=list.length? list.map(v=>{ const nfoto=Object.keys(v.photos||{}).length; const reps=bpmList(v.id);
     // Bij meerdere rapporten telt het jongste: dat is het rapport dat je zou insturen.
     const jongste=reps.slice().sort((a,b)=>(b.ts||0)-(a.ts||0))[0];
@@ -2584,8 +2604,36 @@ function renderTaxList(){
       </div>
       <div class="bpmuitslag" id="bpmuitslag"></div>
     </div></div>
-    <div class="card"><h3>Auto's op taxatie</h3><div style="padding:4px">${rows}</div></div>`;
+    <div class="card"><h3>Zoeken</h3><div class="card-body">
+      <input class="inp" style="width:100%" placeholder="Merk, model, kenteken of chassisnummer…"
+             value="${esc(taxZoek)}" oninput="zetTaxZoek(this.value)">
+      ${taxZoek?`<div class="note" style="margin-top:6px">Zoekt in beide lijsten hieronder. <b onclick="zetTaxZoek('')" style="cursor:pointer;color:var(--blue)">Wissen</b></div>`:''}
+    </div></div>
+    <div class="card"><h3>Auto's op taxatie <span class="gcount">${list.length}</span></h3><div style="padding:4px">${rows}</div></div>
+    ${taxAfgerondPaneel()}`;
   if(bpmUitslag.length)toonBpmUitslag();
+}
+/* Wat er al af is. Deze auto's zijn uit "Auto's op taxatie" verdwenen — meestal omdat er een
+   kenteken op is gekomen — maar het werk is wél gedaan, en dat hoort terug te vinden te zijn.
+   Alleen wat de taxateur zelf al zag: merk, model, chassisnummer en het rapport. */
+function taxAfgerondPaneel(){
+  const af=taxAf.filter(taxPast);
+  if(!taxAf.length)return "";
+  const rij=a=>{
+    const jongste=(a.rapporten||[]).slice().sort((x,y)=>(y.ts||0)-(x.ts||0))[0]||{};
+    return `<div class="fotocar" style="cursor:default">
+      <div class="thumb">${carIcon()}</div>
+      <div style="flex:1;min-width:0"><div class="nm">${esc(a.merk||'')} ${esc(a.model||'')}</div>
+        <div class="id">${esc(a.kenteken&&a.kenteken!=='—'?a.kenteken:(a.vin||''))}</div></div>
+      <span class="fotocount has">✓ ${a.rapporten.length===1?'rapport':a.rapporten.length+' rapporten'}</span>
+      <span class="muted" style="font-size:11px">${jongste.opname?'opname '+esc(jongste.opname):'opnamedatum onbekend'}</span>
+      ${jongste.url?`<a class="btn btn-ghost btn-sm" href="${esc(jongste.url)}" target="_blank" rel="noopener">Openen</a>`:''}
+    </div>`;
+  };
+  return `<div class="card"><h3>Afgeronde taxaties <span class="gcount">${af.length}</span></h3>
+    <div class="card-body" style="padding:4px">
+      ${af.length?af.map(rij).join(""):`<div class="empty" style="padding:14px">Geen afgeronde taxaties die op “${esc(taxZoek)}” passen.</div>`}
+    </div></div>`;
 }
 /* De rapporten gaan stuk voor stuk naar de server: zes pdf's van 10 MB in één verzoek loopt tegen
    de 30 MB van nginx aan, en dan verlies je ze allemaal in plaats van één. */
@@ -2624,7 +2672,7 @@ async function sorteerRapporten(files){
   }
   bpmBezig=false;
   const goed=bpmUitslag.filter(r=>r.status==='geplaatst').length;
-  await loadBpm();
+  await loadBpm(); await loadTaxAfgerond();
   rerenderCurrent();
   showToast(goed===lijst.length?`${goed} rapport${goed===1?'':'en'} geplaatst`:`${goed} van de ${lijst.length} geplaatst — kijk de rode regels na`, goed===lijst.length);
 }
@@ -2813,7 +2861,7 @@ async function startFor(){
   if(db&&tax)db.textContent=(currentUser.name||'S-TAX')+' · auto’s op taxatie · bekijk foto’s en upload het BPM-rapport';
   if(db&&cp)db.textContent=(currentUser.name||'CarPort')+' · planning · werk af en meld een auto af zodra hij klaarstaat';
   if(foto){ state.view='foto'; loadAdphotos().then(loadStatusFoto).then(renderFoto); }
-  else if(tax){ state.view='tax'; loadTaxState().then(loadBpm).then(renderTax); }
+  else if(tax){ state.view='tax'; loadTaxState().then(loadBpm).then(loadTaxAfgerond).then(renderTax); }
   else if(cp){ state.view='carport'; loadCarport().then(renderCarport); }
   else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen(),loadNotities()]).then(()=>go('vandaag')); }
 }
