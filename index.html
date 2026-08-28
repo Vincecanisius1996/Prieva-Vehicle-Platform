@@ -705,6 +705,31 @@ async function loadVehicles(){ if(!apiOk)return;
     V.length=0; rows.forEach(r2=>{ V.push(r2); const p=vorige[r2.id]; if(p)Object.assign(r2,p); else initVeh(r2); });
   }catch(_){ /* geen backend of onleesbaar antwoord: terugvallijst blijft staan */ }
 }
+/* Betaald / onbetaald per komende auto. De tellers komen kant-en-klaar van de server mee — het
+   scherm rekent niets uit. `betalingen` is per auto-id, `betaalTotalen` zijn de drie getallen
+   bovenaan. Beide worden IN PLACE vervangen. */
+const betalingen = {};
+const betaalTotalen = {nogTeBetalen:0, reedsBetaald:0, aantalOnbetaald:0, aantal:0, zonderBedrag:0};
+async function loadBetalingen(){ if(!apiOk)return;
+  try{ const r=await fetch("/api/betalingen",{cache:"no-store"}); if(!r.ok)return;
+    const j=await r.json(); if(!j||!Array.isArray(j.autos))return;
+    Object.keys(betalingen).forEach(k=>{delete betalingen[k];});
+    j.autos.forEach(a=>{ betalingen[a.id]=a; });
+    Object.assign(betaalTotalen, j.totalen||{});
+  }catch(_){}
+}
+/* Betaald of onbetaald zetten. Alleen admin; de server weigert de rest met 403, dit is alleen de
+   knop. Omkeerbaar met dezelfde knop, dus geen bevestiging — nog een keer klikken zet het terug. */
+async function zetBetaling(id,naar){
+  if(!apiOk)return;
+  try{
+    const r=await fetch("/api/betaling",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id,status:naar})});
+    if(!r.ok){ const j=await r.json().catch(()=>({})); showToast(j.error==='forbidden'?"Alleen een beheerder kan dit zetten":"Opslaan mislukt",false); return; }
+    await loadBetalingen();
+    rerenderCurrent();
+  }catch(_){ showToast("Geen verbinding met de server",false); }
+}
 /* Het team ophalen. Zelfde vorm als loadVehicles: bij twijfel blijft de terugvallijst staan, want een
    lege keuzelijst is erger dan een verouderde. PEOPLE en TEAMKLEUR worden IN PLACE vervangen. */
 async function loadTeam(){ if(!apiOk)return;
@@ -835,6 +860,42 @@ function renderLog(){
 }
 
 /* ===== Komende ===== */
+/* De drie getallen bovenaan Komende. De server rekent ze uit; hier worden ze alleen getoond.
+   Auto's zonder inkoopprijs tellen NIET mee in het bedrag — dat staat er dan bij, want een totaal dat
+   ontbrekende prijzen stilzwijgend als nul meeneemt belooft te veel. Die melding verschijnt alleen
+   als er zoiets is; staat alles goed, dan is er niets te zeggen. */
+function betaalBalk(){
+  if(!apiOk)return "";
+  const t=betaalTotalen;
+  if(!t.aantal)return "";
+  return `<div class="chips" style="margin:0 0 14px">
+    <span class="chip"><b>Nog te betalen</b> ${euro(t.nogTeBetalen)}</span>
+    <span class="chip"><b>Onbetaald</b> ${t.aantalOnbetaald} ${t.aantalOnbetaald===1?'auto':"auto's"}</span>
+    <span class="chip"><b>Reeds betaald</b> ${euro(t.reedsBetaald)}</span>
+    ${t.zonderBedrag?`<span class="chip" style="border-color:var(--amber);color:var(--amber)" title="Deze auto's hebben geen inkoopprijs in PVP en zitten dus niet in de bedragen hierboven. Vul de inkoopprijs aan bij de auto zelf.">⚠ ${t.zonderBedrag} zonder inkoopprijs — niet meegeteld</span>`:''}
+  </div>`;
+}
+/* De betaalstand bij een auto. Alleen een admin kan hem zetten; de rest ziet hem. Verbergen in beeld
+   is nooit genoeg — /api/betaling weigert de andere rollen met 403, en dit is enkel de knop. */
+function betaalBadge(id){
+  const b=betalingen[id]; if(!b)return "";
+  const betaald=b.status==='betaald';
+  // Het bedrag ONDER de badge en niet erin: de statuskolom is 168 px en een badge staat op nowrap,
+  // dus "Onbetaald · € 152.654,82" loopt de cel uit bij table-layout:fixed.
+  const bedrag=b.bedrag===null
+    ? `<span class="muted" style="font-size:11px" title="Deze auto heeft geen inkoopprijs in PVP en telt niet mee in de bedragen bovenaan">geen inkoopprijs</span>`
+    : `<span class="muted" style="font-size:11px">${euro(b.bedrag)}</span>`;
+  const lab=betaald?'✓ Betaald':'Onbetaald';
+  const uitleg=betaald
+    ? `Betaald${b.betaaldDoor?` — afgevinkt door ${esc(b.betaaldDoor)}`:''}${b.betaaldTs?` op ${fmtDate(b.betaaldTs)}`:''}`
+    : 'Nog niet betaald';
+  const mag=currentUser&&currentUser.role==='admin';
+  if(!mag)return `<span class="badge ${betaald?'b-lopende':'b-gemeld'}" title="${esc(uitleg)}">${lab}</span> ${bedrag}`;
+  return `<span onclick="event.stopPropagation()"><button class="badge ${betaald?'b-lopende':'b-gemeld'}"
+    style="border:0;cursor:pointer;font-family:inherit"
+    title="${esc(uitleg)} — klik om op ${betaald?'onbetaald':'betaald'} te zetten"
+    onclick="zetBetaling('${id}','${betaald?'onbetaald':'betaald'}')">${lab}</button></span> ${bedrag}`;
+}
 function komTable(list){
   if(!list.length) return `<div class="empty">Geen auto's.</div>`;
   // Klikken op de regel opent de auto; de vinkjescel houdt de klik tegen, anders opent de auto
@@ -847,7 +908,8 @@ function komTable(list){
       <td onclick="event.stopPropagation()"><label class="chk" title="Aanvinken zodra binnen"><input type="checkbox" ${arrived?'checked':''} onchange="arrive('${v.id}',this.checked)"><span class="box"></span></label></td>
       ${boekCellen(v)}
       <td>${arrived?`<span class="arr-lab">✓ Binnen — stap 1 loopt</span>`
-                   :`<span class="tag ${v.importAuto?'tag-imp':'tag-nl'}">${v.importAuto?'Import':'NL / inruil'}</span>${v.autoboekStatus==='fout'?` <span class="tag" style="background:var(--red-soft);color:var(--red)">Autoboek mislukt</span>`:''}`}</td>
+                   :`<span class="tag ${v.importAuto?'tag-imp':'tag-nl'}">${v.importAuto?'Import':'NL / inruil'}</span>${v.autoboekStatus==='fout'?` <span class="tag" style="background:var(--red-soft);color:var(--red)">Autoboek mislukt</span>`:''}`}
+        ${arrived?'':`<div style="margin-top:5px">${betaalBadge(v.id)}</div>`}</td>
     </tr>`;}).join("")}</tbody></table></div>`;
 }
 function renderKomende(){
@@ -879,6 +941,7 @@ function renderKomende(){
   const nogOpen=openstaand(all).length;
   app.innerHTML=`
     <h1 class="page-title">Komende auto's</h1>
+    ${betaalBalk()}
     <p class="page-sub">Nieuw ingekocht? Voeg hem toe met <b>${ico("plus")} Auto</b> rechtsboven. <b>Vink een auto aan zodra hij binnen is</b> — hij verdwijnt dan uit deze lijst en verhuist naar Lopende, waar de to-do voor stap 1 (RDW Foto's) gaat lopen.</p>
     <div class="groupwrap">
       ${groepen || `<div class="empty">${state.q?`Geen komende auto's die op “${state.q}” passen.`:`Geen komende auto's meer — alles is binnen. Nieuw ingekocht? Gebruik <b>${ico("plus")} Auto</b> rechtsboven.`}</div>`}
@@ -2695,7 +2758,7 @@ async function startFor(){
   if(foto){ state.view='foto'; loadAdphotos().then(loadStatusFoto).then(renderFoto); }
   else if(tax){ state.view='tax'; loadTaxState().then(loadBpm).then(renderTax); }
   else if(cp){ state.view='carport'; loadCarport().then(renderCarport); }
-  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil()]).then(()=>go('vandaag')); }
+  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen()]).then(()=>go('vandaag')); }
 }
 async function boot(){
   try{ const r=await fetch("/api/me",{cache:"no-store"});

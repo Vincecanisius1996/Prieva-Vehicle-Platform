@@ -1473,6 +1473,100 @@ const server = http.createServer(async (req, res) => {
     if (url === '/api/bpmnotif-seen' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); await pool.query('UPDATE bpm_notifs SET seen=true WHERE seen=false'); return sendJson(res, 200, { ok: true }); }
     if (url === '/api/bpmreport-del' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.url) return sendJson(res, 400, { error: 'missing' }); await pool.query('DELETE FROM bpm_reports WHERE vehicle_id=$1 AND url=$2', [b.id, b.url]); try { const rel = decodeURIComponent(String(b.url).replace(/^\/uploads\//, '')); if (rel.indexOf('..') < 0) fs.unlink(path.join(UPLOAD_DIR, rel), () => {}); } catch (_) {} return sendJson(res, 200, { ok: true }); }
 
+    /* ===== Betaald / onbetaald op Komend (28-08-2026) ======================================
+       Wat er van de ingekochte auto's nog betaald moet worden. Bewust géén banksaldo en geen
+       koppeling met de bank: dit is een lijstje afvinken, geen boekhouding.
+
+       Lezen mag team en admin; wijzigen alleen admin. Carport, fotograaf en taxateur krijgen 403 —
+       inkoopprijzen gaan hen niet aan. */
+
+    if (url === '/api/betalingen' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const r = await pool.query(
+        `SELECT v.id, v.merk, v.model, v.vin, v.kenteken, v.lev, v.inkoopdatum, v.inkoopprijs,
+                b.status, b.bedrag, b.betaald_ts, b.betaald_door, b.opmerking
+           FROM vehicles v LEFT JOIN inkoop_betaling b ON b.vehicle_id = v.id
+          WHERE v.status = 'komende'
+          ORDER BY v.sort_order NULLS LAST, v.id`);
+
+      // De tellers rekent de server uit, niet het scherm — zelfde regel als bij de Carport-marge.
+      let nogTeBetalen = 0, reedsBetaald = 0, aantalOnbetaald = 0, zonderBedrag = 0;
+      const autos = r.rows.map(x => {
+        // Een eigen bedrag wint van de inkoopprijs; is er geen van beide, dan telt deze auto NIET mee.
+        const ruw = x.bedrag !== null && x.bedrag !== undefined ? x.bedrag : x.inkoopprijs;
+        const bedrag = ruw === null || ruw === undefined ? null : Number(ruw);
+        const betaald = x.status === 'betaald';
+        if (bedrag === null) zonderBedrag++;
+        if (betaald) { if (bedrag !== null) reedsBetaald += bedrag; }
+        else { aantalOnbetaald++; if (bedrag !== null) nogTeBetalen += bedrag; }
+        return { id: x.id, merk: x.merk, model: x.model, vin: x.vin, kenteken: x.kenteken,
+                 lev: x.lev, inkoopdatum: x.inkoopdatum,
+                 status: betaald ? 'betaald' : 'onbetaald', bedrag,
+                 eigenBedrag: x.bedrag === null || x.bedrag === undefined ? null : Number(x.bedrag),
+                 betaaldTs: x.betaald_ts || null, betaaldDoor: x.betaald_door || null,
+                 opmerking: x.opmerking || null };
+      });
+      /* zonderBedrag gaat mee zodat het scherm het erbij kan zetten. Een totaal dat auto's zonder
+         inkoopprijs stilzwijgend als nul meetelt, belooft te veel — zelfde regel als bij de
+         BPM-teller, die liever "opnamedatum onbekend" toont dan een verzonnen termijn. */
+      return sendJson(res, 200, {
+        autos,
+        totalen: { nogTeBetalen, reedsBetaald, aantalOnbetaald, aantal: autos.length, zonderBedrag }
+      });
+    }
+
+    // Betaald of onbetaald zetten. Alleen admin: de rest ziet het wel, maar zet het niet.
+    if (url === '/api/betaling' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const tekst = x => { const t = (x === undefined || x === null) ? '' : String(x).trim(); return t === '' ? null : t; };
+      const id = tekst(b.id), naar = tekst(b.status);
+      if (!id || !naar) return sendJson(res, 400, { error: 'missing' });
+      if (naar !== 'betaald' && naar !== 'onbetaald') return sendJson(res, 400, { error: 'onbekende status', mag: ['betaald', 'onbetaald'] });
+
+      const v = (await pool.query('SELECT id, merk, model, status, inkoopprijs FROM vehicles WHERE id=$1', [id])).rows[0];
+      if (!v) return sendJson(res, 404, { error: 'onbekende auto' });
+      const oud = (await pool.query('SELECT * FROM inkoop_betaling WHERE vehicle_id=$1', [id])).rows[0] || null;
+      const van = oud ? oud.status : 'onbetaald';
+
+      // Een eigen bedrag mag meegegeven worden als de inkoopprijs niet klopt of ontbreekt.
+      // Niet `bedrag` als naam: dat is de hulpfunctie die "12.500,00" omzet, en die hebben we hier nodig.
+      let bed = oud ? oud.bedrag : null;
+      if (Object.prototype.hasOwnProperty.call(b, 'bedrag')) {
+        if (b.bedrag === null || String(b.bedrag).trim() === '') bed = null;
+        else { const n = bedrag(b.bedrag); if (n === null || Number.isNaN(n)) return sendJson(res, 400, { error: 'ongeldig bedrag' }); bed = n; }
+      }
+      const opmerking = Object.prototype.hasOwnProperty.call(b, 'opmerking') ? tekst(b.opmerking) : (oud ? oud.opmerking : null);
+      const nu = Date.now(), wie = u.n || u.u;
+      // Het moment hoort bij het betalen. Zet iemand hem terug op onbetaald, dan gaat dat moment eraf:
+      // een auto die onbetaald is met een betaaldatum eronder is een tegenstrijdigheid.
+      const ts   = naar === 'betaald' ? (van === 'betaald' && oud ? oud.betaald_ts : nu) : null;
+      const door = naar === 'betaald' ? (van === 'betaald' && oud ? oud.betaald_door : wie) : null;
+
+      await pool.query(
+        `INSERT INTO inkoop_betaling (vehicle_id,status,bedrag,betaald_ts,betaald_door,opmerking,updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,now())
+         ON CONFLICT (vehicle_id) DO UPDATE SET status=EXCLUDED.status, bedrag=EXCLUDED.bedrag,
+           betaald_ts=EXCLUDED.betaald_ts, betaald_door=EXCLUDED.betaald_door,
+           opmerking=EXCLUDED.opmerking, updated_at=now()`,
+        [id, naar, bed, ts, door, opmerking]);
+
+      /* In het logboek het bedrag dat WERKELIJK telt, niet alleen het eigen bedrag: `bed` is leeg
+         zodra de inkoopprijs uit `vehicles` wordt gebruikt, en dan stond er "geen bedrag bekend" bij
+         een auto die gewoon een prijs heeft. */
+      const telt = bed !== null && bed !== undefined ? Number(bed)
+                 : (v.inkoopprijs === null || v.inkoopprijs === undefined ? null : Number(v.inkoopprijs));
+      const inEuro = n => '€ ' + n.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (van !== naar || (oud && String(oud.bedrag) !== String(bed)) || (!oud && bed !== null))
+        await logSchrijf(wie, 'betaling', id, van === naar ? 'bedrag gewijzigd' : naar, {
+          van, naar, melding: `${v.merk || ''} ${v.model || ''}`.trim()
+            + (telt !== null ? ` — ${inEuro(telt)}` : ' — geen inkoopprijs bekend') });
+
+      return sendJson(res, 200, { ok: true, id, van, status: naar, bedrag: bed });
+    }
+
     /* ===== Het importdossier (RDW) — Fase A, 26-08-2026 ======================================
        Per importauto: de voertuiggegevens, de stukken die de RDW wil zien, wat er nog ontbreekt en
        hoe het dossier ervoor staat. Nog niets richting de RDW zelf — dit is alleen de PVP-kant.

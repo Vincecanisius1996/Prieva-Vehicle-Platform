@@ -358,3 +358,17 @@ CREATE INDEX IF NOT EXISTS pvp_log_sleutel   ON pvp_log (sleutel, id DESC);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS actief   boolean NOT NULL DEFAULT true;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS volgorde int;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS kleur    text;
+
+-- Betaald / onbetaald per ingekochte auto (28-08-2026). Eigen tabel en geen kolom op `vehicles`:
+-- die rij wordt door PUT /api/state in zijn geheel vanuit de frontend overschreven.
+-- Geen rij = onbetaald, dus voor de bestaande komende auto's hoefde er niets aangemaakt te worden.
+-- `bedrag` is alleen nodig als het afwijkt van vehicles.inkoopprijs; leeg = die prijs gebruiken.
+CREATE TABLE IF NOT EXISTS inkoop_betaling (
+  vehicle_id   text PRIMARY KEY,
+  status       text NOT NULL DEFAULT 'onbetaald',   -- 'onbetaald' | 'betaald'
+  bedrag       numeric(12,2),
+  betaald_ts   bigint,
+  betaald_door text,
+  opmerking    text,
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
