@@ -407,6 +407,11 @@ bestaande auto's. Lezen mag team en admin, **zetten alleen admin**.
 - `bedrag` op de betaalregel is alleen nodig als het afwijkt van `vehicles.inkoopprijs`; leeg = die
   prijs. Terugzetten op onbetaald **wist de betaaldatum**: een onbetaalde auto met een betaaldatum
   eronder is een tegenstrijdigheid.
+- **Inruilers tellen niet mee** (28-08-2026, opgave Prieva). Een inruiler wordt niet betaald maar
+  verrekend met de verkoop van de andere auto; hem meetellen laat geld openstaan dat nooit overgemaakt
+  wordt. Herkend aan `lev = 'Inruil'` — dat zet de Mobilox-agent er bij het overnemen neer en zo wordt
+  het met de hand ook ingevuld. Ze staan wél in de lijst, met "inruil — geen betaling" in plaats van
+  een betaalknop, en de kop meldt hoeveel er buiten de bedragen vallen.
 - Geen banksaldo en geen bankkoppeling. Dit is een lijstje afvinken, geen boekhouding.
 
 ## Logistiek
@@ -428,6 +433,10 @@ staat welke auto — het eigen overzicht van Prieva.
   werkbonnen. De eigen volgorde vervalt bij een verhuizing: in een andere kolom zegt dat nummer niets.
 - **"Terug op locatie" is omkeerbaar** en terugdraaien wist de terugkomstdatum. Teruggekomen auto's
   blijven vindbaar maar staan **ingeklapt**, anders telt de kop iets anders dan je eronder ziet.
+- **Eén zoekbalk met directe resultaten** (28-08-2026). Typ je `208`, dan zie je élke 208 in PVP en
+  zet je hem met één klik bij een partij. Daarmee vervielen de keuzelijst per kolom (bij zestig auto's
+  scrol je je suf) en het aparte invulblok voor een auto buiten PVP: dat laatste zit nu achter het
+  zoeken, want pas als je zoekt en niets vindt is dat de vraag.
 - **Het logboek staat op de pagina zelf** en is zichtbaar voor iedereen die de pagina mag zien.
   Verwijderen kan alleen een admin, en de regel gaat mét zijn inhoud het logboek in.
 - De zoekbalk pakt na elke toets zijn focus terug: elk teken tekent de pagina opnieuw, en zonder dat
@@ -635,6 +644,18 @@ Sinds 20-08-2026. Twee tabellen: `carport_bonnen` (één per auto die bij Carpor
 - **Notities zijn gescheiden in `technisch` en `klant`.** Carport schrijft de techniek, Prieva de
   vertaling richting de koper. Bewust twee soorten: monteurstaal hoort niet ongefilterd bij een klant
   terecht te komen.
+
+## Een werkbon voor een auto die niet in PVP staat
+Sinds 28-08-2026. Carport krijgt ook auto's onder handen die nooit door de PVP-molen gaan. Tot nu toe
+moest zo'n auto eerst als voertuig aangemaakt worden om er een bon voor te kunnen maken.
+- `carport_bonnen.vehicle_id` mag nu leeg zijn, met `los_kenteken` en `los_omschrijving` ernaast en een
+  `CHECK` die één van beide eist. `/api/carport` vult `auto` daaruit, zodat de frontend geen twee
+  soorten bonnen hoeft te kennen; `inPvp` zegt welke het is.
+- **Bovenaan Carport staat een zoekbalk in plaats van een keuzelijst**, met dezelfde directe treffers
+  als op Logistiek, en een tekstvak **"wat er moet gebeuren" — één regel per taak**. Die regels gaan
+  mee in `POST /api/carport-bon` (`taken: [...]`). Zonder dat moest je de bon aanmaken, hem opzoeken en
+  daarna pas invullen wat er moest gebeuren — en juist bij een auto van buiten weet je dat op dát moment.
+- Twee keer hetzelfde kenteken op een open bon geeft de bestaande bon terug in plaats van een tweede.
 
 ## Wat is poetswerk en wat is werk voor Carport
 `mobilox/taken.js` leidt de soort af uit de tekst van de overeenkomst. **De volgorde in `SOORT` is het

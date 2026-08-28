@@ -942,12 +942,16 @@ function betaalBalk(){
     <span class="chip"><b>Onbetaald</b> ${t.aantalOnbetaald} ${t.aantalOnbetaald===1?'auto':"auto's"}</span>
     <span class="chip"><b>Reeds betaald</b> ${euro(t.reedsBetaald)}</span>
     ${t.zonderBedrag?`<span class="chip" style="border-color:var(--amber);color:var(--amber)" title="Deze auto's hebben geen inkoopprijs in PVP en zitten dus niet in de bedragen hierboven. Vul de inkoopprijs aan bij de auto zelf.">⚠ ${t.zonderBedrag} zonder inkoopprijs — niet meegeteld</span>`:''}
+    ${t.inruilers?`<span class="chip" title="Een inruiler wordt niet betaald: die is verrekend met de verkoop van de andere auto. Ze staan wel in de lijst, maar tellen niet mee in de bedragen.">${t.inruilers} inruiler${t.inruilers===1?'':'s'} — niet betaald</span>`:''}
   </div>`;
 }
 /* De betaalstand bij een auto. Alleen een admin kan hem zetten; de rest ziet hem. Verbergen in beeld
    is nooit genoeg — /api/betaling weigert de andere rollen met 403, en dit is enkel de knop. */
 function betaalBadge(id){
   const b=betalingen[id]; if(!b)return "";
+  // Een inruiler krijgt geen betaalknop: er valt niets te betalen. "Onbetaald" zou daar suggereren
+  // dat er nog geld heen moet.
+  if(b.inruil)return `<span class="muted" style="font-size:11px" title="Een inruiler wordt verrekend met de verkoop van de andere auto en telt niet mee in de bedragen bovenaan">inruil — geen betaling</span>`;
   const betaald=b.status==='betaald';
   // Het bedrag ONDER de badge en niet erin: de statuskolom is 168 px en een badge staat op nowrap,
   // dus "Onbetaald · € 152.654,82" loopt de cel uit bij table-layout:fixed.
@@ -1244,27 +1248,67 @@ async function logWeg(id){
   if(!window.confirm("Deze regel definitief verwijderen?\n\n\"Terug op locatie\" is de gewone weg en die is terug te draaien; dit niet."))return;
   await logDoe('/api/logistiek-del',{id});
 }
-async function logPlaats(partij){
-  const kies=document.getElementById('logkies-'+partij);
-  const kent=document.getElementById('logkent-'+partij);
-  const oms=document.getElementById('logoms-'+partij);
-  const vehicleId=kies&&kies.value?kies.value:null;
-  const body={partij};
-  if(vehicleId)body.vehicleId=vehicleId;
-  else{
-    const k=(kent&&kent.value||"").trim();
-    if(!k){ showToast("Kies een auto of vul een kenteken in",false); return; }
-    body.kenteken=k; body.omschrijving=(oms&&oms.value||"").trim()||null;
-  }
-  const uit=await logDoe('/api/logistiek-plaatsen',body);
-  if(uit&&kent)kent.value=""; if(uit&&oms)oms.value="";
+/* Een gevonden auto meteen bij een partij zetten. Eén klik, geen tussenscherm: je hebt hem al
+   gezocht, je weet al welke het is. */
+async function logPlaatsAuto(vehicleId,partij){
+  const uit=await logDoe('/api/logistiek-plaatsen',{partij,vehicleId});
+  if(uit)zetLogZoek('');
+}
+/* Een auto die niet in PVP staat. Zit bewust achter het zoeken: pas als je hebt gezocht en niets
+   vindt, is dit de vraag. Zo hoeft er geen apart invulblok in elke kolom te staan. */
+async function logPlaatsLos(partij){
+  const kent=document.getElementById('loglos-kent'), oms=document.getElementById('loglos-oms');
+  const k=(kent&&kent.value||"").trim();
+  if(!k){ showToast("Vul eerst een kenteken in",false); if(kent)kent.focus(); return; }
+  const uit=await logDoe('/api/logistiek-plaatsen',{partij,kenteken:k,omschrijving:(oms&&oms.value||"").trim()||null});
+  if(uit)zetLogZoek('');
+}
+/* De zoekresultaten: álle auto's uit PVP die op de zoekterm passen, om er direct een aan te klikken.
+   Typ je "208", dan zie je elke 208 en kies je met één klik bij welke partij hij komt te staan.
+   Verschijnt alleen als er gezocht wordt — anders is dit een lijst van honderd auto's die niemand
+   wil zien. */
+function logZoekResultaten(){
+  if(!logZoek.trim())return "";
+  const n=logZoek.toLowerCase().replace(/[^a-z0-9]/g,"");
+  const past=v=>[v.merk,v.model,v.uitv,v.kenteken,v.vin].map(x=>String(x||"").toLowerCase().replace(/[^a-z0-9]/g,"")).join(" ").includes(n);
+  // Verkochte auto's staan er niet tussen: die gaan nergens meer heen.
+  const treffers=V.filter(v=>v.status!=='verkocht'&&past(v));
+  // Waar staat hij al? Dan geen knoppen maar de plek, want een tweede plaatsing geeft toch 409.
+  const staat={}; logistiek.plaatsingen.filter(p=>p.status==='weg'&&p.vehicleId).forEach(p=>{staat[p.vehicleId]=p.partij;});
+  const naamVan=c=>{const p=logistiek.partijen.find(x=>x.code===c); return p?p.naam:c;};
+  const MAX=25;
+  const rij=v=>{
+    const waar=staat[v.id];
+    const kent=v.kenteken&&v.kenteken!=='—'?v.kenteken:null;
+    return `<div class="taak" style="padding:7px 0;border-bottom:1px solid var(--line)">
+      <span class="tk"><b>${esc(v.merk||'')} ${esc(v.model||'')}</b>
+        <span class="muted" style="font-size:11px">${esc(v.uitv||'')}</span><br>
+        <span class="mono" style="font-size:11px">${esc(kent||v.vin||v.id)}</span>
+        <span class="muted" style="font-size:11px">· ${esc(v.status||'')}</span></span>
+      ${waar
+        ? `<span class="badge b-gemeld" title="Deze auto staat al ergens; haal hem daar eerst weg of meld hem terug">staat bij ${esc(naamVan(waar))}</span>`
+        : logistiek.partijen.map(p=>`<button class="btn btn-ghost btn-sm" onclick="logPlaatsAuto('${esc(v.id)}','${esc(p.code)}')">${esc(p.naam)}</button>`).join(' ')}
+    </div>`;
+  };
+  return `<div class="card" style="margin-bottom:16px">
+    <h3>Gevonden in PVP <span class="gcount">${treffers.length}</span></h3>
+    <div class="card-body">
+      ${treffers.length?treffers.slice(0,MAX).map(rij).join('')
+        :`<div class="empty" style="padding:12px">Geen auto in PVP die op “${esc(logZoek)}” past.</div>`}
+      ${treffers.length>MAX?`<div class="note">Alleen de eerste ${MAX} getoond — typ iets specifieker.</div>`:''}
+      <details style="margin-top:10px" ${treffers.length?'':'open'}>
+        <summary style="cursor:pointer;font-size:12px;color:var(--muted);font-weight:600">Staat er niet bij? Auto buiten PVP toevoegen</summary>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
+          <input id="loglos-kent" class="inp" style="width:130px" placeholder="Kenteken" value="${esc(/^[a-z0-9-]{4,10}$/i.test(logZoek.trim())?logZoek.trim():'')}">
+          <input id="loglos-oms" class="inp" style="flex:1;min-width:170px" placeholder="Merk en model">
+          <span class="muted" style="font-size:11px">naar:</span>
+          ${logistiek.partijen.map(p=>`<button class="btn btn-ghost btn-sm" onclick="logPlaatsLos('${esc(p.code)}')">${esc(p.naam)}</button>`).join(' ')}
+        </div>
+      </details>
+    </div></div>`;
 }
 function renderLogistiek(){
   const zicht=logistiek.plaatsingen.filter(logPast);
-  // Auto's die al ergens staan hoeven niet nog een keer in de keuzelijst: dat geeft alleen een 409.
-  const bezet=new Set(logistiek.plaatsingen.filter(p=>p.status==='weg'&&p.vehicleId).map(p=>p.vehicleId));
-  const keus=V.filter(v=>v.status!=='verkocht'&&!bezet.has(v.id))
-              .map(v=>`<option value="${esc(v.id)}">${esc(v.merk||'')} ${esc(v.model||'')} — ${esc(v.kenteken&&v.kenteken!=='—'?v.kenteken:(v.vin||v.id))}</option>`).join("");
 
   const rij=p=>{
     const open=!!logOpen[p.id];
@@ -1309,17 +1353,6 @@ function renderLogistiek(){
       <div class="kop">${esc(pt.naam)}<span class="gcount" title="Staat hier nu">${weg.length}</span></div>
       ${weg.length?weg.map(rij).join(''):`<div class="empty" style="padding:14px;font-size:12px">${logZoek?'Niets dat hierop past.':'Nog geen auto hier. Sleep er een heen of kies er een hieronder.'}</div>`}
       ${terug.length?`<details style="border-top:1px solid var(--line)"><summary style="cursor:pointer;padding:7px 12px;font-size:11px;color:var(--muted);font-weight:600">${terug.length} terug op locatie</summary>${terug.map(rij).join('')}</details>`:''}
-      <div style="padding:9px 12px;border-top:1px solid var(--line);background:var(--slate-soft)">
-        <select id="logkies-${esc(pt.code)}" class="assign" style="width:100%;font-size:12px" onchange="if(this.value)logPlaats('${esc(pt.code)}')">
-          <option value="">— auto uit PVP kiezen —</option>${keus}
-        </select>
-        <details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);font-weight:600">Auto die niet in PVP staat</summary>
-          <div style="display:flex;flex-direction:column;gap:5px;margin-top:5px">
-            <input id="logkent-${esc(pt.code)}" class="inp" style="font-size:12px;padding:4px 8px" placeholder="Kenteken">
-            <input id="logoms-${esc(pt.code)}" class="inp" style="font-size:12px;padding:4px 8px" placeholder="Merk en model (vrij)">
-            <button class="btn btn-ghost btn-sm" onclick="logPlaats('${esc(pt.code)}')">Toevoegen</button>
-          </div></details>
-      </div>
     </div>`;
   };
 
@@ -1334,10 +1367,11 @@ function renderLogistiek(){
     <p class="page-sub">Waar staat welke auto. Sleep een auto naar een andere partij, of meld hem terug zodra hij weer op locatie staat.
       Dit staat los van de werkbonnen bij Carport — het gaat hier over de plek, niet over het werk.</p>
     <div class="filterbar"><span class="fl">Zoeken</span>
-      <input id="logzoek" class="inp" style="min-width:260px" placeholder="Kenteken, merk of model…" value="${esc(logZoek)}"
-             oninput="zetLogZoek(this.value)">
+      <input id="logzoek" class="inp" style="min-width:300px" placeholder="Typ een kenteken, merk of model — bv. 208"
+             value="${esc(logZoek)}" oninput="zetLogZoek(this.value)">
       ${logZoek?`<button class="fchip" onclick="zetLogZoek('')">Wissen</button>`:''}
     </div>
+    ${logZoekResultaten()}
     <div class="logkol">${logistiek.partijen.map(kolom).join('')}</div>
     <div class="card" style="margin-top:20px"><h3>Logboek <span class="gcount">${logistiek.logboek.length}</span></h3>
       <div class="card-body" style="padding:0 4px">
@@ -2587,16 +2621,7 @@ function renderCarport(){
     ? `<h1 class="page-title">Planning</h1><p class="page-sub">Auto's die bij Carport staan, de eerste deadline bovenaan. Sleep om je eigen volgorde te bepalen. Meld een auto af zodra hij klaarstaat. Gekentekend kan compleet af; ongekentekend is voorwerk.</p>`
     : `<h1 class="page-title">Carport</h1><p class="page-sub">Werkbonnen bij Carport. De deadline is ${carportData.marge} dagen vóór de gewenste aflevering, zodat de auto nog naar de poetser kan.</p>`;
   app.innerHTML=kop
-    + (magPlannen()?`<div class="card"><h3>Auto op de planning zetten</h3><div class="card-body">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <select id="cp-auto" class="assign" style="min-width:260px">${
-            V.filter(v=>v.status==='lopende'&&!p.some(b=>b.vehicleId===v.id))
-             .map(v=>`<option value="${v.id}">${esc(v.merk+' '+v.model)} · ${esc(v.kenteken&&v.kenteken!=='—'?v.kenteken:v.vin)}</option>`).join("")||'<option value="">Geen auto beschikbaar</option>'}</select>
-          <input id="cp-datum" class="inp" style="width:160px" placeholder="Aflever dd-mm-jjjj">
-          <button class="btn btn-primary btn-sm" onclick="carportBonBij()">Op de planning</button>
-        </div>
-        <div class="note" style="margin-top:8px">De gewenste afleverdatum komt uit de verkoopovereenkomst in Mobilox. Zolang die koppeling er niet is, vul je hem hier in.</div>
-      </div></div>`:'')
+    + (magPlannen()?carportBonBlok(p):'')
     // Twee bakken. Een auto met kenteken kan compleet af: alle werk plus APK, en dan in één keer
     // afleveren. Zonder kenteken kan de APK niet, dus daar is alleen voorwerk mogelijk — werk om op
     // te pakken als het rustig is, zodat de auto later sneller de deur uit kan.
@@ -2656,12 +2681,84 @@ function carportNotitie(bonId){
   if(!tekst){ if(inp)inp.focus(); return; }
   carportDoe('/api/carport-notitie',{bonId,tekst,soort:isCarport()?'technisch':'klant'},"Notitie toegevoegd");
 }
-function carportBonBij(){
-  const sel=document.getElementById('cp-auto'), d=document.getElementById('cp-datum');
-  if(!sel||!sel.value){ showToast("Kies eerst een auto",false); return; }
+/* Een auto op de planning zetten. Zoeken in plaats van een keuzelijst: bij zestig lopende auto's
+   scrol je je suf, en een auto die niet in PVP staat kwam er sowieso niet in voor. */
+let cpZoek="";
+function zetCpZoek(w){
+  cpZoek=String(w||"");
+  rerenderCurrent();
+  const el=document.getElementById('cp-zoek');
+  if(el){ el.focus(); try{ el.setSelectionRange(el.value.length,el.value.length); }catch(_){} }
+}
+function carportTakenUitVeld(){
+  // Eén regel per taak. Een lege regel slaan we over; zo kun je gewoon plakken uit een mail.
+  const t=document.getElementById('cp-taken');
+  return (t&&t.value||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean).map(tekst=>({tekst}));
+}
+function carportDatumUitVeld(){
+  const d=document.getElementById('cp-datum');
   const datum=(d&&d.value||'').trim();
-  if(datum&&!/^\d{2}-\d{2}-\d{4}$/.test(datum)){ showToast("Afleverdatum als dd-mm-jjjj",false); d.focus(); return; }
-  carportDoe('/api/carport-bon',{vehicleId:sel.value,afleverdatum:datum||null},"Op de planning gezet");
+  if(datum&&!/^\d{2}-\d{2}-\d{4}$/.test(datum)){ showToast("Afleverdatum als dd-mm-jjjj",false); if(d)d.focus(); return undefined; }
+  return datum||null;
+}
+function carportBonBij(vehicleId){
+  const datum=carportDatumUitVeld(); if(datum===undefined)return;
+  const taken=carportTakenUitVeld();
+  carportDoe('/api/carport-bon',{vehicleId,afleverdatum:datum,taken},
+    taken.length?`Op de planning gezet met ${taken.length} regel${taken.length===1?'':'s'}`:"Op de planning gezet");
+  cpZoek="";
+}
+function carportBonLos(){
+  const k=(document.getElementById('cp-los-kent')||{}).value||"";
+  if(!k.trim()){ showToast("Vul eerst een kenteken in",false); return; }
+  const datum=carportDatumUitVeld(); if(datum===undefined)return;
+  const taken=carportTakenUitVeld();
+  carportDoe('/api/carport-bon',{kenteken:k.trim(),omschrijving:((document.getElementById('cp-los-oms')||{}).value||"").trim()||null,
+    afleverdatum:datum,taken},"Op de planning gezet");
+  cpZoek="";
+}
+/* Het blok bovenaan Carport: zoeken, de treffers, en meteen invullen wat er moet gebeuren. Dat
+   laatste hoort hier omdat je het op dát moment weet — bij een auto van buiten staat het nergens
+   anders. */
+function carportBonBlok(planning){
+  const n=cpZoek.trim().toLowerCase().replace(/[^a-z0-9]/g,"");
+  const alGepland=new Set(planning.filter(b=>b.vehicleId).map(b=>b.vehicleId));
+  const past=v=>[v.merk,v.model,v.uitv,v.kenteken,v.vin].map(x=>String(x||"").toLowerCase().replace(/[^a-z0-9]/g,"")).join(" ").includes(n);
+  const treffers=n?V.filter(v=>v.status!=='verkocht'&&past(v)).slice(0,20):[];
+  const rij=v=>{
+    const kent=v.kenteken&&v.kenteken!=='—'?v.kenteken:null;
+    return `<div class="taak" style="padding:7px 0;border-bottom:1px solid var(--line)">
+      <span class="tk"><b>${esc(v.merk||'')} ${esc(v.model||'')}</b>
+        <span class="muted" style="font-size:11px">${esc(v.uitv||'')}</span><br>
+        <span class="mono" style="font-size:11px">${esc(kent||v.vin||v.id)}</span>
+        <span class="muted" style="font-size:11px">· ${esc(v.status||'')}</span></span>
+      ${alGepland.has(v.id)
+        ? `<span class="badge b-lopende">staat al op de planning</span>`
+        : `<button class="btn btn-primary btn-sm" onclick="carportBonBij('${esc(v.id)}')">Op de planning</button>`}
+    </div>`;
+  };
+  return `<div class="card"><h3>Auto op de planning zetten</h3><div class="card-body">
+    <input id="cp-zoek" class="inp" style="width:100%;max-width:420px" placeholder="Zoek op kenteken, merk of model — bv. 208"
+           value="${esc(cpZoek)}" oninput="zetCpZoek(this.value)">
+    ${n?`<div style="margin-top:8px">${treffers.length?treffers.map(rij).join(''):`<div class="empty" style="padding:12px">Geen auto in PVP die op “${esc(cpZoek)}” past.</div>`}</div>`:''}
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
+      <input id="cp-datum" class="inp" style="width:170px" placeholder="Aflever dd-mm-jjjj">
+      <span class="note" style="margin:0">Komt normaal uit de verkoopovereenkomst in Mobilox.</span>
+    </div>
+    <div style="margin-top:8px">
+      <div class="note" style="margin:0 0 4px">Wat er moet gebeuren — één regel per taak. Gaat mee zodra je hierboven een auto kiest.</div>
+      <textarea id="cp-taken" class="inp" rows="3" style="width:100%" placeholder="APK&#10;Remschijven voor vervangen&#10;Interieur reinigen"></textarea>
+    </div>
+    <details style="margin-top:10px" ${n&&!treffers.length?'open':''}>
+      <summary style="cursor:pointer;font-size:12px;color:var(--muted);font-weight:600">Auto die niet in PVP staat</summary>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
+        <input id="cp-los-kent" class="inp" style="width:140px" placeholder="Kenteken" value="${esc(/^[a-z0-9-]{4,10}$/i.test(cpZoek.trim())?cpZoek.trim():'')}">
+        <input id="cp-los-oms" class="inp" style="flex:1;min-width:180px" placeholder="Merk en model">
+        <button class="btn btn-primary btn-sm" onclick="carportBonLos()">Op de planning</button>
+      </div>
+      <div class="note" style="margin-top:6px">Voor werk aan een auto die niet in PVP staat. De datum en de regels hierboven gaan mee.</div>
+    </details>
+  </div></div>`;
 }
 function carportDatum(id,huidig){
   const d=window.prompt("Gewenste afleverdatum (dd-mm-jjjj). Leeg laten haalt hem weg.",huidig||"");

@@ -431,3 +431,16 @@ CREATE TABLE IF NOT EXISTS logistiek_plaatsingen (
 );
 CREATE INDEX IF NOT EXISTS logistiek_partij  ON logistiek_plaatsingen (partij, status, volgorde);
 CREATE INDEX IF NOT EXISTS logistiek_vehicle ON logistiek_plaatsingen (vehicle_id);
+
+-- Een werkbon voor een auto die niet in PVP staat (28-08-2026, opgave Prieva). Carport krijgt ook
+-- auto's onder handen die nooit door de PVP-molen gaan; die moesten tot nu toe eerst als voertuig
+-- aangemaakt worden om er een bon voor te kunnen maken.
+ALTER TABLE carport_bonnen ALTER COLUMN vehicle_id DROP NOT NULL;
+ALTER TABLE carport_bonnen ADD COLUMN IF NOT EXISTS los_kenteken     text;
+ALTER TABLE carport_bonnen ADD COLUMN IF NOT EXISTS los_omschrijving text;
+-- Een bon gaat over een auto uit PVP óf over een losse auto. Niet over geen van beide: dan is hij
+-- niet terug te vinden. ADD CONSTRAINT kent geen IF NOT EXISTS, vandaar het blok.
+DO $$ BEGIN
+  ALTER TABLE carport_bonnen ADD CONSTRAINT carport_bon_heeft_auto CHECK (
+    vehicle_id IS NOT NULL OR btrim(coalesce(los_kenteken,'')) <> '' );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

@@ -549,7 +549,12 @@ async function getCarport() {
     volgorde: r.volgorde, status: r.status, klaarTs: r.klaar_ts, klaarDoor: r.klaar_door,
     afgeleverdTs: r.afgeleverd_ts, afgeleverdDoor: r.afgeleverd_door, afgeleverdDatum: r.afgeleverd_datum,
     ts: r.aangemaakt_ts, door: r.aangemaakt_door, notities: r.notities || [], taken: perBon[r.id] || [],
-    auto: { merk: r.merk, model: r.model, kenteken: r.kenteken, vin: r.vin, kleur: r.kleur, km: r.km, uitv: r.uitv }
+    inPvp: !!r.vehicle_id,
+    // Staat de auto niet in PVP, dan komen merk/kenteken uit wat er met de hand is ingevuld. Zo hoeft
+    // de frontend geen twee soorten bonnen te kennen: `auto` is altijd gevuld.
+    auto: r.vehicle_id
+      ? { merk: r.merk, model: r.model, kenteken: r.kenteken, vin: r.vin, kleur: r.kleur, km: r.km, uitv: r.uitv }
+      : { merk: r.los_omschrijving || '', model: '', kenteken: r.los_kenteken, vin: null, kleur: null, km: null, uitv: null }
   });
   const alles = bon.rows.map(maak);
   const geleverd = b => b.afgeleverdTs !== null && b.afgeleverdTs !== undefined;
@@ -1295,15 +1300,50 @@ const server = http.createServer(async (req, res) => {
         await pool.query('UPDATE carport_bonnen SET afleverdatum=$2, updated_at=now() WHERE id=$1', [b.id, datum]);
         return sendJson(res, 200, { ok: true, id: Number(b.id) });
       }
-      if (!b.vehicleId) return sendJson(res, 400, { error: 'missing' });
-      const auto = await pool.query('SELECT id FROM vehicles WHERE id=$1', [b.vehicleId]);
-      if (!auto.rows.length) return sendJson(res, 404, { error: 'onbekende auto' });
-      const al = await pool.query("SELECT id FROM carport_bonnen WHERE vehicle_id=$1 AND status='open'", [b.vehicleId]);
-      if (al.rows.length) return sendJson(res, 200, { ok: true, id: al.rows[0].id, alGepland: true });
-      const r = await pool.query(
-        `INSERT INTO carport_bonnen (vehicle_id, afleverdatum, aangemaakt_ts, aangemaakt_door)
-         VALUES ($1,$2,$3,$4) RETURNING id`, [b.vehicleId, datum, Date.now(), u.n || u.u]);
-      return sendJson(res, 200, { ok: true, id: r.rows[0].id });
+      const tekst = x => { const t = (x === undefined || x === null) ? '' : String(x).trim(); return t === '' ? null : t; };
+      const losKent = tekst(b.kenteken), losOms = tekst(b.omschrijving);
+      if (!b.vehicleId && !losKent)
+        return sendJson(res, 400, { error: 'geen auto', melding: 'kies een auto uit PVP of vul een kenteken in' });
+
+      let bonId;
+      if (b.vehicleId) {
+        const auto = await pool.query('SELECT id FROM vehicles WHERE id=$1', [b.vehicleId]);
+        if (!auto.rows.length) return sendJson(res, 404, { error: 'onbekende auto' });
+        const al = await pool.query("SELECT id FROM carport_bonnen WHERE vehicle_id=$1 AND status='open'", [b.vehicleId]);
+        if (al.rows.length) return sendJson(res, 200, { ok: true, id: al.rows[0].id, alGepland: true });
+        bonId = (await pool.query(
+          `INSERT INTO carport_bonnen (vehicle_id, afleverdatum, aangemaakt_ts, aangemaakt_door)
+           VALUES ($1,$2,$3,$4) RETURNING id`, [b.vehicleId, datum, Date.now(), u.n || u.u])).rows[0].id;
+      } else {
+        // Een auto buiten PVP. Twee keer hetzelfde kenteken op een open bon is bijna altijd een
+        // vergissing; dan geven we die bon terug in plaats van een tweede aan te maken.
+        const plat = String(losKent).toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const al = await pool.query(
+          `SELECT id FROM carport_bonnen WHERE status='open' AND vehicle_id IS NULL
+             AND upper(regexp_replace(coalesce(los_kenteken,''),'[^A-Za-z0-9]','','g')) = $1`, [plat]);
+        if (al.rows.length) return sendJson(res, 200, { ok: true, id: al.rows[0].id, alGepland: true });
+        bonId = (await pool.query(
+          `INSERT INTO carport_bonnen (vehicle_id, los_kenteken, los_omschrijving, afleverdatum, aangemaakt_ts, aangemaakt_door)
+           VALUES (NULL,$1,$2,$3,$4,$5) RETURNING id`, [losKent, losOms, datum, Date.now(), u.n || u.u])).rows[0].id;
+      }
+
+      /* De regels meteen mee. Zonder dit moest je de bon aanmaken, hem opzoeken en dan pas invullen
+         wat er moest gebeuren — en juist bij een auto van buiten weet je dat op dát moment. */
+      const SOORTEN = ['reparatie', 'apk', 'beurt', 'onderdeel', 'poetsen'];
+      let regels = 0;
+      if (Array.isArray(b.taken)) {
+        for (const t of b.taken.slice(0, 50)) {
+          const tk = typeof t === 'string' ? t : (t && t.tekst);
+          const schoon = String(tk === undefined || tk === null ? '' : tk).trim();
+          if (!schoon) continue;
+          const soort = (t && SOORTEN.includes(t.soort)) ? t.soort : 'reparatie';
+          await pool.query(
+            `INSERT INTO carport_taken (bon_id, soort, tekst, door, aangemaakt_ts) VALUES ($1,$2,$3,'prieva',$4)`,
+            [bonId, soort, schoon.slice(0, 400), Date.now()]);
+          regels++;
+        }
+      }
+      return sendJson(res, 200, { ok: true, id: bonId, regels });
     }
 
     // Een regel op de bon: toevoegen, afvinken of weghalen. Carport mag dit ook — zij vinden
@@ -1770,17 +1810,25 @@ const server = http.createServer(async (req, res) => {
           ORDER BY v.sort_order NULLS LAST, v.id`);
 
       // De tellers rekent de server uit, niet het scherm — zelfde regel als bij de Carport-marge.
-      let nogTeBetalen = 0, reedsBetaald = 0, aantalOnbetaald = 0, zonderBedrag = 0;
+      let nogTeBetalen = 0, reedsBetaald = 0, aantalOnbetaald = 0, zonderBedrag = 0, inruilers = 0;
       const autos = r.rows.map(x => {
         // Een eigen bedrag wint van de inkoopprijs; is er geen van beide, dan telt deze auto NIET mee.
         const ruw = x.bedrag !== null && x.bedrag !== undefined ? x.bedrag : x.inkoopprijs;
         const bedrag = ruw === null || ruw === undefined ? null : Number(ruw);
         const betaald = x.status === 'betaald';
-        if (bedrag === null) zonderBedrag++;
-        if (betaald) { if (bedrag !== null) reedsBetaald += bedrag; }
-        else { aantalOnbetaald++; if (bedrag !== null) nogTeBetalen += bedrag; }
+        /* Een inruiler wordt niet betaald: die is verrekend met de verkoop van de andere auto. Hem
+           meetellen in "nog te betalen" laat er geld openstaan dat nooit overgemaakt wordt. Herkend
+           aan de leverancier — de Mobilox-agent zet daar `Inruil` neer bij het overnemen, en met de
+           hand wordt dat ook zo ingevuld. */
+        const inruil = String(x.lev || '').trim().toLowerCase() === 'inruil';
+        if (inruil) inruilers++;
+        else {
+          if (bedrag === null) zonderBedrag++;
+          if (betaald) { if (bedrag !== null) reedsBetaald += bedrag; }
+          else { aantalOnbetaald++; if (bedrag !== null) nogTeBetalen += bedrag; }
+        }
         return { id: x.id, merk: x.merk, model: x.model, vin: x.vin, kenteken: x.kenteken,
-                 lev: x.lev, inkoopdatum: x.inkoopdatum,
+                 lev: x.lev, inkoopdatum: x.inkoopdatum, inruil,
                  status: betaald ? 'betaald' : 'onbetaald', bedrag,
                  eigenBedrag: x.bedrag === null || x.bedrag === undefined ? null : Number(x.bedrag),
                  betaaldTs: x.betaald_ts || null, betaaldDoor: x.betaald_door || null,
@@ -1791,7 +1839,7 @@ const server = http.createServer(async (req, res) => {
          BPM-teller, die liever "opnamedatum onbekend" toont dan een verzonnen termijn. */
       return sendJson(res, 200, {
         autos,
-        totalen: { nogTeBetalen, reedsBetaald, aantalOnbetaald, aantal: autos.length, zonderBedrag }
+        totalen: { nogTeBetalen, reedsBetaald, aantalOnbetaald, aantal: autos.length, zonderBedrag, inruilers }
       });
     }
 
