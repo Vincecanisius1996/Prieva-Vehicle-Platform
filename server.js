@@ -1473,6 +1473,186 @@ const server = http.createServer(async (req, res) => {
     if (url === '/api/bpmnotif-seen' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); await pool.query('UPDATE bpm_notifs SET seen=true WHERE seen=false'); return sendJson(res, 200, { ok: true }); }
     if (url === '/api/bpmreport-del' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.url) return sendJson(res, 400, { error: 'missing' }); await pool.query('DELETE FROM bpm_reports WHERE vehicle_id=$1 AND url=$2', [b.id, b.url]); try { const rel = decodeURIComponent(String(b.url).replace(/^\/uploads\//, '')); if (rel.indexOf('..') < 0) fs.unlink(path.join(UPLOAD_DIR, rel), () => {}); } catch (_) {} return sendJson(res, 200, { ok: true }); }
 
+    /* ===== Logistiek (28-08-2026) =========================================================
+       Waar staat welke auto: bij Purol, Carport, DSH of het dealerschap. Voor het eigen overzicht
+       van Prieva — team en admin. Carport krijgt hier 403: dit gaat over hún locatie, maar het is
+       ons overzicht, en het staat bewust los van de werkbonnen.
+
+       Verwijderen kan alleen een admin. "Terug op locatie" is de gewone weg en die is omkeerbaar;
+       een regel weggooien niet. */
+
+    if (url === '/api/logistiek' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const [part, pl, log] = await Promise.all([
+        pool.query('SELECT code,naam,volgorde FROM logistiek_partijen WHERE actief = true ORDER BY volgorde NULLS LAST, naam'),
+        pool.query(`SELECT p.*, v.merk, v.model, v.kenteken AS v_kenteken, v.vin, v.status AS v_status
+                      FROM logistiek_plaatsingen p LEFT JOIN vehicles v ON v.id = p.vehicle_id
+                     ORDER BY p.volgorde NULLS LAST, p.weg_ts NULLS LAST, p.id`),
+        // Het logboek is voor iedereen zichtbaar die deze pagina mag zien. Nieuwste bovenaan.
+        pool.query(`SELECT ts,door,sleutel,actie,van,naar,melding FROM pvp_log
+                     WHERE onderdeel='logistiek' ORDER BY id DESC LIMIT 200`)
+      ]);
+      const uit = x => ({
+        id: x.id,
+        vehicleId: x.vehicle_id,
+        // Een losse auto heeft geen rij in `vehicles`; dan tonen we wat er met de hand is ingevuld.
+        kenteken: x.vehicle_id ? x.v_kenteken : x.los_kenteken,
+        omschrijving: x.vehicle_id ? `${x.merk || ''} ${x.model || ''}`.trim() : (x.los_omschrijving || null),
+        vin: x.vehicle_id ? x.vin : null,
+        inPvp: !!x.vehicle_id,
+        autoStatus: x.vehicle_id ? x.v_status : null,
+        partij: x.partij, volgorde: x.volgorde, status: x.status, reden: x.reden,
+        wegTs: x.weg_ts, wegDoor: x.weg_door, terugTs: x.terug_ts, terugDoor: x.terug_door,
+        notities: Array.isArray(x.notities) ? x.notities : []
+      });
+      return sendJson(res, 200, {
+        partijen: part.rows.map(p => ({ code: p.code, naam: p.naam })),
+        plaatsingen: pl.rows.map(uit),
+        logboek: log.rows.map(r => ({ ts: r.ts, door: r.door, sleutel: r.sleutel, actie: r.actie,
+                                      van: r.van, naar: r.naar, melding: r.melding }))
+      });
+    }
+
+    // Een auto bij een partij zetten. Twee soorten: een auto uit PVP (vehicleId) of een losse auto
+    // die niet in PVP staat (kenteken + omschrijving met de hand).
+    if (url === '/api/logistiek-plaatsen' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const tekst = x => { const t = (x === undefined || x === null) ? '' : String(x).trim(); return t === '' ? null : t; };
+      const partij = tekst(b.partij);
+      if (!partij) return sendJson(res, 400, { error: 'missing' });
+      if (!(await pool.query('SELECT 1 FROM logistiek_partijen WHERE code=$1 AND actief=true', [partij])).rowCount)
+        return sendJson(res, 400, { error: 'onbekende partij' });
+
+      const vid = tekst(b.vehicleId);
+      const losKent = tekst(b.kenteken);
+      const losOms = tekst(b.omschrijving);
+      if (!vid && !losKent) return sendJson(res, 400, { error: 'geen auto', melding: 'kies een auto uit PVP of vul een kenteken in' });
+      if (vid && !(await pool.query('SELECT 1 FROM vehicles WHERE id=$1', [vid])).rowCount)
+        return sendJson(res, 404, { error: 'onbekende auto' });
+      // Twee keer dezelfde auto ergens neerzetten is bijna altijd een vergissing: hij staat maar op
+      // één plek tegelijk. Een auto die al terug is mag natuurlijk opnieuw weg.
+      const alWeg = vid
+        ? await pool.query("SELECT id,partij FROM logistiek_plaatsingen WHERE vehicle_id=$1 AND status='weg' LIMIT 1", [vid])
+        : await pool.query(`SELECT id,partij FROM logistiek_plaatsingen
+                             WHERE vehicle_id IS NULL AND status='weg'
+                               AND upper(regexp_replace(coalesce(los_kenteken,''),'[^A-Za-z0-9]','','g')) = $1
+                             LIMIT 1`, [String(losKent || '').toUpperCase().replace(/[^A-Z0-9]/g, '')]);
+      if (alWeg.rowCount) return sendJson(res, 409, { error: 'staat al ergens', partij: alWeg.rows[0].partij, id: alWeg.rows[0].id });
+
+      const wie = u.n || u.u;
+      const r = await pool.query(
+        `INSERT INTO logistiek_plaatsingen (vehicle_id,los_kenteken,los_omschrijving,partij,reden,weg_ts,weg_door)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [vid, vid ? null : losKent, vid ? null : losOms, partij, tekst(b.reden), Date.now(), wie]);
+      await logSchrijf(wie, 'logistiek', r.rows[0].id, 'geplaatst', {
+        naar: partij, melding: (vid || losKent) + (losOms ? ' — ' + losOms : '') });
+      return sendJson(res, 200, { ok: true, id: r.rows[0].id });
+    }
+
+    // Naar een andere partij slepen.
+    if (url === '/api/logistiek-verplaatsen' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const id = Number(b.id); const naar = String(b.partij || '').trim();
+      if (!Number.isFinite(id) || !naar) return sendJson(res, 400, { error: 'missing' });
+      const oud = (await pool.query('SELECT * FROM logistiek_plaatsingen WHERE id=$1', [id])).rows[0];
+      if (!oud) return sendJson(res, 404, { error: 'onbekende plaatsing' });
+      if (!(await pool.query('SELECT 1 FROM logistiek_partijen WHERE code=$1 AND actief=true', [naar])).rowCount)
+        return sendJson(res, 400, { error: 'onbekende partij' });
+      if (oud.partij === naar) return sendJson(res, 200, { ok: true, id, ongewijzigd: true });
+      // De eigen volgorde hoort bij de kolom waar hij stond; in een andere kolom zegt dat nummer niets.
+      await pool.query('UPDATE logistiek_plaatsingen SET partij=$2, volgorde=NULL, updated_at=now() WHERE id=$1', [id, naar]);
+      await logSchrijf(u.n || u.u, 'logistiek', id, 'verplaatst', {
+        van: oud.partij, naar, melding: oud.los_kenteken || oud.vehicle_id || '' });
+      return sendJson(res, 200, { ok: true, id, van: oud.partij, naar });
+    }
+
+    // Terug op locatie, en terugdraaien als iemand zich vergiste.
+    if (url === '/api/logistiek-terug' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const id = Number(b.id); if (!Number.isFinite(id)) return sendJson(res, 400, { error: 'missing' });
+      const oud = (await pool.query('SELECT * FROM logistiek_plaatsingen WHERE id=$1', [id])).rows[0];
+      if (!oud) return sendJson(res, 404, { error: 'onbekende plaatsing' });
+      const terug = b.terug !== false;
+      const wie = u.n || u.u;
+      // Het moment hoort bij de handeling: draai je hem terug, dan gaat de terugkomstdatum eraf.
+      await pool.query('UPDATE logistiek_plaatsingen SET status=$2, terug_ts=$3, terug_door=$4, updated_at=now() WHERE id=$1',
+        [id, terug ? 'terug' : 'weg', terug ? Date.now() : null, terug ? wie : null]);
+      if ((oud.status === 'terug') !== terug)
+        await logSchrijf(wie, 'logistiek', id, terug ? 'terug op locatie' : 'toch weer weg', {
+          van: oud.status, naar: terug ? 'terug' : 'weg',
+          melding: (oud.los_kenteken || oud.vehicle_id || '') + ' · ' + oud.partij });
+      return sendJson(res, 200, { ok: true, id, status: terug ? 'terug' : 'weg' });
+    }
+
+    // Een notitie bij een plaatsing. Append-only op de jsonb: notities worden nooit overschreven.
+    if (url === '/api/logistiek-notitie' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const id = Number(b.id);
+      const t = String(b.tekst === undefined || b.tekst === null ? '' : b.tekst).trim();
+      if (!Number.isFinite(id) || !t) return sendJson(res, 400, { error: 'missing' });
+      if (t.length > 2000) return sendJson(res, 400, { error: 'notitie te lang' });
+      const oud = (await pool.query('SELECT id FROM logistiek_plaatsingen WHERE id=$1', [id])).rows[0];
+      if (!oud) return sendJson(res, 404, { error: 'onbekende plaatsing' });
+      const wie = u.n || u.u;
+      await pool.query(
+        `UPDATE logistiek_plaatsingen SET notities = notities || $2::jsonb, updated_at=now() WHERE id=$1`,
+        [id, JSON.stringify([{ ts: Date.now(), door: wie, tekst: t }])]);
+      await logSchrijf(wie, 'logistiek', id, 'notitie', { melding: t.slice(0, 160) });
+      return sendJson(res, 200, { ok: true, id });
+    }
+
+    /* De sleepvolgorde binnen een partij. Zoals bij Carport: zodra er gesleept wordt krijgen ALLE
+       regels van die partij een nummer, zodat er geen gaten of dubbele nummers ontstaan als twee
+       mensen tegelijk schuiven. Een lege lijst zet die partij terug op de standaardvolgorde. */
+    if (url === '/api/logistiek-volgorde' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const partij = String(b.partij || '').trim();
+      if (!partij) return sendJson(res, 400, { error: 'missing' });
+      const ids = Array.isArray(b.ids) ? b.ids.map(Number).filter(Number.isFinite) : [];
+      if (!ids.length) {
+        await pool.query('UPDATE logistiek_plaatsingen SET volgorde=NULL WHERE partij=$1', [partij]);
+        return sendJson(res, 200, { ok: true, hersteld: true });
+      }
+      // Alleen regels die écht bij deze partij horen; een id uit een andere kolom hoort hier niet
+      // stilletjes van partij te wisselen.
+      const eigen = (await pool.query('SELECT id FROM logistiek_plaatsingen WHERE partij=$1', [partij])).rows.map(r => Number(r.id));
+      const set = new Set(eigen);
+      const geldig = ids.filter(i => set.has(i));
+      if (!geldig.length) return sendJson(res, 400, { error: 'geen regels van deze partij' });
+      for (let i = 0; i < geldig.length; i++)
+        await pool.query('UPDATE logistiek_plaatsingen SET volgorde=$2, updated_at=now() WHERE id=$1', [geldig[i], i + 1]);
+      // De rest van die partij erachter, zodat er nooit een gat of een dubbel nummer ontstaat.
+      const rest = eigen.filter(i => !geldig.includes(i));
+      for (let i = 0; i < rest.length; i++)
+        await pool.query('UPDATE logistiek_plaatsingen SET volgorde=$2 WHERE id=$1', [rest[i], geldig.length + i + 1]);
+      return sendJson(res, 200, { ok: true, aantal: geldig.length });
+    }
+
+    // Weggooien: alleen admin, en de regel gaat mét zijn inhoud het logboek in.
+    if (url === '/api/logistiek-del' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const id = Number(b.id); if (!Number.isFinite(id)) return sendJson(res, 400, { error: 'missing' });
+      const oud = (await pool.query('SELECT * FROM logistiek_plaatsingen WHERE id=$1', [id])).rows[0];
+      if (!oud) return sendJson(res, 404, { error: 'onbekende plaatsing' });
+      await pool.query('DELETE FROM logistiek_plaatsingen WHERE id=$1', [id]);
+      await logSchrijf(u.n || u.u, 'logistiek', id, 'verwijderd', {
+        van: oud.partij, melding: (oud.los_kenteken || oud.vehicle_id || '') + (oud.los_omschrijving ? ' — ' + oud.los_omschrijving : '') });
+      return sendJson(res, 200, { ok: true, id });
+    }
+
     /* ===== Afgeronde taxaties (28-08-2026) ===============================================
        Auto's waarvoor een taxatierapport is ingeleverd. Bewust GEEN nieuwe tabel: "afgerond" is
        geen nieuwe status maar een feit dat er al ligt — er hoort een rapport bij in bpm_reports.

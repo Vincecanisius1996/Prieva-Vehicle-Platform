@@ -388,3 +388,46 @@ CREATE TABLE IF NOT EXISTS notities (
   klaar_door text
 );
 CREATE INDEX IF NOT EXISTS notities_open ON notities (klaar, id DESC);
+
+-- ===== Logistiek (28-08-2026) =====
+-- Waar staat welke auto: bij Purol, Carport, DSH of het dealerschap. Puur voor het eigen overzicht
+-- van Prieva; Carport ziet dit NIET (de rol krijgt 403 op alle logistiek-endpoints).
+--
+-- Bewust LOS van carport_bonnen. Het gaat hier over de plek waar een auto staat, niet over het werk
+-- dat er ligt: een auto kan bij Carport staan én een werkbon hebben, en die twee weten niets van
+-- elkaar. Dat is geen dubbele administratie maar twee verschillende feiten.
+CREATE TABLE IF NOT EXISTS logistiek_partijen (
+  code     text PRIMARY KEY,
+  naam     text NOT NULL,
+  volgorde int,
+  actief   boolean NOT NULL DEFAULT true
+);
+-- Als tabel en niet als constante in de code: er komt een keer een vijfde partij bij, en dat hoort
+-- geen deploy te kosten. ON CONFLICT DO NOTHING zodat een hernoeming hier niet wordt teruggedraaid.
+INSERT INTO logistiek_partijen (code,naam,volgorde) VALUES
+  ('purol','Purol',1), ('carport','Carport',2), ('dsh','DSH',3), ('dealerschap','Dealerschap',4)
+ON CONFLICT (code) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS logistiek_plaatsingen (
+  id               bigserial PRIMARY KEY,
+  vehicle_id       text,              -- NULL = een auto die niet in PVP staat
+  los_kenteken     text,              -- alleen voor zo'n losse auto
+  los_omschrijving text,
+  partij           text NOT NULL REFERENCES logistiek_partijen(code),
+  volgorde         integer,           -- eigen volgorde binnen een partij; leeg = op datum
+  status           text NOT NULL DEFAULT 'weg',   -- 'weg' (staat bij de partij) | 'terug' (op locatie)
+  reden            text,
+  weg_ts           bigint,
+  weg_door         text,
+  terug_ts         bigint,
+  terug_door       text,
+  notities         jsonb NOT NULL DEFAULT '[]'::jsonb,   -- [{ts,door,tekst}]
+  updated_at       timestamptz NOT NULL DEFAULT now(),
+  -- Een plaatsing gaat over een auto in PVP óf over een losse auto. Niet over geen van beide:
+  -- een regel zonder allebei is niet terug te vinden en is dus geen regel.
+  CONSTRAINT logistiek_heeft_auto CHECK (
+    vehicle_id IS NOT NULL OR btrim(coalesce(los_kenteken,'')) <> ''
+  )
+);
+CREATE INDEX IF NOT EXISTS logistiek_partij  ON logistiek_plaatsingen (partij, status, volgorde);
+CREATE INDEX IF NOT EXISTS logistiek_vehicle ON logistiek_plaatsingen (vehicle_id);

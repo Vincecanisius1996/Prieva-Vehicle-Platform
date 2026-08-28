@@ -119,6 +119,17 @@
   table.boek thead th.sorteerkop.aan{color:var(--blue)}
   .sorteerpijl{margin-left:4px;font-size:9px;opacity:.4}
   .sorteerkop.aan .sorteerpijl{opacity:1}
+  /* Logistiek: vier kolommen naast elkaar, elk een sleepdoel. Onder 1100px zakken ze naar twee,
+     want vier kolommen van 200px leest niemand. */
+  .logkol{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-items:start}
+  @media(max-width:1100px){.logkol{grid-template-columns:repeat(2,1fr)}}
+  .logpartij{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+  .logpartij.doel{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-soft)}
+  .logpartij .kop{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--line);font-weight:700;font-size:14px}
+  .logauto{border-bottom:1px solid var(--line);padding:9px 12px;font-size:12px;cursor:grab}
+  .logauto.sleep{opacity:.45}
+  .logauto.terug{background:var(--green-soft)}
+  .logauto .kent{font-weight:700;font-size:13px}
   .filterbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px}
   .filterbar .fl{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-right:2px}
   .fchip{font-size:12px;font-weight:600;padding:4px 11px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;white-space:nowrap}
@@ -406,6 +417,7 @@
     <button data-view="lopende">Lopende</button>
     <button data-view="verkocht">Verkocht</button>
     <button data-view="carport">Carport</button>
+    <button data-view="logistiek">Logistiek</button>
     <button data-view="logboek" id="logboekBtn" style="display:none"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h12a2 2 0 012 2v14H7a2 2 0 01-2-2z"/><path d="M5 16h12"/><path d="M9 8h6"/></svg> Logboek</button>
   </nav>
   <div class="top-right">
@@ -1148,6 +1160,190 @@ function renderLopende(){
         ${gemeldAantal?`<div class="fn fn-gemeld"><div class="fl">Wacht op factuur</div><div class="track"><div class="fill" style="width:${Math.round(gemeldAantal/maxc*100)}%">${gemeldAantal}</div></div><div class="fc">${gemeldAantal}</div></div>`:''}
       </div><div style="margin-top:10px;font-size:12px;color:var(--muted)">Alle ${allLop.length} lopende auto's staan hierin — de langste balk tussen de stappen is het knelpunt.</div></div></div>
     </div>`;
+}
+
+/* ===== Logistiek =====
+   Waar staat welke auto: bij Purol, Carport, DSH of het dealerschap. Puur ons eigen overzicht — de
+   rol carport ziet deze pagina niet en de server weigert hem met 403.
+
+   Bewust LOS van de werkbonnen: een auto kan bij Carport staan én een werkbon hebben. Dat zijn twee
+   verschillende feiten (wáár hij staat, en wélk werk er ligt), geen dubbele administratie. */
+const logistiek = {partijen:[], plaatsingen:[], logboek:[]};
+let logZoek="", logSleep=null, logOpen={};
+async function loadLogistiek(){ if(!apiOk)return;
+  try{ const r=await fetch("/api/logistiek",{cache:"no-store"}); if(!r.ok)return;
+    const j=await r.json(); if(!j||!Array.isArray(j.partijen))return;
+    logistiek.partijen=j.partijen; logistiek.plaatsingen=j.plaatsingen||[]; logistiek.logboek=j.logboek||[];
+  }catch(_){}
+}
+async function logDoe(pad,body){
+  try{
+    const r=await fetch(pad,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){
+      showToast(j.error==='staat al ergens'?`Die auto staat al bij ${esc(j.partij||'een andere partij')}`
+               :j.error==='forbidden'?"Daar heb je geen rechten voor"
+               :j.melding||j.error||"Opslaan mislukt",false);
+      return null;
+    }
+    await loadLogistiek(); rerenderCurrent(); return j;
+  }catch(_){ showToast("Geen verbinding met de server",false); return null; }
+}
+function logPast(p){
+  if(!logZoek)return true;
+  const n=logZoek.toLowerCase().replace(/[^a-z0-9]/g,"");
+  const h=[p.kenteken,p.omschrijving,p.vin,p.reden].map(x=>String(x||"").toLowerCase().replace(/[^a-z0-9]/g,"")).join(" ");
+  return h.includes(n);
+}
+/* Slepen tussen partijen. Binnen dezelfde kolom bepaalt het de volgorde, naar een andere kolom
+   verhuist de auto. Zelfde patroon als de werkbonnen bij Carport. */
+function logSleepStart(ev,id){ logSleep=id; try{ev.dataTransfer.effectAllowed='move'; ev.dataTransfer.setData('text/plain',String(id));}catch(_){}
+  const el=ev.currentTarget; if(el)el.classList.add('sleep'); }
+function logSleepEind(){ logSleep=null; document.querySelectorAll('.logauto').forEach(e=>e.classList.remove('sleep'));
+  document.querySelectorAll('.logpartij').forEach(e=>e.classList.remove('doel')); }
+function logKolomOver(ev){ if(logSleep===null)return; ev.preventDefault(); ev.currentTarget.classList.add('doel'); }
+async function logKolomDrop(ev,partij){
+  ev.preventDefault(); ev.currentTarget.classList.remove('doel');
+  const id=logSleep; logSleepEind(); if(id===null)return;
+  const p=logistiek.plaatsingen.find(x=>x.id===id); if(!p)return;
+  if(p.partij===partij)return;                       // binnen dezelfde kolom: de rij-drop regelt dat
+  await logDoe('/api/logistiek-verplaatsen',{id,partij});
+}
+async function logRijDrop(ev,doelId,partij){
+  ev.preventDefault(); ev.stopPropagation();
+  const id=logSleep; logSleepEind(); if(id===null||id===doelId)return;
+  const p=logistiek.plaatsingen.find(x=>x.id===id); if(!p)return;
+  if(p.partij!==partij) return logDoe('/api/logistiek-verplaatsen',{id,partij});
+  // Binnen dezelfde partij: alleen de volgorde. Alle regels van die kolom krijgen een nummer, zodat
+  // er geen gaten of dubbele nummers ontstaan als twee mensen tegelijk schuiven.
+  const ids=logistiek.plaatsingen.filter(x=>x.partij===partij).map(x=>x.id);
+  const i=ids.indexOf(id), j=ids.indexOf(doelId);
+  if(i<0||j<0)return;
+  ids.splice(j,0,ids.splice(i,1)[0]);
+  await logDoe('/api/logistiek-volgorde',{partij,ids});
+}
+function logKlap(id){ logOpen[id]=!logOpen[id]; rerenderCurrent(); }
+/* Elk teken tekent de pagina opnieuw, en dan is het invoerveld een nieuw element — zonder dit
+   verliest de cursor na één letter de focus en typ je in het niets. Zelfde truc als bij de zoekbalk
+   in de kop, die na elke toets zichzelf terugpakt. */
+function zetLogZoek(w){
+  logZoek=String(w||"");
+  rerenderCurrent();
+  const el=document.getElementById('logzoek');
+  if(el){ el.focus(); try{ el.setSelectionRange(el.value.length,el.value.length); }catch(_){} }
+}
+async function logNotitie(id){
+  const el=document.getElementById('lognot-'+id); if(!el)return;
+  const tekst=(el.value||"").trim(); if(!tekst)return;
+  el.disabled=true;
+  const uit=await logDoe('/api/logistiek-notitie',{id,tekst});
+  if(!uit&&el)el.disabled=false;
+}
+async function logTerug(id,terug){ await logDoe('/api/logistiek-terug',{id,terug}); }
+async function logWeg(id){
+  if(!window.confirm("Deze regel definitief verwijderen?\n\n\"Terug op locatie\" is de gewone weg en die is terug te draaien; dit niet."))return;
+  await logDoe('/api/logistiek-del',{id});
+}
+async function logPlaats(partij){
+  const kies=document.getElementById('logkies-'+partij);
+  const kent=document.getElementById('logkent-'+partij);
+  const oms=document.getElementById('logoms-'+partij);
+  const vehicleId=kies&&kies.value?kies.value:null;
+  const body={partij};
+  if(vehicleId)body.vehicleId=vehicleId;
+  else{
+    const k=(kent&&kent.value||"").trim();
+    if(!k){ showToast("Kies een auto of vul een kenteken in",false); return; }
+    body.kenteken=k; body.omschrijving=(oms&&oms.value||"").trim()||null;
+  }
+  const uit=await logDoe('/api/logistiek-plaatsen',body);
+  if(uit&&kent)kent.value=""; if(uit&&oms)oms.value="";
+}
+function renderLogistiek(){
+  const zicht=logistiek.plaatsingen.filter(logPast);
+  // Auto's die al ergens staan hoeven niet nog een keer in de keuzelijst: dat geeft alleen een 409.
+  const bezet=new Set(logistiek.plaatsingen.filter(p=>p.status==='weg'&&p.vehicleId).map(p=>p.vehicleId));
+  const keus=V.filter(v=>v.status!=='verkocht'&&!bezet.has(v.id))
+              .map(v=>`<option value="${esc(v.id)}">${esc(v.merk||'')} ${esc(v.model||'')} — ${esc(v.kenteken&&v.kenteken!=='—'?v.kenteken:(v.vin||v.id))}</option>`).join("");
+
+  const rij=p=>{
+    const open=!!logOpen[p.id];
+    const titel=esc(p.kenteken&&p.kenteken!=='—'?p.kenteken:(p.omschrijving||p.vin||'—'));
+    return `<div class="logauto ${p.status==='terug'?'terug':''}" draggable="true"
+       ondragstart="logSleepStart(event,${p.id})" ondragend="logSleepEind()"
+       ondragover="event.preventDefault()" ondrop="logRijDrop(event,${p.id},'${esc(p.partij)}')">
+      <div onclick="logKlap(${p.id})" style="cursor:pointer;display:flex;align-items:center;gap:6px">
+        <span class="kent">${titel}</span>
+        ${p.inPvp?'':'<span class="tag" title="Deze auto staat niet in PVP">los</span>'}
+        ${p.status==='terug'?'<span class="badge b-lopende">terug</span>':''}
+        <span style="flex:1"></span>
+        ${p.notities.length?`<span class="muted" style="font-size:11px" title="${p.notities.length} notitie(s)">🗒 ${p.notities.length}</span>`:''}
+        <span class="muted" style="font-size:11px">${open?'▾':'▸'}</span>
+      </div>
+      <div class="muted" style="font-size:11px">${esc(p.omschrijving||'')}${p.reden?' · '+esc(p.reden):''}</div>
+      ${open?`<div style="margin-top:7px;border-top:1px dashed var(--line);padding-top:7px" onclick="event.stopPropagation()">
+        <div class="muted" style="font-size:11px">Weg sinds ${p.wegTs?fmtDate(p.wegTs):'—'}${p.wegDoor?' · '+esc(p.wegDoor):''}${p.terugTs?` · terug ${fmtDate(p.terugTs)}${p.terugDoor?' door '+esc(p.terugDoor):''}`:''}</div>
+        ${p.notities.length?`<div style="margin:6px 0">${p.notities.map(n=>`<div style="font-size:11px;margin-bottom:3px"><b>${esc(n.door||'?')}</b> <span class="muted">${n.ts?fmtDate(n.ts):''}</span><br>${esc(n.tekst||'')}</div>`).join('')}</div>`:''}
+        <div style="display:flex;gap:6px;margin:6px 0">
+          <input id="lognot-${p.id}" class="inp" style="flex:1;min-width:80px;font-size:12px;padding:4px 8px" placeholder="Notitie…" onkeydown="if(event.key==='Enter')logNotitie(${p.id})">
+          <button class="btn btn-ghost btn-sm" onclick="logNotitie(${p.id})">+</button>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${p.status==='weg'
+            ? `<button class="btn btn-primary btn-sm" onclick="logTerug(${p.id},true)">Terug op locatie</button>`
+            : `<button class="btn btn-ghost btn-sm" title="Toch nog niet terug" onclick="logTerug(${p.id},false)">↩ Toch weer weg</button>`}
+          ${p.inPvp?`<button class="btn btn-ghost btn-sm" onclick="openVeh('${esc(p.vehicleId)}')">Naar de auto →</button>`:''}
+          ${isAdmin()?`<button class="btn btn-danger-o btn-sm" onclick="logWeg(${p.id})">${ico("trash")}</button>`:''}
+        </div>
+      </div>`:''}
+    </div>`;
+  };
+
+  const kolom=pt=>{
+    const lijst=zicht.filter(p=>p.partij===pt.code);
+    const weg=lijst.filter(p=>p.status==='weg');
+    // Auto's die terug zijn blijven vindbaar, maar ingeklapt: anders groeit elke kolom vol met wat
+    // er niet meer staat, en telt de kop iets anders dan je eronder ziet.
+    const terug=lijst.filter(p=>p.status==='terug');
+    return `<div class="logpartij" ondragover="logKolomOver(event)" ondragleave="this.classList.remove('doel')" ondrop="logKolomDrop(event,'${esc(pt.code)}')">
+      <div class="kop">${esc(pt.naam)}<span class="gcount" title="Staat hier nu">${weg.length}</span></div>
+      ${weg.length?weg.map(rij).join(''):`<div class="empty" style="padding:14px;font-size:12px">${logZoek?'Niets dat hierop past.':'Nog geen auto hier. Sleep er een heen of kies er een hieronder.'}</div>`}
+      ${terug.length?`<details style="border-top:1px solid var(--line)"><summary style="cursor:pointer;padding:7px 12px;font-size:11px;color:var(--muted);font-weight:600">${terug.length} terug op locatie</summary>${terug.map(rij).join('')}</details>`:''}
+      <div style="padding:9px 12px;border-top:1px solid var(--line);background:var(--slate-soft)">
+        <select id="logkies-${esc(pt.code)}" class="assign" style="width:100%;font-size:12px" onchange="if(this.value)logPlaats('${esc(pt.code)}')">
+          <option value="">— auto uit PVP kiezen —</option>${keus}
+        </select>
+        <details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);font-weight:600">Auto die niet in PVP staat</summary>
+          <div style="display:flex;flex-direction:column;gap:5px;margin-top:5px">
+            <input id="logkent-${esc(pt.code)}" class="inp" style="font-size:12px;padding:4px 8px" placeholder="Kenteken">
+            <input id="logoms-${esc(pt.code)}" class="inp" style="font-size:12px;padding:4px 8px" placeholder="Merk en model (vrij)">
+            <button class="btn btn-ghost btn-sm" onclick="logPlaats('${esc(pt.code)}')">Toevoegen</button>
+          </div></details>
+      </div>
+    </div>`;
+  };
+
+  const logregels=logistiek.logboek.map(r=>`<tr>
+    <td class="note" style="white-space:nowrap">${r.ts?fmtDate(r.ts):'—'}</td>
+    <td>${esc(r.door||'—')}</td><td>${esc(r.actie||'')}</td>
+    <td>${esc([r.van,r.naar].filter(Boolean).join(' → '))}</td>
+    <td>${esc(r.melding||'')}</td></tr>`).join('');
+
+  app.innerHTML=`
+    <h1 class="page-title">Logistiek</h1>
+    <p class="page-sub">Waar staat welke auto. Sleep een auto naar een andere partij, of meld hem terug zodra hij weer op locatie staat.
+      Dit staat los van de werkbonnen bij Carport — het gaat hier over de plek, niet over het werk.</p>
+    <div class="filterbar"><span class="fl">Zoeken</span>
+      <input id="logzoek" class="inp" style="min-width:260px" placeholder="Kenteken, merk of model…" value="${esc(logZoek)}"
+             oninput="zetLogZoek(this.value)">
+      ${logZoek?`<button class="fchip" onclick="zetLogZoek('')">Wissen</button>`:''}
+    </div>
+    <div class="logkol">${logistiek.partijen.map(kolom).join('')}</div>
+    <div class="card" style="margin-top:20px"><h3>Logboek <span class="gcount">${logistiek.logboek.length}</span></h3>
+      <div class="card-body" style="padding:0 4px">
+        <div class="tabelwrap"><table class="boek"><thead><tr><th style="width:96px">Wanneer</th><th style="width:90px">Wie</th><th style="width:120px">Wat</th><th style="width:150px">Van → naar</th><th>Welke auto</th></tr></thead>
+        <tbody>${logregels||`<tr><td colspan="5" class="note">Nog niets gebeurd.</td></tr>`}</tbody></table></div>
+      </div></div>`;
 }
 
 /* ===== Detail ===== */
@@ -2863,7 +3059,7 @@ async function startFor(){
   if(foto){ state.view='foto'; loadAdphotos().then(loadStatusFoto).then(renderFoto); }
   else if(tax){ state.view='tax'; loadTaxState().then(loadBpm).then(loadTaxAfgerond).then(renderTax); }
   else if(cp){ state.view='carport'; loadCarport().then(renderCarport); }
-  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen(),loadNotities()]).then(()=>go('vandaag')); }
+  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen(),loadNotities(),loadLogistiek()]).then(()=>go('vandaag')); }
 }
 async function boot(){
   try{ const r=await fetch("/api/me",{cache:"no-store"});
@@ -2897,6 +3093,7 @@ function rerenderNu(){
   // blijft leesbaar smal, want een formulier van 1560px breed leest niemand prettig.
   app.classList.toggle("breed",["komende","lopende","verkocht"].includes(state.view));
   if(state.view==="carport")return renderCarport();
+  if(state.view==="logistiek")return renderLogistiek();
   if(state.view==="vandaag")renderVandaag();
   else if(state.view==="komende")renderKomende();
   else if(state.view==="lopende")renderLopende();
@@ -2906,7 +3103,7 @@ function rerenderNu(){
   updateUndoUI(); syncHistory();
 }
 function setNav(view){document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===view));}
-function go(view){state.view=view; if(["vandaag","komende","lopende","verkocht","carport","logboek"].includes(view))setNav(view); rerender(); window.scrollTo(0,0);}
+function go(view){state.view=view; if(["vandaag","komende","lopende","verkocht","carport","logistiek","logboek"].includes(view))setNav(view); rerender(); window.scrollTo(0,0);}
 document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>go(b.dataset.view));
 document.getElementById("search").addEventListener("input",e=>{state.q=e.target.value; if(state.view.startsWith("veh:"))go("komende"); else rerender(); document.getElementById("search").focus();});
 /* ===== In-app navigatie: browser terug/vooruit blijft binnen PVP ===== */
