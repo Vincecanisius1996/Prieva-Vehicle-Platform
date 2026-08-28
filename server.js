@@ -610,13 +610,8 @@ const server = http.createServer(async (req, res) => {
        wie werk wordt toegewezen. */
     if (method === 'GET' && url === '/api/team') {
       const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
-      // `prieva` is het gedeelde account van vóór de persoonlijke accounts (28-08-2026). Het staat nog
-      // open zodat wie er op dit moment mee werkt niet halverwege de dag wordt uitgelogd, maar het is
-      // een inlog en geen persoon: werk toewijzen aan "Team" zegt niemand iets.
-      // ZODRA HET GESLOTEN IS MAG DEZE REGEL WEG — dan houdt `actief` het vanzelf buiten de lijst.
       const r = await pool.query(`SELECT username, name, role, kleur, volgorde FROM users
                                    WHERE actief = true AND role IN ('team','admin')
-                                     AND username <> 'prieva'
                                    ORDER BY volgorde NULLS LAST, name, username`);
       return sendJson(res, 200, {
         leden: r.rows.map((x, i) => ({
