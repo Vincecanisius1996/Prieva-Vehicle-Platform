@@ -1473,6 +1473,76 @@ const server = http.createServer(async (req, res) => {
     if (url === '/api/bpmnotif-seen' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); await pool.query('UPDATE bpm_notifs SET seen=true WHERE seen=false'); return sendJson(res, 200, { ok: true }); }
     if (url === '/api/bpmreport-del' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.url) return sendJson(res, 400, { error: 'missing' }); await pool.query('DELETE FROM bpm_reports WHERE vehicle_id=$1 AND url=$2', [b.id, b.url]); try { const rel = decodeURIComponent(String(b.url).replace(/^\/uploads\//, '')); if (rel.indexOf('..') < 0) fs.unlink(path.join(UPLOAD_DIR, rel), () => {}); } catch (_) {} return sendJson(res, 200, { ok: true }); }
 
+    /* ===== Snelle notities (28-08-2026) ==================================================
+       Een briefje onder de to-do's: iets dat je even kwijt moet en dat geen taak met een eigenaar
+       is. Team en admin; verwijderen alleen admin, want afvinken is de gewone weg en dat is
+       omkeerbaar — weggooien niet. */
+
+    if (url === '/api/notities' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      // De afgevinkte blijven staan, maar alleen de laatste vijftig: het is een prikbord, geen archief.
+      const r = await pool.query(`SELECT n.*, v.merk, v.model, v.kenteken FROM notities n
+                                    LEFT JOIN vehicles v ON v.id = n.vehicle_id
+                                   ORDER BY n.klaar, n.id DESC`);
+      const uit = x => ({ id: x.id, tekst: x.tekst, door: x.door, ts: x.ts, klaar: x.klaar,
+        klaarTs: x.klaar_ts, klaarDoor: x.klaar_door, vehicleId: x.vehicle_id,
+        auto: x.vehicle_id ? `${x.merk || ''} ${x.model || ''}`.trim() || x.vehicle_id : null });
+      return sendJson(res, 200, {
+        open: r.rows.filter(x => !x.klaar).map(uit),
+        klaar: r.rows.filter(x => x.klaar).slice(0, 50).map(uit)
+      });
+    }
+
+    if (url === '/api/notitie' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const tekst = String(b.tekst === undefined || b.tekst === null ? '' : b.tekst).trim();
+      if (!tekst) return sendJson(res, 400, { error: 'lege notitie' });
+      if (tekst.length > 2000) return sendJson(res, 400, { error: 'notitie te lang' });
+      const vid = String(b.vehicleId === undefined || b.vehicleId === null ? '' : b.vehicleId).trim() || null;
+      // Aan een auto hangen mag alleen als die auto bestaat: een verwijzing naar niets is erger dan geen.
+      if (vid && !(await pool.query('SELECT 1 FROM vehicles WHERE id=$1', [vid])).rowCount)
+        return sendJson(res, 404, { error: 'onbekende auto' });
+      const wie = u.n || u.u;
+      const r = await pool.query('INSERT INTO notities (tekst,door,ts,vehicle_id) VALUES ($1,$2,$3,$4) RETURNING id',
+        [tekst, wie, Date.now(), vid]);
+      await logSchrijf(wie, 'notitie', r.rows[0].id, 'toegevoegd', { melding: tekst.slice(0, 120) });
+      return sendJson(res, 200, { ok: true, id: r.rows[0].id });
+    }
+
+    // Afvinken en terugzetten: dezelfde weg heen en terug, dus geen bevestiging nodig.
+    if (url === '/api/notitie-af' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const id = Number(b.id); if (!Number.isFinite(id)) return sendJson(res, 400, { error: 'missing' });
+      const oud = (await pool.query('SELECT * FROM notities WHERE id=$1', [id])).rows[0];
+      if (!oud) return sendJson(res, 404, { error: 'onbekende notitie' });
+      const klaar = b.klaar === true;
+      const wie = u.n || u.u;
+      await pool.query('UPDATE notities SET klaar=$2, klaar_ts=$3, klaar_door=$4 WHERE id=$1',
+        [id, klaar, klaar ? Date.now() : null, klaar ? wie : null]);
+      if (oud.klaar !== klaar)
+        await logSchrijf(wie, 'notitie', id, klaar ? 'afgevinkt' : 'teruggezet', { melding: (oud.tekst || '').slice(0, 120) });
+      return sendJson(res, 200, { ok: true, id, klaar });
+    }
+
+    // Weggooien kan alleen een admin. Afvinken is de gewone weg en die is omkeerbaar; dit niet.
+    if (url === '/api/notitie-del' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const id = Number(b.id); if (!Number.isFinite(id)) return sendJson(res, 400, { error: 'missing' });
+      const oud = (await pool.query('SELECT * FROM notities WHERE id=$1', [id])).rows[0];
+      if (!oud) return sendJson(res, 404, { error: 'onbekende notitie' });
+      await pool.query('DELETE FROM notities WHERE id=$1', [id]);
+      // De tekst gaat mee het logboek in: verwijderen mag, maar niet spoorloos.
+      await logSchrijf(u.n || u.u, 'notitie', id, 'verwijderd', { melding: (oud.tekst || '').slice(0, 200) });
+      return sendJson(res, 200, { ok: true, id });
+    }
+
     /* ===== Betaald / onbetaald op Komend (28-08-2026) ======================================
        Wat er van de ingekochte auto's nog betaald moet worden. Bewust géén banksaldo en geen
        koppeling met de bank: dit is een lijstje afvinken, geen boekhouding.

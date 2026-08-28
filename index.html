@@ -705,6 +705,62 @@ async function loadVehicles(){ if(!apiOk)return;
     V.length=0; rows.forEach(r2=>{ V.push(r2); const p=vorige[r2.id]; if(p)Object.assign(r2,p); else initVeh(r2); });
   }catch(_){ /* geen backend of onleesbaar antwoord: terugvallijst blijft staan */ }
 }
+/* Snelle notities: het prikbord onder de to-do's. IN PLACE vervangen, net als de rest. */
+const notities = {open:[], klaar:[]};
+async function loadNotities(){ if(!apiOk)return;
+  try{ const r=await fetch("/api/notities",{cache:"no-store"}); if(!r.ok)return;
+    const j=await r.json(); if(!j||!Array.isArray(j.open))return;
+    notities.open=j.open; notities.klaar=j.klaar||[];
+  }catch(_){}
+}
+async function notitieToevoegen(){
+  const el=document.getElementById('notitie-nieuw'); if(!el)return;
+  const tekst=(el.value||"").trim(); if(!tekst)return;
+  el.disabled=true;
+  try{
+    const r=await fetch("/api/notitie",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tekst})});
+    if(!r.ok){ showToast("Notitie opslaan mislukt",false); el.disabled=false; return; }
+    el.value=""; await loadNotities(); rerenderCurrent();
+  }catch(_){ showToast("Geen verbinding met de server",false); el.disabled=false; }
+}
+async function notitieAf(id,klaar){
+  try{
+    const r=await fetch("/api/notitie-af",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,klaar})});
+    if(!r.ok){ showToast("Opslaan mislukt",false); return; }
+    await loadNotities(); rerenderCurrent();
+  }catch(_){ showToast("Geen verbinding met de server",false); }
+}
+async function notitieWeg(id){
+  // Verwijderen is niet terug te draaien; afvinken wel. Vandaar hier wél een bevestiging.
+  if(!window.confirm("Deze notitie definitief verwijderen?\n\nAfvinken kan ook — dat is terug te zetten."))return;
+  try{
+    const r=await fetch("/api/notitie-del",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});
+    if(!r.ok){ showToast("Verwijderen mislukt",false); return; }
+    await loadNotities(); rerenderCurrent();
+  }catch(_){ showToast("Geen verbinding met de server",false); }
+}
+/* Het prikbord zelf. Staat onder de to-do's omdat het daar hoort: een notitie is wat er niet als
+   taak in past. Afgevinkte notities blijven staan maar ingeklapt — weg is weg, en dat wil je niet
+   per ongeluk. */
+function notitiePaneel(){
+  if(!apiOk)return "";
+  const rij=n=>`<div class="taak ${n.klaar?'af':''}">
+    <label class="chk" title="${n.klaar?'Terugzetten':'Afvinken'}"><input type="checkbox" ${n.klaar?'checked':''} onchange="notitieAf(${n.id},this.checked)"><span class="box"></span></label>
+    <span class="tk">${esc(n.tekst)}${n.auto?` <span class="muted" style="font-size:11px">· ${esc(n.auto)}</span>`:''}
+      <span class="muted" style="font-size:11px">· ${esc(n.door||'?')}${n.ts?' · '+fmtDate(n.ts):''}</span></span>
+    ${isAdmin()?`<button class="btn btn-ghost btn-sm" title="Definitief verwijderen" onclick="notitieWeg(${n.id})">✕</button>`:''}
+  </div>`;
+  const af=notities.klaar;
+  return `<div class="card" style="margin-top:22px"><h3>Snelle notities ${notities.open.length?`<span class="gcount">${notities.open.length}</span>`:''}</h3>
+    <div class="card-body">
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <input id="notitie-nieuw" class="inp" style="flex:1;min-width:200px" placeholder="Iets wat je even kwijt moet…" onkeydown="if(event.key==='Enter')notitieToevoegen()">
+        <button class="btn btn-primary btn-sm" onclick="notitieToevoegen()">Toevoegen</button>
+      </div>
+      ${notities.open.length?notities.open.map(rij).join(""):`<div class="empty" style="padding:14px">Niets open. Typ hierboven wat er niet als taak in past — een telefoontje, een afspraak, iets om niet te vergeten.</div>`}
+      ${af.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--muted);font-weight:600">${af.length} afgevinkt</summary><div style="margin-top:6px">${af.map(rij).join("")}</div></details>`:''}
+    </div></div>`;
+}
 /* Betaald / onbetaald per komende auto. De tellers komen kant-en-klaar van de server mee — het
    scherm rekent niets uit. `betalingen` is per auto-id, `betaalTotalen` zijn de drie getallen
    bovenaan. Beide worden IN PLACE vervangen. */
@@ -815,8 +871,9 @@ function renderVandaag(){
       <h3 style="margin:0;font-size:16px">To-do — per persoon <span class="agechip" style="color:var(--accent);background:var(--blue-soft)">${openCount} open</span></h3>
       ${isAdmin()?`<button class="btn btn-ghost btn-sm" onclick="go('logboek')">${ico("logboek")} Logboek</button>`:''}
     </div>
-    ${(lop.length||gopen.length)? `<div class="cols">${personCard("Leonie",groups["Leonie"])}${personCard("Sjoerd",groups["Sjoerd"])}${personCard("Vince",groups["Vince"])}${personCard("Floris",groups["Floris"])}</div>${groups["_"].length?`<div style="margin-top:16px">${personCard("_",groups["_"])}</div>`:""}`
+    ${(lop.length||gopen.length)? `<div class="cols">${PEOPLE.map(p=>personCard(p,groups[p]||[])).join("")}</div>${groups["_"].length?`<div style="margin-top:16px">${personCard("_",groups["_"])}</div>`:""}`
       : `<div class="card"><div class="empty"><div class="eb">${ico("inbox",26)}</div>Nog geen open taken. Vink onderaan een auto op binnen, of voeg met <b>${ico("plus")} To-do</b> rechtsboven een losse taak toe.</div></div>`}
+    ${notitiePaneel()}
     <div style="margin-top:22px">${garantiePaneel()}</div>
     <div class="kpis" style="margin-top:22px">
       <div class="kpi"><div class="bar" style="background:var(--blue)"></div><div class="lab">Komende</div><div class="val">${kom.length}</div><div class="sub">nog niet binnen</div></div>
@@ -2758,7 +2815,7 @@ async function startFor(){
   if(foto){ state.view='foto'; loadAdphotos().then(loadStatusFoto).then(renderFoto); }
   else if(tax){ state.view='tax'; loadTaxState().then(loadBpm).then(renderTax); }
   else if(cp){ state.view='carport'; loadCarport().then(renderCarport); }
-  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen()]).then(()=>go('vandaag')); }
+  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen(),loadNotities()]).then(()=>go('vandaag')); }
 }
 async function boot(){
   try{ const r=await fetch("/api/me",{cache:"no-store"});

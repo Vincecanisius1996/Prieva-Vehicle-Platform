@@ -372,3 +372,19 @@ CREATE TABLE IF NOT EXISTS inkoop_betaling (
   opmerking    text,
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
+
+-- Snelle notities (28-08-2026). Bewust geen kolom op global_todos: een notitie is geen taak.
+-- Een taak vraagt om een eigenaar en een vinkje dat ooit gezet wordt; een notitie is een briefje.
+-- Ze samenvoegen levert taken op die niemand ooit afvinkt — hetzelfde dat INFO in mobilox/taken.js
+-- oplost door mededelingen géén taak te laten worden.
+CREATE TABLE IF NOT EXISTS notities (
+  id         bigserial PRIMARY KEY,
+  tekst      text NOT NULL,
+  door       text,
+  ts         bigint,
+  vehicle_id text,                    -- optioneel: een notitie mag aan een auto hangen
+  klaar      boolean NOT NULL DEFAULT false,
+  klaar_ts   bigint,
+  klaar_door text
+);
+CREATE INDEX IF NOT EXISTS notities_open ON notities (klaar, id DESC);
