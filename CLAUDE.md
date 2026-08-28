@@ -69,6 +69,27 @@ Draait live op **https://pvp.prieva.nl**. Meerdere gebruikers, met rollen en log
   beeld verbergen was niet genoeg: dan gingen de foto's nog steeds over de lijn. Op de dag van die
   wijziging scheelde dat 31 → 14 auto's; de 17 die eruit vielen stonden alle zeventien al op
   Verkoopklaar, zonder één taxatierapport.
+**Sinds 28-08-2026 heeft iedereen een eigen account** in plaats van het gedeelde `prieva`. Zeven
+personen: `vince` en `floris` (admin), `sjoerd`, `leonie`, `hero`, `patryk`, `yorick` (team). Het
+gedeelde account staat op `actief=false` en kan niet meer inloggen.
+- `users` heeft er `actief`, `volgorde` en `kleur` bij. `actief=false` sluit een account zonder de
+  historie weg te gooien: `owner` op auto's, to-do's en subtaken bewaart de wéérgavenaam, en die moet
+  leesbaar blijven als iemand weg is.
+- **De sessie is een stateless cookie van dertig dagen**, dus sluiten bijt niet vanzelf. `/api/me`
+  controleert daarom `actief` en wist de cookie; een gesloten account vliegt eruit bij de
+  eerstvolgende paginalading. Bij `/api/me` en niet bij élk verzoek — dat scheelt een databasevraag
+  per aanroep. Wie iedereen per direct wil uitloggen, roteert `/var/pvp/secret`; dat gooit óók
+  Carport, S-TAX en de fotograaf eruit.
+- **`GET /api/team` is de bron van de namenlijst**, niet meer `PEOPLE` in `index.html` (die staat er
+  nog als terugval, net als `V`). Bleven dat twee lijsten, dan kon je werk toewijzen aan iemand die
+  niet kan inloggen, en verdween een nieuwe collega uit elke keuzelijst tot de frontend opnieuw
+  gedeployd was. De personenkaarten op *Vandaag* komen nu ook daaruit — die stonden hard op vier
+  namen, waardoor Hero, Patryk en Yorick wél werk konden krijgen maar nergens verschenen.
+- **De kleur per persoon staat in `users.kleur`**, niet als CSS-variabele. Er kan dus een collega bij
+  zonder de frontend te deployen. Leeg = een kleur uit het palet in `server.js`, op een vaste plek
+  zodat iemands kleur niet verspringt als er een collega bij komt. De vier bestaande kleuren zijn
+  vastgelegd op wat ze waren.
+
 Accounts aanmaken (de DSN moet in de omgeving staan):
 ```
 set -a; . /var/pvp/pg.env; set +a
@@ -82,6 +103,10 @@ uit), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
 `/api/adphotos-set`, `/api/taxstate` (taxateur+team+admin), `/api/bpmreports`, `/api/bpmreport`,
 `/api/bpmnotif-seen`, `/api/bpmreport-del`, `/api/vehicle` (team+admin, nieuwe auto),
 `/api/rdw-dossier` (GET, team+admin+RDW-token), `/api/rdw-dossier-status` (POST, **alleen team+admin**),
+`/api/team` (elke rol), `/api/notities` + `/api/notitie` + `/api/notitie-af` (team+admin),
+`/api/notitie-del` (**alleen admin**), `/api/betalingen` (team+admin), `/api/betaling` (**alleen admin**),
+`/api/taxafgerond` (taxateur+team+admin), `/api/logistiek` + `-plaatsen` + `-verplaatsen` + `-terug` +
+`-notitie` + `-volgorde` (team+admin), `/api/logistiek-del` (**alleen admin**),
 `PUT /api/vehicle` (team+admin, auto corrigeren), `/api/inruil` (GET+POST, team+admin),
 `/api/carport-afgeleverd` (**alleen team+admin**),
 `/api/vehicle-del` (**alleen admin**), `/api/vehicledoc`, `/api/uitlezen`, `/api/autoboek-retry`,
@@ -349,6 +374,75 @@ Zie `rdw/LEESMIJ.md`.
 - **Stand bij de ingebruikname:** 59 importauto's in beeld (de verkochte eruit), waarvan **9 compleet
   en 50 onvolledig**; bij 48 ontbreken alle voertuigfoto's en bij 49 het buitenlandse kentekenbewijs.
   Dat is geen meetfout maar de reden dat dit gebouwd is: het dossier zat tot nu toe in de mailbox.
+
+## Eén logboek voor het nieuwe werk: `pvp_log`
+Sinds 28-08-2026. Elke handeling in de onderdelen hieronder komt in **`pvp_log`** (`onderdeel`:
+`account` | `notitie` | `logistiek` | `betaling`). Server-geschreven en append-only; wordt nooit
+opgeschoond. Bewust **niet** `activity_log`: die wordt door de frontend gevuld en meegestuurd in de
+state-blob van `PUT /api/state`, en een logboek dat een client kan herschrijven is geen logboek.
+Mislukt het schrijven van een logregel, dan gaat de handeling zelf gewoon door — met een melding in
+de console. Een mislukte logregel is vervelend, een mislukte handeling is erger.
+
+## Snelle notities
+Sinds 28-08-2026, onder de to-do's op *Vandaag*. Eigen tabel `notities`, bewust **geen kolom op
+`global_todos`**: een notitie is geen taak. Een taak vraagt om een eigenaar en een vinkje dat ooit
+gezet wordt; een notitie is een briefje. Samenvoegen levert taken op die niemand ooit afvinkt —
+precies wat `INFO` in `mobilox/taken.js` oplost door mededelingen géén taak te laten worden.
+- Afvinken is omkeerbaar en de gewone weg; **verwijderen kan alleen een admin**, met een bevestiging,
+  en de tekst gaat mee het logboek in. Weggooien mag, maar niet spoorloos.
+- Een notitie mag aan een auto hangen, maar alleen aan een auto die bestáát.
+- Afgevinkte notities blijven staan, ingeklapt, hoogstens de laatste vijftig. Het is een prikbord,
+  geen archief.
+
+## Betaald / onbetaald op Komend
+Sinds 28-08-2026. Eigen tabel `inkoop_betaling`; **geen rij = onbetaald**, dus geen migratie voor de
+bestaande auto's. Lezen mag team en admin, **zetten alleen admin**.
+- Bovenaan *Komende* staan drie getallen: nog te betalen, aantal onbetaald, reeds betaald. **De server
+  rekent ze uit**, het scherm toont ze alleen.
+- **Auto's zonder inkoopprijs tellen niet stilzwijgend als nul mee.** Ze staan apart als "N zonder
+  inkoopprijs — niet meegeteld", en die melding verschijnt alleen als er zoiets is. Bij de
+  ingebruikname: 15 komende auto's, € 152.654,82 te betalen, 3 zonder prijs. Een totaal dat te veel
+  belooft is erger dan een totaal met een voetnoot — zelfde regel als de BPM-teller die liever
+  "opnamedatum onbekend" toont dan een verzonnen termijn.
+- `bedrag` op de betaalregel is alleen nodig als het afwijkt van `vehicles.inkoopprijs`; leeg = die
+  prijs. Terugzetten op onbetaald **wist de betaaldatum**: een onbetaalde auto met een betaaldatum
+  eronder is een tegenstrijdigheid.
+- Geen banksaldo en geen bankkoppeling. Dit is een lijstje afvinken, geen boekhouding.
+
+## Logistiek
+Sinds 28-08-2026. Tabblad met vier partijen naast elkaar: **Purol, Carport, DSH, Dealerschap**. Waar
+staat welke auto — het eigen overzicht van Prieva.
+- **Staat bewust LOS van `carport_bonnen`** (keuze Prieva, 28-08-2026). Een auto kan bij Carport staan
+  én een werkbon hebben; dat zijn twee verschillende feiten — wáár hij staat, en wélk werk er ligt.
+  **Carport ziet deze pagina niet**: de navigatie is voor die rol verborgen én alle endpoints geven 403.
+- `logistiek_partijen` is een **tabel** en geen constante: er komt een keer een vijfde partij bij, en
+  dat hoort geen deploy te kosten.
+- `logistiek_plaatsingen` heeft een `CHECK` die een auto uit PVP **of** een los kenteken eist. Een
+  regel zonder allebei is niet terug te vinden en is dus geen regel. Auto's die niet in PVP staan gaan
+  erin met kenteken en een vrije omschrijving.
+- **Dezelfde auto twee keer neerzetten geeft 409** — hij staat op één plek tegelijk. Een auto die
+  terug is mag opnieuw weg.
+- **Slepen tussen kolommen verplaatst, slepen binnen een kolom zet de volgorde.** Zodra er gesleept
+  wordt krijgen álle regels van die partij een nummer (geen gaten, geen dubbele nummers als twee
+  mensen tegelijk schuiven); een lege lijst herstelt de standaardvolgorde. Zelfde patroon als de
+  werkbonnen. De eigen volgorde vervalt bij een verhuizing: in een andere kolom zegt dat nummer niets.
+- **"Terug op locatie" is omkeerbaar** en terugdraaien wist de terugkomstdatum. Teruggekomen auto's
+  blijven vindbaar maar staan **ingeklapt**, anders telt de kop iets anders dan je eronder ziet.
+- **Het logboek staat op de pagina zelf** en is zichtbaar voor iedereen die de pagina mag zien.
+  Verwijderen kan alleen een admin, en de regel gaat mét zijn inhoud het logboek in.
+- De zoekbalk pakt na elke toets zijn focus terug: elk teken tekent de pagina opnieuw, en zonder dat
+  typ je na één letter in het niets.
+
+## Taxateur: zoeken en afgeronde taxaties
+Sinds 28-08-2026. Een eigen zoekveld in het portaal (de zoekbalk in de kop is voor de beperkte rollen
+verborgen) dat op merk, model, kenteken en chassisnummer zoekt en normaliseert, plus een lijst
+**afgeronde taxaties** via `GET /api/taxafgerond`.
+- **Bewust geen nieuwe tabel:** "afgerond" is geen nieuwe status maar een feit dat al in `bpm_reports`
+  staat. Een tweede administratie ernaast loopt onvermijdelijk uit de pas.
+- Nodig omdat `/api/taxstate` de taxateur alleen auto's op route JA **zonder kenteken** stuurt: zodra
+  er een kenteken op komt valt de auto daaruit, en daarmee verdween zijn eigen afgeronde werk uit
+  beeld. Alleen wat hij zelf al zag: merk, model, chassisnummer en het rapport. Geen prijzen, geen
+  koopovereenkomsten.
 
 ## Wees-bestanden in uploads
 De app verwijdert URL's uit de database zonder het bestand van schijf te halen — zowel via
@@ -925,6 +1019,11 @@ géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
 - ~~`/uploads/` staat open.~~ **Dicht sinds 26-08-2026** — zie "Uploads achter de sessie" hierboven.
 - ~~Fase A van de RDW-import: het importdossier in PVP.~~ **Klaar 26-08-2026** — `rdw/velden.js`,
   `rdw_dossier`, `GET /api/rdw-dossier` en `POST /api/rdw-dossier-status`. Zie hierboven.
+- ~~Vijf uitbreidingen: persoonlijke accounts, snelle notities, tabblad Logistiek, betaald/onbetaald
+  op Komend, en zoeken + afgeronde taxaties in het taxateur-portaal.~~ **Klaar 28-08-2026.** Zie de
+  hoofdstukken hierboven. Alle nieuwe status staat in eigen tabellen (`notities`, `inkoop_betaling`,
+  `logistiek_partijen`, `logistiek_plaatsingen`) met `pvp_log` als gedeeld logboek — nooit als kolom
+  op `vehicles`, want die rij wordt door `PUT /api/state` in zijn geheel overschreven.
 - **Open na Fase A**, in volgorde van nut:
   1. **Het dossier op het scherm.** De importstatus is nu alleen via het endpoint te zetten en nergens
      te zien. Een kaart op de autopagina en de stand in de statuskolom op *Lopende* is de eerste stap.
