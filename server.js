@@ -44,7 +44,7 @@ try { SECRET = fs.readFileSync(SECRET_FILE, 'utf8').trim(); }
 catch (e) { SECRET = crypto.randomBytes(32).toString('hex'); try { fs.writeFileSync(SECRET_FILE, SECRET); } catch (_) {} }
 
 function hashPw(pw, salt) { return crypto.scryptSync(String(pw), salt, 64).toString('hex'); }
-async function findUser(username) { const r = await pool.query('SELECT username, role, salt, hash, name FROM users WHERE username=$1', [String(username || '').toLowerCase()]); return r.rows[0]; }
+async function findUser(username) { const r = await pool.query('SELECT username, role, salt, hash, name, actief FROM users WHERE username=$1', [String(username || '').toLowerCase()]); return r.rows[0]; }
 function sign(p) { return crypto.createHmac('sha256', SECRET).update(p).digest('hex'); }
 function makeToken(u) { const p = Buffer.from(JSON.stringify({ u: u.username, r: u.role, n: u.name || u.username })).toString('base64'); return p + '.' + sign(p); }
 function verifyToken(tok) { if (!tok || tok.indexOf('.') < 0) return null; const i = tok.lastIndexOf('.'); const p = tok.slice(0, i), sig = tok.slice(i + 1); if (sign(p) !== sig) return null; try { return JSON.parse(Buffer.from(p, 'base64').toString('utf8')); } catch (e) { return null; } }
@@ -152,6 +152,24 @@ function bedrag(x) {
   const n = Number(t);
   return Number.isFinite(n) ? n : NaN;
 }
+/* Het logboek van de nieuwe onderdelen. Server-geschreven, append-only. Faalt het schrijven, dan
+   mag dat de handeling zelf niet tegenhouden — een mislukte logregel is vervelend, een mislukte
+   handeling is erger. Wel in de console, zodat het niet stil gebeurt. */
+async function logSchrijf(door, onderdeel, sleutel, actie, extra) {
+  const e = extra || {};
+  try {
+    await pool.query('INSERT INTO pvp_log (ts,door,onderdeel,sleutel,actie,van,naar,melding) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [Date.now(), door || null, onderdeel, sleutel === undefined || sleutel === null ? null : String(sleutel),
+       actie, e.van || null, e.naar || null, e.melding || null]);
+  } catch (err) { console.error('logregel niet geschreven (' + onderdeel + '/' + actie + '): ' + err.message); }
+}
+
+/* Kleur per persoon. Staat hier en niet als CSS-variabele in index.html, zodat er een collega bij kan
+   zonder de frontend te deployen. Een eigen kleur in users.kleur wint; anders wordt er een uit dit
+   palet gekozen op een vaste plek, zodat iemands kleur niet verspringt als er een collega bij komt.
+   Bewust geen oranje: dat is de huisstijl niet, en amber is in PVP de waarschuwingskleur. */
+const KLEUREN = ['#475569', '#2563eb', '#7c3aed', '#0f9488', '#be185d', '#4d7c0f', '#0369a1', '#6b21a8', '#155e75'];
+
 function sendJson(res, code, obj, headers) { res.writeHead(code, Object.assign({ 'Content-Type': 'application/json' }, headers || {})); res.end(JSON.stringify(obj)); }
 function readBody(req) {
   return new Promise((resolve) => {
@@ -563,10 +581,52 @@ const server = http.createServer(async (req, res) => {
       const b = await readBody(req) || {};
       const user = await findUser(b.username);
       if (!user || hashPw(b.password, user.salt) !== user.hash) return sendJson(res, 401, { error: 'invalid' });
+      // Een gesloten account krijgt dezelfde melding als een verkeerd wachtwoord. Wie het probeert
+      // hoort niet te leren of de gebruikersnaam bestaat.
+      if (user.actief === false) return sendJson(res, 401, { error: 'invalid' });
       return sendJson(res, 200, { name: user.name || user.username, role: user.role }, { 'Set-Cookie': `pvp_session=${makeToken(user)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000` });
     }
     if (method === 'POST' && url === '/api/logout') return sendJson(res, 200, { ok: true }, { 'Set-Cookie': 'pvp_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' });
-    if (method === 'GET' && url === '/api/me') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); return sendJson(res, 200, { name: u.n, role: u.r, uitlezen: !!(uitlezen && uitlezen.aan()) }); }
+    if (method === 'GET' && url === '/api/me') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      /* Ook nagaan of het account nog bestaat en actief is. De sessie is een stateless cookie van
+         dertig dagen: zonder deze controle blijft een gesloten account gewoon werken tot die cookie
+         verloopt. Hier en niet bij élk verzoek — de frontend haalt /api/me op bij het laden, dus een
+         gesloten account vliegt er bij de eerstvolgende paginalading uit, zonder een databasevraag
+         per verzoek. Wie iedereen per direct wil uitloggen, roteert /var/pvp/secret. */
+      const r = await pool.query('SELECT actief, role, name FROM users WHERE username=$1', [String(u.u || '').toLowerCase()]);
+      const rij = r.rows[0];
+      if (!rij || rij.actief === false) return sendJson(res, 401, { error: 'gesloten' },
+        { 'Set-Cookie': 'pvp_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' });
+      // De rol uit de database wint van die in de cookie: een rolwijziging hoort niet dertig dagen
+      // te wachten op een nieuwe sessie.
+      return sendJson(res, 200, { name: rij.name || u.n, role: rij.role, uitlezen: !!(uitlezen && uitlezen.aan()) });
+    }
+
+    /* Het team: wie er in de keuzelijsten hoort te staan. Vervangt de handmatige lijst PEOPLE in
+       index.html — bleven dat twee lijsten, dan krijg je een to-do toegewezen aan iemand die niet
+       kan inloggen. Elke rol mag dit lezen: ook de fotograaf ziet namen op een scherm, en er staat
+       niets gevoeligs in. Alleen team en admin: carport, foto en taxateur zijn geen collega's aan
+       wie werk wordt toegewezen. */
+    if (method === 'GET' && url === '/api/team') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      // `prieva` is het gedeelde account van vóór de persoonlijke accounts (28-08-2026). Het staat nog
+      // open zodat wie er op dit moment mee werkt niet halverwege de dag wordt uitgelogd, maar het is
+      // een inlog en geen persoon: werk toewijzen aan "Team" zegt niemand iets.
+      // ZODRA HET GESLOTEN IS MAG DEZE REGEL WEG — dan houdt `actief` het vanzelf buiten de lijst.
+      const r = await pool.query(`SELECT username, name, role, kleur, volgorde FROM users
+                                   WHERE actief = true AND role IN ('team','admin')
+                                     AND username <> 'prieva'
+                                   ORDER BY volgorde NULLS LAST, name, username`);
+      return sendJson(res, 200, {
+        leden: r.rows.map((x, i) => ({
+          gebruiker: x.username,
+          naam: x.name || x.username,
+          rol: x.role,
+          kleur: x.kleur || KLEUREN[i % KLEUREN.length]
+        }))
+      });
+    }
 
     // Ook HEAD: een browser of een controle die alleen de headers opvraagt hoort geen 404 te krijgen.
     if ((method === 'GET' || method === 'HEAD') && url.indexOf('/uploads/') === 0) return serveUpload(req, res, url);

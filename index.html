@@ -448,8 +448,14 @@ const ROUTE_NEE=[
 const TAIL=[{label:"Fotograaf",cat:"Fotograaf"},{label:"Mobilox Online",cat:"Mobilox Online"}];
 const CATS=["RDW Foto's","Papieren Foto's","BPM Taxatie","S-TAX","Importeren","RDW Goedkeuring","BPM rapport","Versturen","Wachten op BIN","BIN","Fotograaf","Mobilox Online"];
 const ACTIEVERB={"RDW Foto's":"RDW-foto's maken","Papieren Foto's":"Papieren-foto's maken","Papieren uploaden":"Papieren uploaden","S-TAX: auto klaar ter taxatie":"S-TAX: auto klaar ter taxatie melden","BPM-rapport geüpload door S-TAX":"BPM-rapport ophalen bij S-TAX","RDW Importeer":"RDW importeren","RDW Goedkeuring":"RDW-goedkeuring afwachten","BPM-taxatierapport versturen":"BPM-taxatierapport versturen","BPM-rapport maken":"BPM-rapport maken","Versturen":"BPM-rapport versturen","Wachten op BIN":"Wachten op BIN","BIN":"BIN verwerken","Fotograaf":"Fotograaf inplannen","Mobilox Online":"Advertentie online zetten (Mobilox)"};
+/* Het team komt uit GET /api/team. De lijst hieronder is nog slechts de TERUGVAL, voor als de API
+   wegvalt of de app zonder backend draait — net als V. PEOPLE wordt IN PLACE gevuld: het is een const
+   die op acht plekken bij naam wordt gebruikt, dus nooit herwijzen.
+   Waarom niet twee lijsten: `owner` op auto's, to-do's en subtaken bewaart de weergavenaam. Blijft de
+   lijst hier met de hand staan, dan kun je werk toewijzen aan iemand die niet kan inloggen — en
+   andersom verdwijnt een nieuwe collega uit elke keuzelijst tot de frontend opnieuw gedeployed is. */
 const PEOPLE = ["Leonie","Sjoerd","Vince","Floris"];
-const PKEY = {Leonie:"leonie",Sjoerd:"sjoerd",Vince:"vince",Floris:"floris"};
+const TEAMKLEUR = {Leonie:"#7c3aed",Sjoerd:"#0f9488",Vince:"#475569",Floris:"#2563eb"};
 /* RDW-foto's & documentatie (RDW-keuring), conform Mobilox. req=verplicht */
 const PHOTO_GROUPS = [
   {group:"Voertuig", step:"RDW Foto's", stepIdx:0, items:[
@@ -622,7 +628,11 @@ function currentAction(v){
   if(v.importAuto && !v.route) return {actie:"BPM Taxatie kiezen: JA of NEE",decision:true,cat:"BPM Taxatie"};
   return null;
 }
-function pav(name){const k=PKEY[name]; return `<span class="pav" style="background:var(--${k})">${initials(name)}</span>`;}
+function pav(name){
+  // De kleur komt uit de database en gaat een style-attribuut in; alleen een echte hexkleur toelaten.
+  const k=TEAMKLEUR[name];
+  const kleur=/^#[0-9a-fA-F]{3,8}$/.test(k||"")?k:"var(--slate)";
+  return `<span class="pav" style="background:${kleur}">${esc(initials(name))}</span>`;}
 function badge(s){return `<span class="badge b-${s}">${statusLabel[s]}</span>`;}
 /* ===== Pictogrammen =====
    Eén setje lijniconen in plaats van emoji. Emoji zien er per besturingssysteem anders uit — op
@@ -693,6 +703,18 @@ async function loadVehicles(){ if(!apiOk)return;
     const vorige={}; V.forEach(v=>{ vorige[v.id]={owner:v.owner,klaar:v.klaar,route:v.route,
       photos:v.photos,subtasks:v.subtasks,arrivedAt:v.arrivedAt,taxAt:v.taxAt}; });
     V.length=0; rows.forEach(r2=>{ V.push(r2); const p=vorige[r2.id]; if(p)Object.assign(r2,p); else initVeh(r2); });
+  }catch(_){ /* geen backend of onleesbaar antwoord: terugvallijst blijft staan */ }
+}
+/* Het team ophalen. Zelfde vorm als loadVehicles: bij twijfel blijft de terugvallijst staan, want een
+   lege keuzelijst is erger dan een verouderde. PEOPLE en TEAMKLEUR worden IN PLACE vervangen. */
+async function loadTeam(){ if(!apiOk)return;
+  try{ const r=await fetch("/api/team",{cache:"no-store"}); if(!r.ok)return;
+    const j=await r.json();
+    if(!j||!Array.isArray(j.leden)||!j.leden.length)return;
+    if(!j.leden.every(l=>l&&typeof l.naam==="string"&&l.naam.trim()))return;
+    PEOPLE.length=0;
+    Object.keys(TEAMKLEUR).forEach(k=>{delete TEAMKLEUR[k];});
+    j.leden.forEach(l=>{ PEOPLE.push(l.naam); if(l.kleur)TEAMKLEUR[l.naam]=l.kleur; });
   }catch(_){ /* geen backend of onleesbaar antwoord: terugvallijst blijft staan */ }
 }
 // Weigert de server de opslag (vangrail tegen massale wissing), dan mag dat niet stil gebeuren:
@@ -2650,7 +2672,9 @@ async function startFor(){
   // Eerst de catalogus, dan pas de rest: loadState/loadTaxState/loadStatusFoto mappen hun gegevens op
   // bestaande rijen in V, dus een auto die er nog niet in staat zou zijn voortgang verliezen.
   // Boven de rolsplitsing, want alle drie de rollen gebruiken V.
-  await loadVehicles();
+  // Het team erbij: de keuzelijsten voor eigenaar hangen eraan, en die komen op meerdere schermen
+  // voor. Parallel, want de een hangt niet aan de ander.
+  await Promise.all([loadVehicles(), loadTeam()]);
   const foto=currentUser.role==='foto';
   const tax=currentUser.role==='taxateur';
   const cp=currentUser.role==='carport';

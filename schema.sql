@@ -332,3 +332,29 @@ CREATE TABLE IF NOT EXISTS rdw_dossier_log (
   melding    text
 );
 CREATE INDEX IF NOT EXISTS rdw_dossier_log_vid ON rdw_dossier_log (vehicle_id, id);
+
+-- ===== Uitbreiding team & logistiek (28-08-2026) =====
+-- Eén logboek voor alles wat hierna komt. Server-geschreven en append-only; wordt nooit opgeschoond.
+-- Bewust niet activity_log: die wordt door de frontend gevuld en meegestuurd in de state-blob, en een
+-- logboek dat een client kan herschrijven is geen logboek.
+CREATE TABLE IF NOT EXISTS pvp_log (
+  id        bigserial PRIMARY KEY,
+  ts        bigint NOT NULL,
+  door      text,                    -- weergavenaam van de ingelogde gebruiker
+  onderdeel text NOT NULL,           -- 'account' | 'notitie' | 'logistiek' | 'betaling'
+  sleutel   text,                    -- vehicle_id, notitie-id of plaatsings-id
+  actie     text NOT NULL,
+  van       text,
+  naar      text,
+  melding   text
+);
+CREATE INDEX IF NOT EXISTS pvp_log_onderdeel ON pvp_log (onderdeel, id DESC);
+CREATE INDEX IF NOT EXISTS pvp_log_sleutel   ON pvp_log (sleutel, id DESC);
+
+-- Persoonlijke accounts. `actief` sluit een account zonder de historie weg te gooien: `owner` op
+-- auto's, to-do's en subtaken bewaart de wéérgavenaam, en die moet leesbaar blijven als iemand weg is.
+-- `kleur` staat hier en niet als CSS-variabele in index.html, zodat er een collega bij kan zonder
+-- dat de frontend gedeployed hoeft te worden.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS actief   boolean NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS volgorde int;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS kleur    text;
