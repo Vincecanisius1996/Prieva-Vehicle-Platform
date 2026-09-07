@@ -49,7 +49,9 @@ const STUKKEN = [
   { key: 'v_cp3',              groep: 'Voertuig', bron: 'photos', label: 'Constructieplaat 3e fase fabrikant',
     eis: { personenauto: O, bedrijfsauto: O } },
   { key: 'v_teller',           groep: 'Voertuig', bron: 'photos', label: 'Tellerstand',
-    eis: { personenauto: V, bedrijfsauto: V, motorfiets: O } },
+    // De RDW-app zet de tellerstand bij een motorfiets op optioneel; dat is daar een fout. Voor
+    // Prieva is een kilometerstand altijd een verplichte foto (opgave 07-09-2026).
+    eis: { personenauto: V, bedrijfsauto: V, motorfiets: V } },
   { key: 'v_motornummer',      groep: 'Voertuig', bron: 'photos', label: 'Ingeslagen motornummer',
     eis: { motorfiets: O } },
   // De drie laadruimtefoto's die een lichte bedrijfsauto extra vraagt.

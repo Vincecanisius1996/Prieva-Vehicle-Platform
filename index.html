@@ -226,6 +226,11 @@
   .chip{background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px 11px;font-size:12px;font-weight:600}
   .chip b{color:var(--muted);font-weight:600}
   .det-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:18px;align-items:start}
+  /* De verhouding 1.35 : 1 moet blijven staan, wat er ook in de kolommen komt. Zonder min-width:0
+     mag een grid-kolom niet smaller worden dan de min-content van zijn inhoud, en dan duwt een lang
+     fotolabel of een extra rij vakjes de ene kolom breder en de andere smaller. Gevolg: de indeling
+     versprong zodra je van voertuigsoort wisselde en er andere vakjes in beeld kwamen. */
+  .det-grid>*{min-width:0}
   .spec-grid{display:grid;grid-template-columns:1fr 1fr;gap:0}
   .spec{padding:10px 4px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
   .spec .k{color:var(--muted);font-size:13px} .spec .v{font-weight:600;font-size:13px;text-align:right}
@@ -473,6 +478,17 @@ const ROUTE_JA=[
   {label:"Wachten op BIN",cat:"Wachten op BIN"},
   {label:"BIN",cat:"BIN"},
 ];
+/* Een aanhangwagen volgt WEL het importtraject — boven 750 kg toegestane maximummassa heeft hij een
+   eigen kenteken nodig en moet hij dus langs een RDW-keuringsstation, met inname van het complete
+   buitenlandse kentekenbewijs. Maar er zit geen BPM op: die belasting geldt voor personenauto's,
+   motorrijwielen en bestelauto's, en een aanhanger is geen motorrijtuig. Daarom een eigen route
+   zonder de taxatievraag en zonder de twee BPM-stappen (opgave Prieva 07-09-2026). */
+const ROUTE_AANHANGER=[
+  {label:"RDW Importeer",cat:"Importeren"},
+  {label:"RDW Goedkeuring",cat:"RDW Goedkeuring"},
+  {label:"Wachten op BIN",cat:"Wachten op BIN"},
+  {label:"BIN",cat:"BIN"},
+];
 const ROUTE_NEE=[
   {label:"RDW Importeer",cat:"Importeren"},
   {label:"RDW Goedkeuring",cat:"RDW Goedkeuring"},
@@ -545,6 +561,8 @@ function eisVan(stuk,v){
   if(!stuk.eis||stuk.eis==='route')return null;
   return stuk.eis[soortVan(v)]||null;
 }
+/* Op een aanhangwagen zit geen BPM: geen taxatievraag, geen taxatierapport, geen S-TAX. */
+const zonderBpm = v => soortVan(v)==='aanhangwagen';
 /* De fotogroepen voor deze auto. Een vakje dat voor deze soort niet geldt verdwijnt — TENZIJ er al
    een foto in zit: die blijft zichtbaar met "n.v.t." erbij, zodat een foto na een soortwissel niet
    onzichtbaar in de database achterblijft. */
@@ -703,6 +721,7 @@ function stepList(v){
   // Taxatie (JA/NEE) is losgekoppeld: staat niet meer als stap in de rij, maar wordt apart gezet
   // (kan al vóór de foto's). Zonder keuze tonen we alleen de foto-stappen; de rest volgt na de keuze.
   let L=IMPORT_BASE.slice();
+  if(zonderBpm(v)) return L.concat(ROUTE_AANHANGER);   // geen taxatievraag, geen BPM-stappen
   if(v.route==='JA') L=L.concat(ROUTE_JA);
   else if(v.route==='NEE') L=L.concat(ROUTE_NEE);
   return L;
@@ -717,7 +736,7 @@ function currentAction(v){
   const s=steps(v);
   if(s.currentIdx!=null){ const st=s.list[s.currentIdx]; return {actie:(ACTIEVERB[st.label]||st.label),cat:st.cat}; }
   // foto-stappen klaar maar taxatie-route nog niet gekozen → de keuze is de volgende actie
-  if(v.importAuto && !v.route) return {actie:"BPM Taxatie kiezen: JA of NEE",decision:true,cat:"BPM Taxatie"};
+  if(v.importAuto && !v.route && !zonderBpm(v)) return {actie:"BPM Taxatie kiezen: JA of NEE",decision:true,cat:"BPM Taxatie"};
   return null;
 }
 function pav(name){
@@ -1349,7 +1368,7 @@ function renderLopende(){
     const vkStand=(()=>{ if(v.status!=='lopende')return '';
       const x=vkVan(v.id); const bol=(af,lab)=>`<span title="${lab}: ${af?'klaar':'nog te doen'}" style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3px;background:${af?'var(--green)':'var(--line)'}"></span>`;
       return `<div style="margin-top:4px;white-space:nowrap">${bol(!!x.fotoTs,'Fotograaf')}${bol(!!x.onlineTs,'Mobilox Online')}<span class="muted" style="font-size:11px">${x.onlineTs?'online':x.fotoTs?'gefotografeerd':'nog niet op de foto'}</span></div>`;})();
-    const rb=v.importAuto&&v.route?`<span class="route-badge rbg-${v.route==='JA'?'ja':'nee'}">${v.route}</span>`:'';
+    const rb=v.importAuto&&v.route&&!zonderBpm(v)?`<span class="route-badge rbg-${v.route==='JA'?'ja':'nee'}">${v.route}</span>`:'';
     // De afleverdatum hoort hier thuis: dat is de deadline van het hele traject, en tot nu toe was
     // hij alleen op de Carport-pagina te zien. Bewust géén extra kolom — de tabel telt er al vijftien
     // en past nu precies zonder horizontaal schuiven; dit past in de cel die er al is.
@@ -1629,13 +1648,13 @@ function openVehNu(id){
       </div></div></div>
     <div class="det-grid">
       <div style="display:flex;flex-direction:column;gap:18px">
-        ${v.status==='lopende'&&v.importAuto?taxPanel(v):''}
+        ${v.status==='lopende'&&v.importAuto&&!zonderBpm(v)?taxPanel(v):''}
         ${v.status==='lopende'?verkoopkaart(v):''}
-        ${v.status==='lopende'&&v.importAuto?`<div class="card"><h3>Import/BPM-traject <span class="muted" style="font-weight:500;font-size:12px">${s.done}/${s.total} stappen${v.route?` · route ${v.route}`:''}</span></h3><div class="card-body" style="padding:6px 16px 12px">
+        ${v.status==='lopende'&&v.importAuto?`<div class="card"><h3>${zonderBpm(v)?'Importtraject':'Import/BPM-traject'} <span class="muted" style="font-weight:500;font-size:12px">${s.done}/${s.total} stappen${zonderBpm(v)?' · geen BPM op een aanhangwagen':v.route?` · route ${v.route}`:''}</span></h3><div class="card-body" style="padding:6px 16px 12px">
           ${s.arr.map((st,idx)=>{
             return `<div class="tstep ${st.state}"><label class="chk"><input type="checkbox" ${st.state==='done'?'checked':''} onchange="setStep('${v.id}',${idx},this.checked)"><span class="box"></span></label><div style="flex:1"><div class="h">${st.label}</div><div class="d">${st.state==='done'?'Afgerond':st.state==='current'?'Nu aan de beurt':'Nog te doen'}</div></div></div>`;
           }).join("")}
-          ${v.importAuto&&!v.route?`<div class="muted" style="font-size:12px;padding:8px 2px 0">De vervolgstappen verschijnen zodra je hierboven Taxatie JA of NEE kiest.</div>`:''}
+          ${v.importAuto&&!v.route&&!zonderBpm(v)?`<div class="muted" style="font-size:12px;padding:8px 2px 0">De vervolgstappen verschijnen zodra je hierboven Taxatie JA of NEE kiest.</div>`:''}
         </div></div>`:''}
         ${v.status==='lopende'&&v.importAuto?fotoGroepen(v).map(g=>photoCard(v,g)).join(''):''}
         ${v.status==='lopende'?adGalleryCard(v):''}
