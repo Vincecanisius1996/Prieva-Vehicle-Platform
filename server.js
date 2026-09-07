@@ -395,6 +395,24 @@ async function controleerWissing(client, vs) {
   return gewist.length > MAX_WISSEN ? gewist : null;
 }
 
+/* Vangnet tegen base64 in de database. `photos` hoort paden te bevatten (`/uploads/...`); een
+   data:-URL betekent dat een upload is mislukt en de browser de afbeelding zelf is blijven meesturen.
+   Vier zulke foto's maakten samen 7 MB in `vehicles.photos` (gevonden 07-09-2026) en reisden bij élke
+   state heen en weer. De frontend zet dat nu zelf terug, maar dit is de grendel die het ook dichthoudt
+   als daar ooit weer een fout in sluipt — één plek dekt alle lekken, zoals bij de wezenopruimer.
+   De sleutel verdwijnt dan uit `photos`: een leeg fotovakje is zichtbaar, 7 MB stilte niet. */
+function schoneFotos(photos, id) {
+  const uit = {};
+  for (const [k, w] of Object.entries(photos || {})) {
+    if (typeof w === 'string' && w.startsWith('data:')) {
+      console.error(`putState: data-URL geweigerd voor ${id} / ${k} (${Math.round(w.length / 1024)} kB) — upload was niet gelukt`);
+      continue;
+    }
+    uit[k] = w;
+  }
+  return uit;
+}
+
 async function putState(b) {
   const client = await pool.connect();
   try {
@@ -429,7 +447,7 @@ async function putState(b) {
            photos=EXCLUDED.photos, updated_at=now()`,
         [id, v.status || 'komende', Number(v.klaar) || 0, v.route || null, v.owner || null,
          v.arrivedAt || null, v.taxAt || null,
-         JSON.stringify(v.photos || {}), '[]']);
+         JSON.stringify(schoneFotos(v.photos, id)), '[]']);
     }
 
     /* `globalTodos` en `subtasks` worden hier BEWUST genegeerd sinds 07-09-2026. Taken leven in de

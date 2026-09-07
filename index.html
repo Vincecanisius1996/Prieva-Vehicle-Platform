@@ -1606,8 +1606,25 @@ async function leesFoto(f){ const k=await verkleinFoto(f); return k!==null?k:awa
 function grpReqCount(v,g){return g.items.filter(p=>p.req&&v.photos[p.key]).length;}
 function grpReqTotal(g){return g.items.filter(p=>p.req).length;}
 let photoUp={};
+/* De data-URL staat even in `photos` voor de directe preview, en wordt vervangen door het pad zodra
+   de upload rond is. Mislukt die upload, dan MOET die data-URL er weer uit: bleef hij staan, dan
+   schreef de eerstvolgende opslag hem de database in — stilzwijgend, want de fout werd geslikt.
+   Zo zijn er vier foto's van 7 MB in `vehicles.photos` beland (gevonden 07-09-2026), en die reisden
+   daarna bij élke GET en PUT van de state heen en weer.
+   Nu: lukt het niet, dan gaat de foto terug naar wat er stond en zegt het scherm het erbij. */
 async function setPhotoData(id,key,dataUrl){const v=V.find(x=>x.id===id); if(!v)return; const prev=v.photos[key]; v.photos[key]=dataUrl; if(apiOk)photoUp[id+'|'+key]=1; rerender();
-  if(apiOk){ try{ const res=await fetch("/api/photo",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,key,dataUrl})}); if(res.ok){const j=await res.json(); if(j&&j.url)v.photos[key]=j.url;} }catch(_){} delete photoUp[id+'|'+key]; }
+  if(apiOk){
+    let gelukt=false;
+    try{ const res=await fetch("/api/photo",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,key,dataUrl})});
+      if(res.ok){const j=await res.json(); if(j&&j.url){ v.photos[key]=j.url; gelukt=true; }} }catch(_){}
+    delete photoUp[id+'|'+key];
+    if(!gelukt){
+      if(prev)v.photos[key]=prev; else delete v.photos[key];
+      const lab=(PHOTO_BY_KEY[key]&&PHOTO_BY_KEY[key].label)||key;
+      showToast(`Foto “${lab}” uploaden mislukt — probeer het opnieuw`,false);
+      rerender(); return;                       // geen undo-regel: er is niets gewijzigd
+    }
+  }
   pushUndo(`${v.merk} ${v.model} — foto: ${PHOTO_BY_KEY[key].label}`, ()=>{ if(prev)v.photos[key]=prev; else delete v.photos[key]; });
   rerender();}
 /* Eén weg voor een bestand naar een vakje, of het nu via de knop of via slepen binnenkomt. Twee

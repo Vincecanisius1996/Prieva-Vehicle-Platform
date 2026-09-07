@@ -560,6 +560,28 @@ Testen zonder browser (er staat er geen op de droplet, en Chrome-afhankelijkhede
 blok uit `index.html` en draai het met `@napi-rs/canvas` in de scratchpad. Let op: `toDataURL` neemt
 kwaliteit als 0–1 (browserconventie), `toBuffer` als 0–100 — dat verschil kost je een meting.
 
+## Foto's mogen nooit als base64 in de database belanden
+Gevonden 07-09-2026: vier foto's van één auto stonden als `data:`-URL in `vehicles.photos`, samen
+**7 MB**. Ze reisden daardoor bij élke `GET` en `PUT /api/state` heen en weer, en ze bliezen de
+`pg_dump` zo ver op dat de nachtelijke back-upcontrole erop stukliep (zie de valstrik hierboven).
+
+Oorzaak: `setPhotoData()` zette de data-URL eerst in `photos` voor de directe preview en verving hem
+pas door het pad ná een geslaagde upload. De fout werd geslikt (`catch(_){}`), dus bij een mislukte
+upload bleef de base64 staan en schreef de eerstvolgende opslag hem de database in — zonder melding.
+
+Nu op twee plekken dicht:
+- **`setPhotoData()` zet de foto terug** naar wat er stond en toont "uploaden mislukt — probeer het
+  opnieuw". Er komt dan ook geen undo-regel bij, want er is niets gewijzigd.
+- **`putState()` weigert een `data:`-waarde** in `photos` (`schoneFotos()`), met een regel in de
+  console. Dat is de grendel die het dichthoudt als er ooit weer een fout in de frontend sluipt —
+  één plek dekt alle lekken, net als bij de wezenopruimer. De sleutel verdwijnt dan uit `photos`:
+  een leeg fotovakje is zichtbaar, 7 MB stilte niet.
+
+De vier die er lagen zijn omgezet met `inhaalslag/base64-fotos-omzetten.js` (proefdraai zonder
+`--echt`), inclusief HEIC→JPEG via `heif-convert`, en vervangen alleen als er nog steeds diezelfde
+data-URL stond. Uitkomst: `vehicles.photos` ging van **7 MB naar 8,7 kB**, de dump van 5,3 MB naar
+39 kB, en alle vier de bestanden geven `200` via de app.
+
 ## HEIC-foto's (Mac en iPhone)
 Sinds 19-08-2026 zet `server.js` HEIC bij binnenkomst om naar JPEG. Zonder dat bleef een foto die
 vanaf een Mac werd geüpload een **leeg vak** in de app, en het uitlezen sloeg het bestand stil over.
