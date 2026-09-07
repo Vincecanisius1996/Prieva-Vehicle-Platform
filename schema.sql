@@ -251,7 +251,7 @@ ALTER TABLE carport_bonnen ADD COLUMN IF NOT EXISTS agenda_event_id text;
 -- laatste ronde goed". De laatste geslaagde ronde wordt apart bewaard, want dat is wat je wilt weten
 -- als het nú misgaat: hoe oud is het beeld dat op het scherm staat.
 CREATE TABLE IF NOT EXISTS agent_runs (
-  naam         text PRIMARY KEY,         -- 'mobilox' | 'agenda'
+  naam         text PRIMARY KEY,         -- 'mobilox' | 'agenda' | 'backup' | 'uploads' | 'offsite'
   ts           bigint,                   -- einde van de laatste ronde
   ok           boolean,
   melding      text,

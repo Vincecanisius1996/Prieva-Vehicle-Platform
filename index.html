@@ -946,7 +946,7 @@ function agentRegel(){
   if(!agents.length) return '';
   const nu=Date.now();
   const oud=t=>{ if(!t) return 'nog nooit'; const m=Math.round((nu-t)/60000);
-    return m<2?'zojuist':m<90?m+' min geleden':Math.round(m/60)+' uur geleden'; };
+    return m<2?'zojuist':m<90?m+' min geleden':m<36*60?Math.round(m/60)+' uur geleden':Math.round(m/1440)+' dagen geleden'; };
   return `<div class="note" style="text-align:right;margin:0 4px 6px">${
     agents.map(a=>`${AGENT_NAMEN[a.naam]||a.naam}: ${a.ok===false?'<b>loopt vast</b> — laatst gelukt '+oud(a.geluktTs):'bijgewerkt '+oud(a.geluktTs)}`).join(' · ')}</div>`;
 }
@@ -2316,16 +2316,29 @@ async function loadBpm(){ if(!apiOk)return; try{ const r=await fetch("/api/bpmre
    klopt het scherm niet meer terwijl het er precies hetzelfde uitziet — en dat is het gevaarlijke
    geval. Alleen tonen als er echt iets mis is, en alleen tijdens de uren dat de taak hoort te lopen:
    een waarschuwing op zondagavond dat er niets is opgehaald is ruis, geen signaal. */
-const AGENT_NAMEN={mobilox:'de Mobilox-agent',agenda:'de agenda-koppeling'};
-const AGENT_STIL_MIN=45;                 // ruim boven de kwartierronde, zodat één gemiste ronde niet meteen alarmeert
+/* Per achtergrondtaak: hoe hij heet, hoe lang hij mág zwijgen, en of hij alleen tijdens kantooruren
+   loopt. Zonder dat onderscheid meet je een nachtelijke back-up met de meetlat van een kwartierronde
+   en staat er élke ochtend dat hij stilstaat.
+   26 uur voor de nachttaken: die draaien rond 02:15, dus meer dan 26 uur stil betekent dat de
+   afgelopen nacht is overgeslagen — en dat zie je dan diezelfde ochtend. */
+const AGENT_SOORT={
+  mobilox: {naam:'de Mobilox-agent',        stilMin:45,      kantoortijd:true,  voedtScherm:true},
+  agenda:  {naam:'de agenda-koppeling',     stilMin:45,      kantoortijd:true,  voedtScherm:true},
+  backup:  {naam:'de database-back-up',     stilMin:26*60,   kantoortijd:false, voedtScherm:false},
+  uploads: {naam:'de foto-back-up',         stilMin:26*60,   kantoortijd:false, voedtScherm:false},
+  offsite: {naam:'de kopie bij Backblaze',  stilMin:26*60,   kantoortijd:false, voedtScherm:false},
+};
+const AGENT_NAMEN=Object.fromEntries(Object.entries(AGENT_SOORT).map(([k,v])=>[k,v.naam]));
+const AGENT_STANDAARD={stilMin:45,kantoortijd:true,voedtScherm:true};   // een taak die we nog niet kennen
 function binnenKantoortijd(d){ const u=d.getHours(); return d.getDay()>=1&&d.getDay()<=6&&u>=7&&u<19; }
 function agentBanner(){
   if(!agents.length) return '';
   const nu=Date.now(), werktijd=binnenKantoortijd(new Date());
   const stuk=agents.filter(a=>{
-    if(a.ok===false) return true;
-    if(!werktijd) return false;
-    return !a.geluktTs || (nu-a.geluktTs)>AGENT_STIL_MIN*60000;
+    if(a.ok===false) return true;                       // hard gefaald: altijd tonen
+    const s=AGENT_SOORT[a.naam]||AGENT_STANDAARD;
+    if(s.kantoortijd&&!werktijd) return false;          // een waarschuwing op zondagavond is ruis
+    return !a.geluktTs || (nu-a.geluktTs)>s.stilMin*60000;
   });
   if(!stuk.length) return '';
   const oud=t=>{ if(!t) return 'nog nooit gelukt'; const m=Math.round((nu-t)/60000);
@@ -2334,7 +2347,9 @@ function agentBanner(){
     <div class="bi" style="background:var(--amber)">${ico("waarschuwing",18)}</div>
     <div style="flex:1"><div class="bt">${stuk.length===1?'Een achtergrondtaak loopt niet':'Achtergrondtaken lopen niet'}</div>
       <div class="bs">${stuk.map(a=>`${AGENT_NAMEN[a.naam]||a.naam}: ${oud(a.geluktTs)}${a.melding&&a.ok===false?' — '+esc(a.melding):''}`).join(' · ')}.
-        Wat hieronder staat kan verouderd zijn.</div></div></div>`;
+        ${stuk.some(a=>(AGENT_SOORT[a.naam]||AGENT_STANDAARD).voedtScherm)?'Wat hieronder staat kan verouderd zijn.':''}
+        ${stuk.some(a=>(AGENT_SOORT[a.naam]||AGENT_STANDAARD).voedtScherm===false)?'Een back-up die stilstaat merk je pas als je hem nodig hebt.':''}
+      </div></div></div>`;
 }
 // De openstaande werkbon van een auto, als die een afleverdatum heeft. Gebruikt op Lopende en op
 // de auto zelf, zodat de afleverdatum niet alleen op de Carport-pagina staat.

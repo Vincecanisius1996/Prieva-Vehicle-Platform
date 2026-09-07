@@ -17,6 +17,25 @@
 # (De URL's in de database wijzen naar hetzelfde pad, dus verder is er niets aan te passen.)
 set -euo pipefail
 
+
+# ===== Verslag naar PVP =====
+# Zodat een mislukte nacht op *Vandaag* verschijnt in plaats van alleen in journalctl. Een back-up
+# die stil faalt is het gevaarlijkst: je denkt dat je gedekt bent. Precies dat gebeurde van 29-08 tot
+# 07-09-2026 — dertien nachten, en niemand die het zag.
+# Het melden mag de back-up zelf NOOIT laten mislukken: vandaar de subshell en `|| true`.
+verslag() {
+  [ -r /var/pvp/pg.env ] || return 0
+  ( set +e; set -a; . /var/pvp/pg.env; set +a
+    node /opt/pvp-api/agentrun.js uploads "$1" "$2" ) >/dev/null 2>&1 || true
+}
+# Via EXIT en niet via ERR: zo wordt elke manier van stukgaan gemeld, ook een `exit 1` halverwege.
+afloop() {
+  code=$?
+  [ "$code" -ne 0 ] && verslag 0 "mislukt (exitcode $code) — zie: journalctl -u pvp-uploads-snapshot"
+  return 0
+}
+trap afloop EXIT
+
 BRON=/var/pvp/uploads
 DEST=/var/backups/pvp/uploads
 KEEP_DAYS=14
@@ -72,3 +91,4 @@ fi
 OPGERUIMD=""
 [ "$VERLOPEN" -gt 0 ] && OPGERUIMD=", $VERLOPEN verlopen verwijderd"
 log "momentopname $STAMP: $SNAP_N bestanden, waarvan $NIEUWE_N nieuw ($ECHT); de rest gedeeld met de vorige nacht. $AANTAL momentopnamen samen $TOTAAL$OPGERUIMD"
+verslag 1 "momentopname: $SNAP_N bestanden, $NIEUWE_N nieuw; $AANTAL momentopnamen samen $TOTAAL"

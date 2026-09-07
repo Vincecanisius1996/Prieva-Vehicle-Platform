@@ -24,3 +24,24 @@ async function meld(pool, naam, ok, melding, begonnen) {
 }
 
 module.exports = { meld };
+
+/* Ook aan te roepen vanaf de opdrachtregel, zodat de back-upscripts (bash) hetzelfde verslag
+   kunnen schrijven als de agents (node):
+     node agentrun.js <naam> <1|0> "<melding>"
+   Bewust hier en niet in een tweede scriptje: twee exemplaren van dezelfde logica lopen uiteen.
+   Faalt het melden, dan eindigt dit met 0 — een back-up mag nooit mislukken omdat het verslag
+   niet weggeschreven kon worden. */
+if (require.main === module) {
+  const [, , naam, okRuw, melding] = process.argv;
+  if (!naam || okRuw === undefined) {
+    console.error('gebruik: node agentrun.js <naam> <1|0> "<melding>"');
+    process.exit(2);
+  }
+  if (!process.env.PVP_PG) { console.error('PVP_PG ontbreekt — verslag niet geschreven'); process.exit(0); }
+  const pg = require('pg');
+  const pool = new pg.Pool({ connectionString: process.env.PVP_PG, max: 1 });
+  meld(pool, naam, okRuw === '1' || okRuw === 'true', melding || null)
+    .catch(e => console.error('verslag mislukt:', e.message))
+    .then(() => pool.end().catch(() => {}))
+    .then(() => process.exit(0));
+}

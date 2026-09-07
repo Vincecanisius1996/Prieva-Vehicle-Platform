@@ -28,6 +28,18 @@
 # buiten de server te liggen. Anders beschermt deze back-up tegen niets.
 set -euo pipefail
 
+# ===== Verslag naar PVP =====
+# Zodat een mislukte nacht op *Vandaag* verschijnt in plaats van alleen in journalctl. Een back-up
+# die stil faalt is het gevaarlijkst: je denkt dat je gedekt bent.
+# Het melden mag de back-up zelf NOOIT laten mislukken: vandaar de subshell en `|| true`.
+verslag() {
+  [ -r /var/pvp/pg.env ] || return 0
+  ( set +e; set -a; . /var/pvp/pg.env; set +a
+    node /opt/pvp-api/agentrun.js offsite "$1" "$2" ) >/dev/null 2>&1 || true
+}
+# Let op: de EXIT-trap staat verderop bij `opruimen()` — dit script had er al een, en een tweede
+# `trap ... EXIT` vervangt de eerste in plaats van hem aan te vullen.
+
 BRON_UPLOADS=/var/pvp/uploads
 KEEP_DAILY=14
 KEEP_WEEKLY=8
@@ -41,7 +53,15 @@ log() { logger -t pvp-offsite "$1"; echo "$1"; }
 afbreken() { logger -t pvp-offsite "AFGEBROKEN: $1"; echo "AFGEBROKEN: $1" >&2; exit 1; }
 
 DUMP=""
-opruimen() { [ -n "$DUMP" ] && rm -f "$DUMP"; }
+# Eén EXIT-trap: een tweede `trap ... EXIT` VERVANGT de eerste, dus opruimen en het verslag moeten
+# in dezelfde functie. Opruimen eerst — de tijdelijke dump weghalen is belangrijker dan het melden.
+opruimen() {
+  code=$?
+  [ -n "$DUMP" ] && rm -f "$DUMP"
+  afloop_code=$code
+  [ "$afloop_code" -ne 0 ] && verslag 0 "mislukt (exitcode $afloop_code) — zie: journalctl -u pvp-offsite"
+  return 0
+}
 trap opruimen EXIT
 
 # --- Controles vóóraf. Liever hier stoppen dan een halve momentopname wegschrijven. ---
@@ -108,3 +128,4 @@ OMVANG_H=$(awk "BEGIN{b=${OMVANG:-0}; printf (b<1073741824 ? \"%.0f MB\" : \"%.1
 DUMP_H=$(awk "BEGIN{printf \"%.0f KB\", $DUMP_B/1024}")
 
 log "buiten de droplet: database ($DUMP_H) + $UPL_N bestanden geüpload; repository nu $OMVANG_H, $LEES_DEEL nagerekend"
+verslag 1 "kopie bij Backblaze: database $DUMP_H + $UPL_N bestanden; repository $OMVANG_H"

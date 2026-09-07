@@ -778,6 +778,22 @@ overschreven; `gelukt_ts` bewaart apart de laatste *geslaagde* ronde). `/api/sta
 de taak hoort te lopen. Een groen vinkje dat het goed gaat leest niemand; een melding dat het beeld
 uren oud is wel. Een waarschuwing op zondagavond is ruis.
 
+**Sinds 07-09-2026 melden ook de drie back-uptaken zich hier** (`backup`, `uploads`, `offsite`), na
+de nacht waarin bleek dat de database-back-up dertien keer stil was mislukt. De scripts zijn bash en
+gebruiken daarvoor `node /opt/pvp-api/agentrun.js <naam> <1|0> "<melding>"` — dezelfde functie als de
+agents, want twee exemplaren van dezelfde logica lopen uiteen. Drie dingen om te weten:
+- Het melden gebeurt in een subshell met `|| true`: **een back-up mag nooit mislukken omdat het
+  verslag niet weggeschreven kon worden.**
+- De mislukte weg loopt via een **`trap ... EXIT`** en niet via `ERR`, zodat elke manier van
+  stukgaan gemeld wordt, ook een `exit 1` halverwege. In `pvp-offsite.sh` bestond al een EXIT-trap
+  voor het opruimen van de tijdelijke dump; een tweede `trap ... EXIT` **vervangt** de eerste, dus
+  daar doet één functie nu allebei.
+- **`AGENT_SOORT` in `index.html` bepaalt per taak hoe lang hij mag zwijgen.** Een nachttaak meten met
+  de meetlat van een kwartierronde (45 minuten) zou élke ochtend alarm slaan; voor de back-ups staat
+  het op 26 uur — meer dan dat betekent dat de afgelopen nacht is overgeslagen, en dat zie je dan
+  diezelfde ochtend. `voedtScherm` bepaalt de slotzin: bij een koppeling "wat hieronder staat kan
+  verouderd zijn", bij een back-up "een back-up die stilstaat merk je pas als je hem nodig hebt".
+
 - **Een inruil is een feit, geen voorstel** (23-08-2026). Staat er een inruilauto op een
   verkoopovereenkomst, dan komt die auto bij de aflevering binnen. De agent maakt hem aan bij
   **Komende** en schrijft hem naar *Komende Autos* in het Autoboek, met leverancier `Inruil`, de
