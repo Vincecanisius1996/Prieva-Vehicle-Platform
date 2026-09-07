@@ -496,3 +496,12 @@ CREATE TABLE IF NOT EXISTS verkooptraject (
   online_ts   bigint, online_door text,   -- advertentie staat online in Mobilox
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
+
+-- Voertuigsoort (07-09-2026). Alles in PVP was op personenauto's gebouwd: één eisenlijst voor elk
+-- voertuig, terwijl een lichte bedrijfsauto foto's van de laadruimte en de scheidingswand vraagt en
+-- een aanhangwagen juist veel minder. Catalogusveld, net als merk en model — bewust op `vehicles`
+-- en niet in een eigen tabel: dit is een eigenschap van de auto, geen procesgegeven, en
+-- PUT /api/state raakt catalogusvelden niet aan.
+-- NULL = personenauto, dus geen migratie voor de bestaande auto's. Zie rdw/velden.js voor de vier
+-- soorten en wat de RDW per soort wil zien.
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS voertuigsoort text;

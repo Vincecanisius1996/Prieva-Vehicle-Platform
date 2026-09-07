@@ -107,7 +107,8 @@ uit), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
 `/api/notitie-del` (**alleen admin**), `/api/betalingen` (team+admin), `/api/betaling` (**alleen admin**),
 `/api/taxafgerond` (taxateur+team+admin),
 `/api/taken` + `/api/taak` + `-af` + `-wie` + `-del` (team+admin),
-`/api/verkooptraject` (team+admin+foto) + `/api/verkoopstap` (foto alleen de stap `foto`), `/api/logistiek` + `-plaatsen` + `-verplaatsen` + `-terug` +
+`/api/verkooptraject` (team+admin+foto) + `/api/verkoopstap` (foto alleen de stap `foto`),
+`/api/velden` (elke sessie — de eisenlijst per voertuigsoort), `/api/logistiek` + `-plaatsen` + `-verplaatsen` + `-terug` +
 `-notitie` + `-volgorde` (team+admin), `/api/logistiek-del` (**alleen admin**),
 `PUT /api/vehicle` (team+admin, auto corrigeren), `/api/inruil` (GET+POST, team+admin),
 `/api/carport-afgeleverd` (**alleen team+admin**),
@@ -353,9 +354,8 @@ Zie `rdw/LEESMIJ.md`.
   toevoegingen: `bron` (het BPM-rapport staat in `bpm_reports`, niet in `photos`) en een `req` die een
   functie mag zijn — het taxatierapport is **alleen verplicht op route JA**. Op route NEE bestaat dat
   rapport niet en zou de eis onzin zijn. Route JA telt 8 verplichte stukken, route NEE 7.
-  **De lijst staat dus op twee plekken; wijzig je er een, wijzig ze allebei** (net als
-  `BPM_GELDIG_DAGEN`). Het endpoint stuurt de lijst mee als `eisen`, zodat de frontend hem later kan
-  overnemen en de kopie kan verdwijnen.
+  **Sinds 07-09-2026 staat die lijst nog maar op één plek**: `rdw/velden.js`, opgehaald via
+  `GET /api/velden`. Zie "Voertuigsoort" hieronder — de eisen hangen nu ook aan het soort voertuig.
 - **Twee tabellen: `rdw_dossier` (één rij per auto) en `rdw_dossier_log` (append-only).** Bewust géén
   kolommen op `vehicles`: die rij wordt door `PUT /api/state` in zijn geheel vanuit de frontend
   overschreven — precies zo gingen op 20-08-2026 de statusvelden van 64 auto's verloren.
@@ -387,6 +387,39 @@ Zie `rdw/LEESMIJ.md`.
 - **Stand bij de ingebruikname:** 59 importauto's in beeld (de verkochte eruit), waarvan **9 compleet
   en 50 onvolledig**; bij 48 ontbreken alle voertuigfoto's en bij 49 het buitenlandse kentekenbewijs.
   Dat is geen meetfout maar de reden dat dit gebouwd is: het dossier zat tot nu toe in de mailbox.
+
+## Voertuigsoort: de eisenlijst hangt aan het soort voertuig
+Sinds 07-09-2026. Alles in PVP was op **personenauto's** gebouwd: één eisenlijst voor elk voertuig.
+Een lichte bedrijfsauto vraagt om foto's van de laadruimte en de scheidingswand, een motorfiets om
+het motornummer, een aanhangwagen om veel minder — Sjoerd kon een bedrijfswagen daardoor niet goed
+toevoegen.
+
+- **`vehicles.voertuigsoort`** is een **catalogusveld**, net als merk en model. Bewust op `vehicles`
+  en niet in een eigen tabel: dit is een eigenschap van de auto, geen procesgegeven, en
+  `PUT /api/state` raakt catalogusvelden niet aan. **`NULL` = personenauto**, dus geen migratie voor
+  de 91 bestaande auto's.
+- Vier soorten: `personenauto` (M1), `bedrijfsauto` (N1, ≤ 3500 kg), `motorfiets` (L1e–L7e),
+  `aanhangwagen` (O2). De server accepteert alleen die vier (`soortOf()`); alles anders wordt leeg,
+  want een onbekende soort zou een auto opleveren waarvoor géén enkele eis geldt.
+- **Drie standen per stuk in plaats van twee**: `verplicht`, `optioneel`, of ontbreken = **niet van
+  toepassing**. Alleen met die derde stand kan een vakje uit beeld verdwijnen in plaats van als
+  "optioneel" te blijven staan.
+- **Een vakje met een foto blijft altijd zichtbaar**, ook als het voor de nieuwe soort niet geldt —
+  dan met "n.v.t." erbij. Anders blijft een foto na een soortwissel onzichtbaar in de database staan,
+  en daar hebben we deze week al genoeg van gehad.
+- Verplichte stukken per soort (route JA meegerekend): **M1 8 · N1 11 · L 7 · O2 6**. De M1-lijst is
+  letter voor letter die van vóór deze wijziging.
+- **Op een aanhangwagen geldt het BPM-rapport nooit** (opgave Prieva), ook niet als iemand route JA
+  kiest: daar zit geen BPM op.
+- De keuze staat **op de kaart RDW-foto's** (daar loop je er tegenaan) en in **Gegevens wijzigen** en
+  **Auto toevoegen**. Eén veld, drie plekken om het te zetten.
+
+### De dubbele eisenlijst is weg
+`rdw/velden.js` is nu de **enige** lijst. `index.html` haalt hem op via **`GET /api/velden`** (elke
+sessie; geen gegevens, alleen de definitie) en heeft alleen nog een terugval met de personenauto-lijst
+voor als de API wegvalt — zelfde patroon als `V` en `PEOPLE`. `PHOTO_GROUPS` bestaat niet meer; alles
+loopt via `fotoGroepen(v)`, dat de stukken teruggeeft die voor **deze** auto gelden. Met vier soorten
+zou de oude dubbeling acht lijsten op twee plekken zijn geworden.
 
 ## Twee sporen: importtraject en verkoopklaar
 Sinds 07-09-2026. Het traject was **één lineaire lijst met één teller** (`vehicles.klaar`), en

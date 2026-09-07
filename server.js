@@ -168,6 +168,15 @@ async function logSchrijf(door, onderdeel, sleutel, actie, extra) {
    zonder de frontend te deployen. Een eigen kleur in users.kleur wint; anders wordt er een uit dit
    palet gekozen op een vaste plek, zodat iemands kleur niet verspringt als er een collega bij komt.
    Bewust geen oranje: dat is de huisstijl niet, en amber is in PVP de waarschuwingskleur. */
+/* De voertuigsoort mag alleen een van de vier codes uit rdw/velden.js zijn. Alles anders wordt leeg,
+   en leeg betekent personenauto — zo kan een tikfout in een koppeling nooit een auto met een
+   onbekende soort opleveren waarvoor geen enkele eis geldt. */
+function soortOf(x) {
+  const s = String(x === undefined || x === null ? '' : x).trim();
+  if (!s || !rdw) return null;
+  return rdw.SOORTEN.some(o => o.code === s) ? s : null;
+}
+
 const KLEUREN = ['#475569', '#2563eb', '#7c3aed', '#0f9488', '#be185d', '#4d7c0f', '#0369a1', '#6b21a8', '#155e75'];
 
 function sendJson(res, code, obj, headers) { res.writeHead(code, Object.assign({ 'Content-Type': 'application/json' }, headers || {})); res.end(JSON.stringify(obj)); }
@@ -722,13 +731,13 @@ const server = http.createServer(async (req, res) => {
       const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
       // Carport krijgt alleen de auto's die op hun eigen planning staan. Zelfde gedachte als bij de
       // taxateur: een afgeschermde rol hoort de catalogus niet te kunnen ophalen.
-      const kolommen = 'id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,import_auto,batch,note,status,factuurnr,inkoopprijs,verkoopdatum,docs,autoboek_status,autoboek_rij,autoboek_fout,verkoop_factuurnr,verkoop_factuurdatum,verkoopprijs,verkocht_gemeld_ts,verkocht_bevestigd_door,verkoop_bron,mobilox_id,mobilox_prijs,mobilox_online';
+      const kolommen = 'id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,import_auto,voertuigsoort,batch,note,status,factuurnr,inkoopprijs,verkoopdatum,docs,autoboek_status,autoboek_rij,autoboek_fout,verkoop_factuurnr,verkoop_factuurdatum,verkoopprijs,verkocht_gemeld_ts,verkocht_bevestigd_door,verkoop_bron,mobilox_id,mobilox_prijs,mobilox_online';
       const r = u.r === 'carport'
         ? await pool.query(`SELECT ${kolommen} FROM vehicles WHERE id IN (SELECT vehicle_id FROM carport_bonnen) ORDER BY sort_order NULLS LAST, id`)
         : await pool.query(`SELECT ${kolommen} FROM vehicles ORDER BY sort_order NULLS LAST, id`);
       // inkoopprijs is numeric; die geeft pg als string terug. Hier omzetten en niet met een globale
       // type-parser, want dan raak je ook iedere toekomstige numeric elders in de app.
-      return sendJson(res, 200, r.rows.map(v => ({ id: v.id, vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model, uitv: v.uitv, kleur: v.kleur, brandstof: v.brandstof, transm: v.transm, reg: v.reg, km: v.km, inkoopdatum: v.inkoopdatum, lev: v.lev, importAuto: v.import_auto, batch: v.batch, note: v.note, status: v.status, factuurnr: v.factuurnr, inkoopprijs: v.inkoopprijs === null ? null : Number(v.inkoopprijs), verkoopdatum: v.verkoopdatum, docs: Array.isArray(v.docs) ? v.docs : [],
+      return sendJson(res, 200, r.rows.map(v => ({ id: v.id, vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model, uitv: v.uitv, kleur: v.kleur, brandstof: v.brandstof, transm: v.transm, reg: v.reg, km: v.km, inkoopdatum: v.inkoopdatum, lev: v.lev, importAuto: v.import_auto, voertuigsoort: v.voertuigsoort || null, batch: v.batch, note: v.note, status: v.status, factuurnr: v.factuurnr, inkoopprijs: v.inkoopprijs === null ? null : Number(v.inkoopprijs), verkoopdatum: v.verkoopdatum, docs: Array.isArray(v.docs) ? v.docs : [],
         mobiloxId: v.mobilox_id, mobiloxPrijs: v.mobilox_prijs === null ? null : Number(v.mobilox_prijs), mobiloxOnline: v.mobilox_online,
         verkoopBron: v.verkoop_bron,
         autoboekStatus: v.autoboek_status, autoboekRij: v.autoboek_rij, autoboekFout: v.autoboek_fout,
@@ -777,10 +786,11 @@ const server = http.createServer(async (req, res) => {
       const so = await pool.query('SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM vehicles');
       await pool.query(
         `INSERT INTO vehicles (id,vin,kenteken,merk,model,uitv,kleur,brandstof,transm,reg,km,inkoopdatum,lev,
-                               import_auto,batch,note,factuurnr,inkoopprijs,verkoopdatum,sort_order,status,updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'komende',now())`,
+                               import_auto,voertuigsoort,batch,note,factuurnr,inkoopprijs,verkoopdatum,sort_order,status,updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'komende',now())`,
         [id, vin, kent || '—', tekst(b.merk), tekst(b.model), tekst(b.uitv), tekst(b.kleur), tekst(b.brandstof),
          tekst(b.transm), tekst(b.reg), getal(b.km), tekst(b.inkoopdatum), tekst(b.lev), b.importAuto === true,
+         soortOf(b.voertuigsoort),
          tekst(b.batch), tekst(b.note), tekst(b.factuurnr), getal(b.inkoopprijs), tekst(b.verkoopdatum), so.rows[0].n]);
       // Bewust niet hier in activity_log schrijven: putState() gooit die tabel leeg en vult hem
       // opnieuw uit de payload van de frontend, dus een regel van de server zou weer verdwijnen.
@@ -832,6 +842,8 @@ const server = http.createServer(async (req, res) => {
         vin: tekst, kenteken: tekst, merk: tekst, model: tekst, uitv: tekst, kleur: tekst,
         brandstof: tekst, transm: tekst, reg: datum, km: getal, inkoopdatum: datum, lev: tekst,
         batch: tekst, note: tekst, factuurnr: tekst, inkoopprijs: getal,
+        // De soort bepaalt welke foto's de RDW wil; hij hoort dus bij de auto en niet bij het proces.
+        voertuigsoort: soortOf,
       };
       const KOLOM = { importAuto: 'import_auto' };
       const nieuw = {}, fouten = [];
@@ -2150,6 +2162,15 @@ const server = http.createServer(async (req, res) => {
             + (telt !== null ? ` — ${inEuro(telt)}` : ' — geen inkoopprijs bekend') });
 
       return sendJson(res, 200, { ok: true, id, van, status: naar, bedrag: bed });
+    }
+
+    /* De eisenlijst zelf: welke voertuigsoorten er zijn en welke stukken per soort gelden. Geen
+       gegevens, alleen de definitie — vandaar geen rolfiltering en geen fs-controle. `index.html`
+       haalt hem hier op; daarvóór stond dezelfde lijst dubbel, hier én als PHOTO_GROUPS. */
+    if (url === '/api/velden' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (!rdw) return sendJson(res, 503, { error: 'eisenlijst niet beschikbaar' });
+      return sendJson(res, 200, rdw.velden());
     }
 
     /* ===== Het importdossier (RDW) — Fase A, 26-08-2026 ======================================
