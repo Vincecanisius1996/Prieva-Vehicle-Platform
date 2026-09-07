@@ -245,6 +245,22 @@
   .infobar{display:flex;align-items:center;gap:12px;padding:11px 15px;border-radius:10px;font-size:13px;margin-top:4px;background:var(--blue-soft);border:1px solid #c5dcef;color:#215883}
   .infobar .ai{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;flex:none;font-weight:800;background:#cfe1f2;color:var(--blue)}
   .muted{color:var(--muted)}
+  /* Keuzescherm voor de voertuigsoort: 2x2 tegels, à la de RDW-app maar in de PRIEVA-huisstijl.
+     Onder 560px zakt het naar één kolom; vier tegels naast elkaar leest op een telefoon niet. */
+  .soortraster{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:2px 0 14px}
+  @media(max-width:560px){.soortraster{grid-template-columns:1fr}}
+  .soorttegel{display:flex;align-items:flex-start;gap:11px;text-align:left;padding:13px 14px;border:1px solid var(--line);
+    border-radius:var(--radius);background:var(--card);cursor:pointer;font:inherit;color:var(--ink);transition:.15s}
+  .soorttegel:hover{border-color:var(--blue);box-shadow:0 2px 10px rgba(13,158,191,.13)}
+  .soorttegel .vs-ico{flex:none;color:var(--slate);margin-top:1px}
+  .soorttegel .vs-naam{font-weight:700;font-size:13px;line-height:1.25}
+  .soorttegel .vs-code{font-size:11px;color:var(--muted);font-weight:600;margin-top:2px}
+  .soorttegel .vs-eis{font-size:11px;color:var(--muted);margin-top:5px}
+  .soorttegel.aan{background:linear-gradient(120deg,var(--brand),var(--brand-2));border-color:transparent;color:#fff;
+    box-shadow:0 2px 10px rgba(13,158,191,.32)}
+  .soorttegel.aan .vs-ico,.soorttegel.aan .vs-code,.soorttegel.aan .vs-eis{color:rgba(255,255,255,.86)}
+  .soorttegel .vs-vink{margin-left:auto;font-weight:800;opacity:0}
+  .soorttegel.aan .vs-vink{opacity:1}
   .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:12px}
   .ptile{position:relative;width:100%;aspect-ratio:4/3;border:2px dashed #cdd8e2;border-radius:10px;display:grid;place-items:center;cursor:pointer;background:#f7fafd;overflow:hidden;transition:.15s}
   .ptile:hover{border-color:var(--blue);background:#eef5fb}
@@ -715,6 +731,11 @@ function badge(s){return `<span class="badge b-${s}">${statusLabel[s]}</span>`;}
    Windows is 🗑 een andere tekening dan op een Mac — en ze zijn niet mee te kleuren met de tekst.
    Deze erven currentColor en schalen mee met de lettergrootte. */
 const ICONEN = {
+  /* De vier voertuigsoorten van de RDW. Zelfde stijl als de rest: lijntekening op 24x24, geen vulling. */
+  vs_personenauto: '<path d="M3 13l2-5a2 2 0 012-1.3h10A2 2 0 0119 8l2 5"/><path d="M3 13h18v4H3z"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="16.5" cy="17.5" r="1.5"/>',
+  vs_bedrijfsauto: '<path d="M2 7h11v10H2z"/><path d="M13 10h4.5l3.5 3.5V17H13z"/><circle cx="6" cy="17.5" r="1.5"/><circle cx="17" cy="17.5" r="1.5"/>',
+  vs_motorfiets:   '<circle cx="5" cy="16" r="3"/><circle cx="19" cy="16" r="3"/><path d="M8 16h5l3-5h3"/><path d="M13 11l-2.5-3H8"/><path d="M16 11l-1.5-3"/>',
+  vs_aanhangwagen: '<path d="M4 8h14v7H4z"/><path d="M18 12h3"/><circle cx="8" cy="17.5" r="1.5"/><circle cx="14" cy="17.5" r="1.5"/><path d="M4 15v2"/>',
   waarschuwing: '<path d="M12 4l9 16H3l9-16z"/><path d="M12 10v4"/><path d="M12 17.5v.01"/>',
   plus:     '<path d="M12 5v14M5 12h14"/>',
   undo:     '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-4"/>',
@@ -2053,15 +2074,56 @@ function finishPhotoStep(id,stepIdx){const v=V.find(x=>x.id===id); if(!v)return;
 /* De voertuigsoort bepaalt welke vakjes je hier ziet. Hij staat op de kaart RDW-foto's omdat je het
    daar nodig hebt — Sjoerd kwam er juist bij het toevoegen van een bedrijfswagen op vast te lopen —
    en daarnaast in Gegevens wijzigen. Eén veld, twee plekken om het te zetten. */
+/* De subtitel per soort. De RDW-code staat apart, want daar zoek je op. */
+const SOORT_SUB={personenauto:'M1',bedrijfsauto:'N1 · ≤ 3500 kg',motorfiets:'L1e – L7e',aanhangwagen:'O2 · > 750, ≤ 3500 kg'};
+const SOORT_NAAM={personenauto:'Personenvoertuig',bedrijfsauto:'Lichte bedrijfsauto',
+                  motorfiets:'Bromfiets of motorfiets',aanhangwagen:'Aanhangwagen snelverkeer'};
+/* Hoeveel foto's de RDW voor deze soort verplicht stelt. Uit de eisenlijst zelf gerekend, dus dit
+   loopt vanzelf mee als daar iets in wijzigt. Het BPM-rapport telt niet mee: dat is geen foto en
+   het hangt aan de route. */
+function verplichteFotos(code){
+  return VELDEN.stukken.filter(st=>st.eis&&st.eis!=='route'&&st.eis[code]==='verplicht').length;
+}
+/* Het keuzescherm: 2x2, vaste plaatsing, één klik. Vervangt de keuzelijst die hier eerst stond —
+   je kiest hier het soort voertuig, niet een waarde uit een lijst, en dat hoort je te zien. */
+/* Het keuzescherm: 2x2, vaste plaatsing, één klik. Vervangt de keuzelijst die hier eerst stond —
+   je kiest hier het sóórt voertuig, niet een waarde uit een lijst, en dat hoort je te zien.
+   `nu` is de gekozen code, `onclickVan(code)` levert wat er bij een klik moet gebeuren. */
+function soortTegels(nu, onclickVan){
+  const volgorde=['personenauto','bedrijfsauto','motorfiets','aanhangwagen'];
+  const codes=volgorde.filter(c=>VELDEN.soorten.some(x=>x.code===c))
+    .concat(VELDEN.soorten.map(x=>x.code).filter(c=>!volgorde.includes(c)));
+  const tegel=c=>{
+    const n=verplichteFotos(c);
+    return `<button type="button" class="soorttegel ${c===nu?'aan':''}" onclick="${onclickVan(c)}"
+      title="${esc((SOORT_NAAM[c]||c)+' — '+(SOORT_SUB[c]||''))}">
+      <span class="vs-ico">${ico('vs_'+c,26)}</span>
+      <span style="min-width:0">
+        <span class="vs-naam">${esc(SOORT_NAAM[c]||soortLabel(c))}</span>
+        <div class="vs-code">${esc(SOORT_SUB[c]||'')}</div>
+        <div class="vs-eis">${n} verplichte foto${n===1?'':"'s"}</div>
+      </span>
+      <span class="vs-vink">✓</span></button>`;
+  };
+  return `<div class="soortraster">${codes.map(tegel).join('')}</div>`;
+}
 function soortKeuze(v){
-  const nu=soortVan(v);
-  return `<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:2px 0 10px">
-    <span class="muted" style="font-size:12px;font-weight:600">Voertuigsoort</span>
-    <select class="assign" style="min-width:250px" onchange="zetVoertuigsoort('${esc(v.id)}',this.value)">
-      ${VELDEN.soorten.map(o=>`<option value="${esc(o.code)}" ${o.code===nu?'selected':''}>${esc(o.label)}</option>`).join('')}
-    </select>
-    <span class="note" style="margin:0">Bepaalt welke foto's de RDW verplicht stelt.</span>
+  return `<div style="padding:2px 0 2px">
+    <div class="note" style="margin:0 0 7px">Voertuigsoort — bepaalt welke foto's de RDW verplicht stelt.</div>
+    ${soortTegels(soortVan(v), c=>`zetVoertuigsoort('${esc(v.id)}','${esc(c)}')`)}
   </div>`;
+}
+/* In het formulier (Auto toevoegen / Gegevens wijzigen) staat de keuze in een verborgen veld, zodat
+   het opslaan het gewoon met w('na-soort') uitleest — precies zoals de andere velden. */
+function soortTegelsFormulier(gekozen){
+  return `<input type="hidden" id="na-soort" value="${esc(gekozen||VELDEN.standaard)}">
+    ${soortTegels(gekozen||VELDEN.standaard, c=>`kiesSoortInFormulier('${esc(c)}')`)}`;
+}
+function kiesSoortInFormulier(code){
+  const h=document.getElementById('na-soort'); if(!h)return;
+  h.value=code;
+  const raster=h.parentElement&&h.parentElement.querySelector('.soortraster');
+  if(raster)raster.outerHTML=soortTegels(code, c=>`kiesSoortInFormulier('${esc(c)}')`);
 }
 async function zetVoertuigsoort(id,soort){
   const v=V.find(x=>x.id===id); if(!v||!apiOk)return;
@@ -2246,8 +2308,8 @@ function openAutoModal(wijzigId){
       <div class="fsec">Voertuig</div>
       <div class="fgrid">
         <div class="full"><label>Voertuigsoort</label>
-          <select id="na-soort">${VELDEN.soorten.map(o=>`<option value="${esc(o.code)}">${esc(o.label)}</option>`).join('')}</select>
-          <div class="note" style="margin:4px 0 0">Bepaalt welke foto's de RDW verplicht stelt. Een bedrijfswagen vraagt om de laadruimte en de scheidingswand.</div></div>
+          ${soortTegelsFormulier(bestaand?bestaand.voertuigsoort:null)}
+          <div class="note" style="margin:0 0 2px">Bepaalt welke foto's de RDW verplicht stelt. Personenvoertuig is de standaard.</div></div>
         ${veld('na-merk','Merk')}
         ${veld('na-model','Model')}
         <div class="full">${veld('na-uitv','Uitvoering')}</div>
@@ -2281,7 +2343,6 @@ function openAutoModal(wijzigId){
   // één kilometerstand recht te zetten.
   if(bestaand){
     const z=(id,w)=>{const e=document.getElementById(id); if(e&&w!==null&&w!==undefined&&w!=='—')e.value=w;};
-    z('na-soort',bestaand.voertuigsoort||VELDEN.standaard);
     z('na-vin',bestaand.vin); z('na-kenteken',bestaand.kenteken); z('na-merk',bestaand.merk);
     z('na-model',bestaand.model); z('na-uitv',bestaand.uitv); z('na-kleur',bestaand.kleur);
     z('na-brandstof',bestaand.brandstof); z('na-transm',bestaand.transm); z('na-reg',bestaand.reg);
