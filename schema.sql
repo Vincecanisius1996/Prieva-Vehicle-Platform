@@ -476,3 +476,23 @@ CREATE TABLE IF NOT EXISTS taken (
 );
 CREATE INDEX IF NOT EXISTS taken_open    ON taken (klaar, id DESC);
 CREATE INDEX IF NOT EXISTS taken_vehicle ON taken (vehicle_id) WHERE vehicle_id IS NOT NULL;
+
+-- ===== Twee sporen: importtraject en verkoopklaar (07-09-2026) =====
+-- Het traject was één lineaire lijst met één teller (`vehicles.klaar`), en `Fotograaf` stond daarin
+-- ná `BIN`. Een auto werd dus pas zichtbaar voor de fotograaf als het hele importtraject rond was —
+-- terwijl hij fysiek allang op de zaak stond. Bij de splitsing wachtten 22 auto's daarop.
+--
+-- Nu twee sporen die naast elkaar lopen, allebei vanaf binnenkomst:
+--   spoor 1  importtraject   RDW Foto's t/m BIN      -> blijft `vehicles.klaar`
+--   spoor 2  verkoopklaar    Fotograaf, Mobilox Online -> deze tabel
+-- Verkoopklaar = beide sporen af. Er is bewust GEEN blokkade: Prieva adverteert auto's ook zonder
+-- Nederlands kenteken, dus spoor 2 hangt niet aan het importtraject.
+--
+-- Geen teller maar een moment per stap: dan weet je meteen wanneer en door wie, en dat is precies
+-- wat je van de fotograaf wilt weten. Eigen tabel, dus buiten de blob van PUT /api/state.
+CREATE TABLE IF NOT EXISTS verkooptraject (
+  vehicle_id  text PRIMARY KEY,
+  foto_ts     bigint, foto_door   text,   -- fotograaf klaar
+  online_ts   bigint, online_door text,   -- advertentie staat online in Mobilox
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);

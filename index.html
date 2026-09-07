@@ -462,8 +462,14 @@ const ROUTE_NEE=[
   {label:"Wachten op BIN",cat:"Wachten op BIN"},
   {label:"BIN",cat:"BIN"},
 ];
-const TAIL=[{label:"Fotograaf",cat:"Fotograaf"},{label:"Mobilox Online",cat:"Mobilox Online"}];
-const CATS=["RDW Foto's","Papieren Foto's","BPM Taxatie","S-TAX","Importeren","RDW Goedkeuring","BPM rapport","Versturen","Wachten op BIN","BIN","Fotograaf","Mobilox Online"];
+/* Fotograaf en Mobilox Online zaten tot 07-09-2026 áchteraan dezelfde lijst, en dus achter BIN.
+   Een auto werd daardoor pas zichtbaar voor de fotograaf als het hele importtraject rond was,
+   terwijl hij fysiek allang op de zaak stond — bij de splitsing wachtten er 22 op. Nu is het een
+   eigen spoor dat vanaf binnenkomst loopt, met een eigen tabel (`verkooptraject`). Er is bewust
+   geen blokkade: Prieva adverteert auto's ook zonder Nederlands kenteken. */
+const VERKOOPSTAPPEN=[{sleutel:"foto",label:"Fotograaf",actie:"Fotograaf inplannen"},
+                      {sleutel:"online",label:"Mobilox Online",actie:"Advertentie online zetten (Mobilox)"}];
+const CATS=["RDW Foto's","Papieren Foto's","BPM Taxatie","S-TAX","Importeren","RDW Goedkeuring","BPM rapport","Versturen","Wachten op BIN","BIN"];
 const ACTIEVERB={"RDW Foto's":"RDW-foto's maken","Papieren Foto's":"Papieren-foto's maken","Papieren uploaden":"Papieren uploaden","S-TAX: auto klaar ter taxatie":"S-TAX: auto klaar ter taxatie melden","BPM-rapport geüpload door S-TAX":"BPM-rapport ophalen bij S-TAX","RDW Importeer":"RDW importeren","RDW Goedkeuring":"RDW-goedkeuring afwachten","BPM-taxatierapport versturen":"BPM-taxatierapport versturen","BPM-rapport maken":"BPM-rapport maken","Versturen":"BPM-rapport versturen","Wachten op BIN":"Wachten op BIN","BIN":"BIN verwerken","Fotograaf":"Fotograaf inplannen","Mobilox Online":"Advertentie online zetten (Mobilox)"};
 /* Het team komt uit GET /api/team. De lijst hieronder is nog slechts de TERUGVAL, voor als de API
    wegvalt of de app zonder backend draait — net als V. PEOPLE wordt IN PLACE gevuld: het is een const
@@ -621,13 +627,15 @@ function filterBalk(pagina,groepen){
 }
 const euro = n => (n==null||n===""?"—":"€ "+Number(n).toLocaleString("nl-NL",{minimumFractionDigits:2,maximumFractionDigits:2}));
 const statusLabel = {komende:"Komende",lopende:"Lopende","gemeld verkocht":"Gemeld verkocht",verkocht:"Verkocht"};
+/* Alleen nog het IMPORTtraject. Fotograaf en Mobilox Online zitten in het verkooppad hiernaast.
+   Een niet-importauto heeft dus helemaal geen importtraject meer — alleen het verkooppad. */
 function stepList(v){
-  if(!v.importAuto) return TAIL.slice();
+  if(!v.importAuto) return [];
   // Taxatie (JA/NEE) is losgekoppeld: staat niet meer als stap in de rij, maar wordt apart gezet
   // (kan al vóór de foto's). Zonder keuze tonen we alleen de foto-stappen; de rest volgt na de keuze.
   let L=IMPORT_BASE.slice();
-  if(v.route==='JA') L=L.concat(ROUTE_JA,TAIL);
-  else if(v.route==='NEE') L=L.concat(ROUTE_NEE,TAIL);
+  if(v.route==='JA') L=L.concat(ROUTE_JA);
+  else if(v.route==='NEE') L=L.concat(ROUTE_NEE);
   return L;
 }
 function steps(v){
@@ -729,6 +737,36 @@ async function loadVehicles(){ if(!apiOk)return;
       photos:v.photos,arrivedAt:v.arrivedAt,taxAt:v.taxAt}; });
     V.length=0; rows.forEach(r2=>{ V.push(r2); const p=vorige[r2.id]; if(p)Object.assign(r2,p); else initVeh(r2); });
   }catch(_){ /* geen backend of onleesbaar antwoord: terugvallijst blijft staan */ }
+}
+/* ===== Verkoopklaar-spoor =====
+   Fotograaf en Mobilox Online, los van het importtraject. Per auto twee momenten. */
+const verkooptraject = {};
+async function loadVerkooptraject(){ if(!apiOk)return;
+  try{ const r=await fetch("/api/verkooptraject",{cache:"no-store"}); if(!r.ok)return;
+    const j=await r.json(); if(!j||!j.vehicles)return;
+    Object.keys(verkooptraject).forEach(k=>{delete verkooptraject[k];});
+    Object.assign(verkooptraject,j.vehicles);
+  }catch(_){}
+}
+const vkVan = id => verkooptraject[id] || {};
+const vkKlaar = id => { const x=vkVan(id); return (x.fotoTs?1:0)+(x.onlineTs?1:0); };
+async function zetVerkoopstap(id,stap,klaar){
+  if(!apiOk)return;
+  try{
+    const r=await fetch("/api/verkoopstap",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id,stap,klaar})});
+    if(!r.ok){ const j=await r.json().catch(()=>({})); showToast(j.error==='forbidden'?"Daar heb je geen rechten voor":"Opslaan mislukt",false); return; }
+    await loadVerkooptraject(); rerenderCurrent();
+  }catch(_){ showToast("Geen verbinding met de server",false); }
+}
+/* De openstaande verkoopstap van een auto, of null als beide af zijn. Wordt naast currentAction()
+   gebruikt: die gaat over het importtraject, deze over het verkooppad. */
+function verkoopActie(v){
+  if(v.status!=='lopende')return null;
+  const x=vkVan(v.id);
+  if(!x.fotoTs) return VERKOOPSTAPPEN[0];
+  if(!x.onlineTs) return VERKOOPSTAPPEN[1];
+  return null;
 }
 /* ===== Taken =====
    Eén taakmodel sinds 07-09-2026. Een taak hoort bij een auto (vehicleId) of bij niemand; verder is
@@ -910,7 +948,14 @@ function isAdmin(){ return currentUser&&currentUser.role==='admin'; }
 function renderVandaag(){
   const kom=V.filter(v=>v.status==="komende");
   const lop=V.filter(v=>v.status==="lopende");
-  const acties=lop.map(v=>({v,a:currentAction(v)})).filter(x=>x.a);
+  /* Twee sporen, dus een auto kan tegelijk in het importtraject én in het verkooppad iets open
+     hebben staan. Allebei tonen: dat is precies de winst van de splitsing — de fotograaf hoeft niet
+     te wachten tot de RDW klaar is. */
+  const acties=[];
+  lop.forEach(v=>{
+    const a=currentAction(v); if(a)acties.push({v,a});
+    const w=verkoopActie(v);  if(w)acties.push({v,a:{actie:w.actie,cat:w.label,verkoop:w.sleutel}});
+  });
   /* Eén lijst open taken, of ze nu aan een auto hangen of niet. Vóór 07-09-2026 waren dit twee
      bronnen: subtaken van uitsluitend LOPENDE auto's, plus alle losse to-do's. Een taak op een
      komende of verkochte auto was daardoor nergens te zien. Nu doen ze allemaal mee: open werk is
@@ -936,7 +981,10 @@ function renderVandaag(){
                 : (t.vehicleId?esc(t.auto||t.vehicleId):'Algemene taak');
       return `<div class="todo"><label class="chk" title="Afvinken"><input type="checkbox" onchange="taakAf(${t.id},this.checked)"><span class="box"></span></label><div class="body" ${veh?`onclick="openVeh('${esc(veh.id)}')" style="cursor:pointer"`:'style="cursor:default"'}><div class="act">${esc(t.tekst)}</div><div class="veh">${sub}${ageChip(t.ts)}</div></div><select class="assign" onchange="taakWie(${t.id},this.value)">${opts}</select></div>`;}
     const v=x.v,a=x.a;
-    return `<div class="todo"><span class="tk"></span><div class="body" onclick="openVeh('${v.id}')"><div class="act">${a.actie}</div><div class="veh">${v.merk} ${v.model} · ${v.kenteken!=='—'?v.kenteken:v.vin}${ageChip(v.arrivedAt)}</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div>`;}
+    // Een verkoopstap is met één klik af; een trajectstap loopt via de auto zelf.
+    const vink=a.verkoop?`<label class="chk" title="Afvinken" onclick="event.stopPropagation()"><input type="checkbox" onchange="zetVerkoopstap('${esc(v.id)}','${a.verkoop}',this.checked)"><span class="box"></span></label>`
+                        :`<span class="tk"></span>`;
+    return `<div class="todo">${vink}<div class="body" onclick="openVeh('${v.id}')"><div class="act">${a.actie}</div><div class="veh">${v.merk} ${v.model} · ${v.kenteken!=='—'?v.kenteken:v.vin}${ageChip(v.arrivedAt)}</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div>`;}
   function personCard(name,list){const disp=name==="_"?"Niet toegewezen":name; const av=name==="_"?`<span class="pav" style="background:var(--slate)">?</span>`:pav(name);
     return `<div class="person-card"><div class="person-head">${av}<span class="pn">${disp}</span><span class="pc">${list.length} ta${list.length===1?'ak':'ken'}</span></div>${list.length?list.map(todoRow).join(""):`<div class="empty" style="padding:16px">Geen open taken</div>`}</div>`;}
 
@@ -1209,9 +1257,15 @@ function renderLopende(){
     // Niet "nog te bevestigen": sinds de factuur de verkoop afrondt hoeft niemand hier iets te doen.
     // Deze auto is verkocht op een overeenkomst; de factuur volgt bij de aflevering en zet hem
     // vanzelf op verkocht. Een label dat om actie vraagt waar geen actie is, is ruis.
+    const w=verkoopActie(v);
     const cur=v.status==='gemeld verkocht'?`<span class="badge b-gemeld" title="Verkocht op een verkoopovereenkomst. Zodra de factuur in Mobilox staat, zet de agent hem op verkocht en verhuist de regel in het Autoboek.">Verkocht — factuur volgt</span>`
-      :a==null?`<span class="badge b-lopende">✓ Verkoopklaar</span>`
+      :(a==null&&w==null)?`<span class="badge b-lopende">✓ Verkoopklaar</span>`
+      :a==null?`<span class="badge b-lopende" title="Het importtraject is rond">✓ Import rond</span>`
       :(a.decision?`<span class="phase-lab">BPM Taxatie?</span> <span class="need">keuze nodig</span>`:`<span class="phase-lab">${a.actie}</span>`);
+    // Het verkooppad ernaast: twee bolletjes, want het loopt los van het importtraject.
+    const vkStand=(()=>{ if(v.status!=='lopende')return '';
+      const x=vkVan(v.id); const bol=(af,lab)=>`<span title="${lab}: ${af?'klaar':'nog te doen'}" style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3px;background:${af?'var(--green)':'var(--line)'}"></span>`;
+      return `<div style="margin-top:4px;white-space:nowrap">${bol(!!x.fotoTs,'Fotograaf')}${bol(!!x.onlineTs,'Mobilox Online')}<span class="muted" style="font-size:11px">${x.onlineTs?'online':x.fotoTs?'gefotografeerd':'nog niet op de foto'}</span></div>`;})();
     const rb=v.importAuto&&v.route?`<span class="route-badge rbg-${v.route==='JA'?'ja':'nee'}">${v.route}</span>`:'';
     // De afleverdatum hoort hier thuis: dat is de deadline van het hele traject, en tot nu toe was
     // hij alleen op de Carport-pagina te zien. Bewust géén extra kolom — de tabel telt er al vijftien
@@ -1219,7 +1273,7 @@ function renderLopende(){
     const bon=afleverBonVan(v.id);
     const tv=takenVan(v.id);
     return `<tr onclick="openVeh('${v.id}')" style="cursor:pointer">${boekCellen(v)}
-      <td style="min-width:230px"><div class="pbar"><div class="pfill" style="width:${pct}%"></div></div><div style="margin-top:5px;white-space:nowrap">${cur} <span class="muted" style="font-size:11px">· ${s.done}/${s.total}</span></div>
+      <td style="min-width:230px"><div class="pbar"><div class="pfill" style="width:${pct}%"></div></div><div style="margin-top:5px;white-space:nowrap">${cur}${s.total?` <span class="muted" style="font-size:11px">· ${s.done}/${s.total}</span>`:''}</div>${vkStand}
         ${bon?`<div style="margin-top:4px;white-space:nowrap">${tijdChip(dagUit(bon.afleverdatum),`Aflevering ${bon.afleverdatum}`)} <span class="muted" style="font-size:11px">aflevering ${esc(bon.afleverdatum)}</span></div>`:''}
         ${tv.totaal?`<div style="margin-top:4px">${takenRing(tv.af,tv.totaal,`${tv.af} van de ${tv.totaal} taken afgevinkt — open de auto om ze af te vinken`)}</div>`:''}</td>
       <td><span class="tag ${v.importAuto?'tag-imp':'tag-nl'}">${v.importAuto?'Import':'NL'}</span> ${rb}</td>
@@ -1493,7 +1547,8 @@ function openVehNu(id){
     <div class="det-grid">
       <div style="display:flex;flex-direction:column;gap:18px">
         ${v.status==='lopende'&&v.importAuto?taxPanel(v):''}
-        ${v.status==='lopende'?`<div class="card"><h3>Import/BPM-traject <span class="muted" style="font-weight:500;font-size:12px">${s.done}/${s.total} stappen${v.route?` · route ${v.route}`:''}</span></h3><div class="card-body" style="padding:6px 16px 12px">
+        ${v.status==='lopende'?verkoopkaart(v):''}
+        ${v.status==='lopende'&&v.importAuto?`<div class="card"><h3>Import/BPM-traject <span class="muted" style="font-weight:500;font-size:12px">${s.done}/${s.total} stappen${v.route?` · route ${v.route}`:''}</span></h3><div class="card-body" style="padding:6px 16px 12px">
           ${s.arr.map((st,idx)=>{
             return `<div class="tstep ${st.state}"><label class="chk"><input type="checkbox" ${st.state==='done'?'checked':''} onchange="setStep('${v.id}',${idx},this.checked)"><span class="box"></span></label><div style="flex:1"><div class="h">${st.label}</div><div class="d">${st.state==='done'?'Afgerond':st.state==='current'?'Nu aan de beurt':'Nog te doen'}</div></div></div>`;
           }).join("")}
@@ -1970,6 +2025,22 @@ function addSubtask(id){
   inp.value="";
   // De eigenaar van de auto is de logische eerste eigenaar van een taak die je hier aanmaakt.
   taakDoe('/api/taak',{tekst:t,vehicleId:id,owner:v.owner||null});
+}
+/* Het verkooppad op de auto zelf. Staat bovenaan, boven het importtraject: dit is wat de auto te
+   koop maakt, en het wacht sinds 07-09-2026 niet meer op de RDW. */
+function verkoopkaart(v){
+  const x=vkVan(v.id);
+  const rij=(st,ts,door)=>`<div class="tstep ${ts?'done':'current'}">
+    <label class="chk"><input type="checkbox" ${ts?'checked':''} onchange="zetVerkoopstap('${esc(v.id)}','${st.sleutel}',this.checked)"><span class="box"></span></label>
+    <div style="flex:1"><div class="h">${st.label}</div>
+      <div class="d">${ts?`Afgerond${door?' door '+esc(door):''} · ${fmtDate(ts)}`:'Nog te doen'}</div></div></div>`;
+  const af=(x.fotoTs?1:0)+(x.onlineTs?1:0);
+  return `<div class="card"><h3>Verkoopklaar <span class="muted" style="font-weight:500;font-size:12px">${af}/2 stappen</span></h3>
+    <div class="card-body" style="padding:6px 16px 12px">
+      ${rij(VERKOOPSTAPPEN[0],x.fotoTs,x.fotoDoor)}
+      ${rij(VERKOOPSTAPPEN[1],x.onlineTs,x.onlineDoor)}
+      <div class="muted" style="font-size:12px;padding:8px 2px 0">Loopt los van het importtraject: een auto mag online zonder Nederlands kenteken.</div>
+    </div></div>`;
 }
 function subtaskCard(v){
   const lijst=takenVoorAuto(v.id);
@@ -3178,15 +3249,27 @@ function copyAdLinks(id){ const links=adList(id).map(u=>location.origin+u).join(
 
 /* ===== Fotograaf-weergave ===== */
 function renderFoto(){ if(fotoState.car)renderFotoCar(); else renderFotoList(); syncHistory(); }
+/* Tot 07-09-2026 toonde dit ALLE lopende auto's — inmiddels negenenveertig, zonder onderscheid
+   tussen wat af is en wat niet. Nu is het een werklijst: bovenaan wat nog moet, de rest ingeklapt.
+   De fotograaf vinkt zijn eigen stap af; dat kon hij hiervoor niet. */
 function renderFotoList(){
   const lop=V.filter(v=>v.status==="lopende");
-  const rows=lop.length? lop.map(v=>{ const n=adList(v.id).length;
+  const open=lop.filter(v=>!vkVan(v.id).fotoTs);
+  const af=lop.filter(v=>vkVan(v.id).fotoTs);
+  const rij=(v,gedaan)=>{ const n=adList(v.id).length; const x=vkVan(v.id);
     return `<div class="fotocar" onclick="openFotoCar('${v.id}')"><div class="thumb">${carIcon()}</div>
-      <div style="flex:1;min-width:0"><div class="nm">${v.merk} ${v.model}</div><div class="id">${v.kenteken!=='—'?v.kenteken:v.vin}</div></div>
-      <div class="fotocount ${n?'has':''}">${n?`${n} foto${n===1?'':'’s'}`:'nog geen'}</div><span style="color:var(--muted);font-size:21px">›</span></div>`;
-  }).join("") : `<div class="empty"><div class="eb">${ico("camera",26)}</div>Er staan nog geen auto's binnen om te fotograferen.</div>`;
-  app.innerHTML=`<h1 class="page-title">Te fotograferen</h1><p class="page-sub">Kies een auto en voeg de advertentiefoto's toe. Ze worden direct bewaard.</p>
-    <div class="card"><div style="padding:4px">${rows}</div></div>`;
+      <div style="flex:1;min-width:0"><div class="nm">${esc(v.merk)} ${esc(v.model)}</div><div class="id">${esc(v.kenteken!=='—'?v.kenteken:v.vin)}</div></div>
+      <div class="fotocount ${n?'has':''}">${n?`${n} foto${n===1?'':'’s'}`:'nog geen'}</div>
+      ${gedaan?`<span class="badge b-lopende" title="Afgevinkt${x.fotoDoor?' door '+esc(x.fotoDoor):''}${x.fotoTs?' op '+fmtDate(x.fotoTs):''}">✓ klaar</span>`:''}
+      <span onclick="event.stopPropagation()"><label class="chk" title="${gedaan?'Terugzetten':'Afvinken als gefotografeerd'}"><input type="checkbox" ${gedaan?'checked':''} onchange="zetVerkoopstap('${esc(v.id)}','foto',this.checked)"><span class="box"></span></label></span>
+      <span style="color:var(--muted);font-size:21px">›</span></div>`;
+  };
+  app.innerHTML=`<h1 class="page-title">Te fotograferen</h1>
+    <p class="page-sub">Kies een auto en voeg de advertentiefoto's toe. Ze worden direct bewaard. Vink een auto af zodra hij klaar is — dan verdwijnt hij uit deze lijst.</p>
+    <div class="card"><h3>Nog te doen <span class="gcount">${open.length}</span></h3><div style="padding:4px">
+      ${open.length?open.map(v=>rij(v,false)).join(""):`<div class="empty"><div class="eb">${ico("camera",26)}</div>Alles is gefotografeerd. Zodra er een auto binnenkomt staat hij hier.</div>`}
+    </div></div>
+    ${af.length?`<div class="card"><details><summary style="cursor:pointer;padding:12px 16px;font-weight:700;font-size:14px">${af.length} al gefotografeerd</summary><div style="padding:4px">${af.map(v=>rij(v,true)).join("")}</div></details></div>`:''}`;
 }
 function openFotoCar(id){ fotoState.car=id; renderFoto(); window.scrollTo(0,0); }
 function fotoBack(){ fotoState.car=null; renderFoto(); window.scrollTo(0,0); }
@@ -3246,10 +3329,10 @@ async function startFor(){
   if(db&&foto)db.textContent=(currentUser.name||'Fotograaf')+' · voeg per auto de advertentiefoto’s toe';
   if(db&&tax)db.textContent=(currentUser.name||'S-TAX')+' · auto’s op taxatie · bekijk foto’s en upload het BPM-rapport';
   if(db&&cp)db.textContent=(currentUser.name||'CarPort')+' · planning · werk af en meld een auto af zodra hij klaarstaat';
-  if(foto){ state.view='foto'; loadAdphotos().then(loadStatusFoto).then(renderFoto); }
+  if(foto){ state.view='foto'; loadAdphotos().then(loadStatusFoto).then(loadVerkooptraject).then(renderFoto); }
   else if(tax){ state.view='tax'; loadTaxState().then(loadBpm).then(loadTaxAfgerond).then(renderTax); }
   else if(cp){ state.view='carport'; loadCarport().then(renderCarport); }
-  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen(),loadNotities(),loadLogistiek(),loadTaken()]).then(()=>go('vandaag')); }
+  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen(),loadNotities(),loadLogistiek(),loadTaken(),loadVerkooptraject()]).then(()=>go('vandaag')); }
 }
 /* De lijst V onderaan dit bestand is bevroren op deze datum. Staat er geen verbinding, dan is dát
    wat je ziet — en dan hoort er te staan hoe oud het is. */

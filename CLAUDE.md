@@ -106,7 +106,8 @@ uit), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
 `/api/team` (elke rol), `/api/notities` + `/api/notitie` + `/api/notitie-af` (team+admin),
 `/api/notitie-del` (**alleen admin**), `/api/betalingen` (team+admin), `/api/betaling` (**alleen admin**),
 `/api/taxafgerond` (taxateur+team+admin),
-`/api/taken` + `/api/taak` + `-af` + `-wie` + `-del` (team+admin), `/api/logistiek` + `-plaatsen` + `-verplaatsen` + `-terug` +
+`/api/taken` + `/api/taak` + `-af` + `-wie` + `-del` (team+admin),
+`/api/verkooptraject` (team+admin+foto) + `/api/verkoopstap` (foto alleen de stap `foto`), `/api/logistiek` + `-plaatsen` + `-verplaatsen` + `-terug` +
 `-notitie` + `-volgorde` (team+admin), `/api/logistiek-del` (**alleen admin**),
 `PUT /api/vehicle` (team+admin, auto corrigeren), `/api/inruil` (GET+POST, team+admin),
 `/api/carport-afgeleverd` (**alleen team+admin**),
@@ -386,6 +387,50 @@ Zie `rdw/LEESMIJ.md`.
 - **Stand bij de ingebruikname:** 59 importauto's in beeld (de verkochte eruit), waarvan **9 compleet
   en 50 onvolledig**; bij 48 ontbreken alle voertuigfoto's en bij 49 het buitenlandse kentekenbewijs.
   Dat is geen meetfout maar de reden dat dit gebouwd is: het dossier zat tot nu toe in de mailbox.
+
+## Twee sporen: importtraject en verkoopklaar
+Sinds 07-09-2026. Het traject was **één lineaire lijst met één teller** (`vehicles.klaar`), en
+`Fotograaf` stond daarin ná `BIN`. Afvinken van stap *i* betekent "we zijn tot en met *i*", dus een
+auto werd pas zichtbaar voor de fotograaf als het hele importtraject rond was — terwijl hij fysiek
+allang op de zaak stond. Bij de splitsing wachtten **22 auto's** daarop.
+
+Nu twee sporen die naast elkaar lopen, allebei vanaf binnenkomst:
+
+| | |
+|---|---|
+| **Importtraject** | RDW Foto's t/m BIN — blijft `vehicles.klaar` |
+| **Verkoopklaar** | Fotograaf, Mobilox Online — de tabel `verkooptraject` |
+
+- **Geen blokkade tussen de sporen** (opgave Prieva): Prieva adverteert auto's ook zónder Nederlands
+  kenteken, dus *Mobilox Online* hoeft niet op de BIN te wachten. *Verkoopklaar* = beide sporen af.
+- **Geen teller maar een moment per stap** (`foto_ts`, `online_ts`, met wie). Dan weet je wanneer en
+  door wie er gefotografeerd is; dat past niet in een teller. Eigen tabel, dus buiten de blob van
+  `PUT /api/state`.
+- **De fotograaf mag zijn eigen stap afvinken** (`/api/verkoopstap`, `stap='foto'`). *Mobilox Online*
+  blijft team/admin — dat is verkoopwerk. Carport en taxateur krijgen 403.
+- **Het fotograaf-portaal is een werklijst geworden.** Het toonde álle lopende auto's (49 stuks)
+  zonder onderscheid; nu bovenaan wat nog moet en de rest ingeklapt.
+- **De agent vult het spoor zelf.** Ziet hij een advertentie online staan, dan zet hij beide stappen —
+  maar alleen wat nog leeg is, en hij haalt nooit iets weg: een advertentie die tijdelijk offline gaat
+  betekent niet dat de foto's verdwenen zijn.
+- **Migratie:** `inhaalslag/verkooptraject-vullen.js`, geseed op `vehicles.mobilox_online`. Bewust
+  **niet** op `klaar`: onder het oude model kón niemand *Fotograaf* afvinken zolang het importtraject
+  liep, dus dat zegt niets. Live: **54 auto's beide stappen af, 10 open**. Ontbreekt `mobilox_ts`, dan
+  wordt het moment van de migratie gebruikt en niet `null` — een lege datum telt als "stap niet
+  gedaan", en dan zet de migratie juist de auto's die al klaar zijn alsnog op de fotolijst.
+
+## PUT /api/state weigert een verouderde blob
+Sinds 07-09-2026. `getState` geeft een **`versie`** mee (het jongste moment waarop een voertuigrij is
+geschreven); de frontend stuurt die terug als `basisVersie`. `putState` kijkt **per auto**: is die rij
+ná `basisVersie` geschreven én stuurt deze browser er iets ánders voor op, dan is dat een verouderd
+geheugen en volgt **409** — er wordt dan niets geschreven, ook het activiteitenlog niet.
+- **Per auto en niet over de hele blob:** twee mensen die tegelijk aan verschillende auto's werken
+  hoeven elkaar niet te blokkeren.
+- **Geen versie meegestuurd = een tabblad van vóór deze wijziging.** Dat telt als 0, dus als "alles is
+  nieuwer", en krijgt 409 met de vraag om te verversen.
+- Aanleiding: op 07-09 zette een tabblad dat sinds vóór 14:29 openstond de BMW 6-serie terug van
+  *lopende* naar *komende*, en stuurde ook de vier base64-foto's van die middag opnieuw mee. Die hield
+  de nieuwe fotogrendel tegen; de statusvelden waren onbeschermd. Zelfde zwakte als op 20-08-2026.
 
 ## Eén taakmodel: de tabel `taken`
 Sinds 07-09-2026. Taken zaten in **twee gescheiden administraties** en dat gaf een gat dat je alleen

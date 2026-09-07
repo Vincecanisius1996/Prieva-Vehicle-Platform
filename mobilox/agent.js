@@ -174,7 +174,7 @@ function uitRegel(r, soort) {
       ? (/^PVP_VERKOOP_TOKEN=(.*)$/m.exec(fs.readFileSync('/var/pvp/verkoop.env','utf8')) || [])[1] : '') || '';
     if (ECHT && !token) throw new Error('PVP_VERKOOP_TOKEN ontbreekt — zonder token weigert /api/verkocht terecht');
 
-    const uitkomsten = { gemeld:0, verkocht:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0, binnen:0, advertentie:0, aangevuld:0, vervallen:0, notitie:0 };
+    const uitkomsten = { gemeld:0, verkocht:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0, binnen:0, verkoopklaar:0, advertentie:0, aangevuld:0, vervallen:0, notitie:0 };
     for (const { r, a } of perAuto.values()) {
       const regel = `${(a.merk+' '+a.model).padEnd(24)} ${String(a.kenteken).padEnd(11)} ${r.soort} ${r.nummer}`;
       if (!ECHT) { console.log('  zou melden: ' + regel + `  € ${r.prijs} · ${r.datum}` + (r.afleverdatum?` · aflever ${r.afleverdatum}`:'')); continue; }
@@ -256,6 +256,30 @@ function uitRegel(r, soort) {
         bij++;
       }
       if (bij) { uitkomsten.advertentie = bij; console.log(`  ${bij} advertentie(s) gekoppeld of bijgewerkt`); }
+
+      /* Staat de advertentie online, dan is die auto gefotografeerd én online gezet — dat hoeft
+         niemand met de hand bij te houden. Alleen invullen wat nog leeg is: heeft iemand het al
+         afgevinkt, dan blijft zijn naam en moment staan. Andersom halen we niets weg: een
+         advertentie die tijdelijk offline gaat betekent niet dat de foto's verdwenen zijn. */
+      let vk = 0;
+      for (const p of producten) {
+        if (!p.online) continue;
+        const a = (p.vin && perVin.get(norm(p.vin))) || (p.kenteken && perKent.get(norm(p.kenteken))) || null;
+        if (!a) continue;
+        const r = await pool.query(
+          `INSERT INTO verkooptraject (vehicle_id, foto_ts, foto_door, online_ts, online_door)
+           VALUES ($1,$2,'mobilox-agent',$2,'mobilox-agent')
+           ON CONFLICT (vehicle_id) DO UPDATE SET
+             foto_ts    = COALESCE(verkooptraject.foto_ts, EXCLUDED.foto_ts),
+             foto_door  = COALESCE(verkooptraject.foto_door, EXCLUDED.foto_door),
+             online_ts  = COALESCE(verkooptraject.online_ts, EXCLUDED.online_ts),
+             online_door= COALESCE(verkooptraject.online_door, EXCLUDED.online_door),
+             updated_at = now()
+           WHERE verkooptraject.online_ts IS NULL OR verkooptraject.foto_ts IS NULL`,
+          [a.id, Date.now()]);
+        vk += r.rowCount;
+      }
+      if (vk) { uitkomsten.verkoopklaar = vk; console.log(`  ${vk} auto('s) op verkoopklaar gezet (advertentie staat online)`); }
 
       // Lege velden aanvullen uit de advertentie. Mobilox weet van elke auto die te koop staat de
       // kleur, de brandstof en of het een automaat is; PVP hoeft dat niet nog eens te laten intikken.

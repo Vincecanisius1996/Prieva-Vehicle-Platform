@@ -1625,6 +1625,55 @@ const server = http.createServer(async (req, res) => {
     if (url === '/api/bpmnotif-seen' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); await pool.query('UPDATE bpm_notifs SET seen=true WHERE seen=false'); return sendJson(res, 200, { ok: true }); }
     if (url === '/api/bpmreport-del' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.url) return sendJson(res, 400, { error: 'missing' }); await pool.query('DELETE FROM bpm_reports WHERE vehicle_id=$1 AND url=$2', [b.id, b.url]); try { const rel = decodeURIComponent(String(b.url).replace(/^\/uploads\//, '')); if (rel.indexOf('..') < 0) fs.unlink(path.join(UPLOAD_DIR, rel), () => {}); } catch (_) {} return sendJson(res, 200, { ok: true }); }
 
+    /* ===== Verkoopklaar-spoor (07-09-2026) ================================================
+       Fotograaf en Mobilox Online, los van het importtraject. Zie de tabel `verkooptraject` in
+       schema.sql voor het waarom.
+
+       De FOTOGRAAF mag hier bij: het is zijn eigen stap, en die kon hij tot nu toe niet afvinken.
+       Mobilox Online blijft team/admin — dat is verkoopwerk. */
+
+    if (url === '/api/verkooptraject' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin' && u.r !== 'foto') return sendJson(res, 403, { error: 'forbidden' });
+      const r = await pool.query('SELECT * FROM verkooptraject');
+      const uit = {};
+      for (const x of r.rows) uit[x.vehicle_id] = {
+        fotoTs: x.foto_ts, fotoDoor: x.foto_door, onlineTs: x.online_ts, onlineDoor: x.online_door };
+      return sendJson(res, 200, { vehicles: uit });
+    }
+
+    // Een stap zetten of terugdraaien. Beide kanten op, dus geen bevestiging nodig.
+    if (url === '/api/verkoopstap' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      const b = await readBody(req) || {};
+      const id = String(b.id || '').trim();
+      const stap = String(b.stap || '').trim();          // 'foto' | 'online'
+      if (!id || (stap !== 'foto' && stap !== 'online')) return sendJson(res, 400, { error: 'missing' });
+      // De fotograaf mag alleen zijn eigen stap. Verbergen in beeld is nooit genoeg.
+      const mag = (u.r === 'team' || u.r === 'admin') || (u.r === 'foto' && stap === 'foto');
+      if (!mag) return sendJson(res, 403, { error: 'forbidden' });
+      if (!(await pool.query('SELECT 1 FROM vehicles WHERE id=$1', [id])).rowCount)
+        return sendJson(res, 404, { error: 'onbekende auto' });
+
+      const aan = b.klaar !== false;
+      const wie = u.n || u.u;
+      const oud = (await pool.query('SELECT * FROM verkooptraject WHERE vehicle_id=$1', [id])).rows[0] || null;
+      // Het moment hoort bij de stap: terugdraaien wist het, anders staat er een datum onder een
+      // stap die niet gezet is.
+      const kolTs = stap === 'foto' ? 'foto_ts' : 'online_ts';
+      const kolDoor = stap === 'foto' ? 'foto_door' : 'online_door';
+      const alGezet = oud && oud[kolTs];
+      await pool.query(
+        `INSERT INTO verkooptraject (vehicle_id, ${kolTs}, ${kolDoor}, updated_at)
+         VALUES ($1,$2,$3,now())
+         ON CONFLICT (vehicle_id) DO UPDATE SET ${kolTs}=EXCLUDED.${kolTs}, ${kolDoor}=EXCLUDED.${kolDoor}, updated_at=now()`,
+        [id, aan ? (alGezet || Date.now()) : null, aan ? (alGezet ? oud[kolDoor] : wie) : null]);
+      if (!!alGezet !== aan)
+        await logSchrijf(wie, 'verkooptraject', id, (stap === 'foto' ? 'fotograaf' : 'online') + (aan ? ' klaar' : ' teruggezet'),
+          { naar: aan ? 'klaar' : 'open' });
+      return sendJson(res, 200, { ok: true, id, stap, klaar: aan });
+    }
+
     /* ===== Taken (07-09-2026) =============================================================
        Eén taakmodel. Een taak hoort bij een auto (vehicle_id) of bij niemand; verder is er geen
        verschil. Daarmee is de scheiding tussen "to-do" en "extra taak" weg: dezelfde rij staat op
