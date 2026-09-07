@@ -1057,16 +1057,48 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, id: b.id, status: 'lopende', autoboek: await autoboekVerplaats(b.id, 'terug') });
     }
 
-    // Auto binnengekomen: de regel verhuist in het Autoboek van Komende naar Lopende. De status zelf
-    // loopt via PUT /api/state; dit endpoint doet alleen het Autoboek, zodat het opslaan snel blijft.
+    /* Auto binnengekomen: de regel verhuist in het Autoboek van Komende naar Lopende.
+       Het endpoint zet sinds 07-09-2026 óók de status zelf. Daarvóór deed het alleen het Autoboek en
+       kwam de status uit PUT /api/state — prima zolang alleen de app dit aanriep, maar de
+       Mobilox-agent heeft geen state-blob en mag die weg ook niet op: dat is het schrijfpad dat op
+       20-08-2026 het traject van 64 auto's kostte. Nu is één aanroep genoeg en gelden voor iedereen
+       dezelfde regels.
+
+       Twee manieren binnen, net als bij /api/verkocht: een ingelogde collega of de koppeling met het
+       bearer-token. `datum` (dd-mm-jjjj) is optioneel en zet het moment van binnenkomst; zonder
+       datum is dat nu. De agent geeft de factuurdatum mee, want een inruiler stond op die dag al op
+       de zaak — hem later "binnen" melden zou de doorlooptijd van die auto verkeerd laten beginnen. */
     if (url === '/api/binnengekomen' && method === 'POST') {
-      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
-      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const sessie = userFromReq(req);
+      const viaApp = sessie && (sessie.r === 'team' || sessie.r === 'admin');
+      if (!viaApp) {
+        const token = (process.env.PVP_VERKOOP_TOKEN || '').trim();
+        if (!token) return sendJson(res, sessie ? 403 : 401, { error: sessie ? 'forbidden' : 'auth' });
+        const kop = String(req.headers.authorization || '');
+        const gegeven = kop.startsWith('Bearer ') ? kop.slice(7).trim() : '';
+        const a = Buffer.from(gegeven), bb = Buffer.from(token);
+        if (a.length !== bb.length || !crypto.timingSafeEqual(a, bb))
+          return sendJson(res, sessie ? 403 : 401, { error: sessie ? 'forbidden' : 'auth' });
+      }
       const b = await readBody(req) || {};
       if (!b.id) return sendJson(res, 400, { error: 'missing' });
-      const r = await pool.query('SELECT id FROM vehicles WHERE id=$1', [b.id]);
+      const r = await pool.query('SELECT id, status FROM vehicles WHERE id=$1', [b.id]);
       if (!r.rowCount) return sendJson(res, 404, { error: 'onbekende auto' });
-      return sendJson(res, 200, { autoboek: await autoboekVerplaats(b.id, 'binnen') });
+      const v = r.rows[0];
+
+      let gezet = false;
+      if (v.status === 'komende') {
+        // Alleen vanaf 'komende'. Een auto die al lopende of verkocht is hoort hier niet teruggezet
+        // te worden — dan is dit een dubbele aanroep, en die mag niets kapotmaken.
+        const ts = dagUitTekst(b.datum) || Date.now();
+        await pool.query("UPDATE vehicles SET status='lopende', klaar=0, route=NULL, arrived_at=$2, updated_at=now() WHERE id=$1",
+          [v.id, ts]);
+        gezet = true;
+      }
+      return sendJson(res, 200, {
+        ok: true, id: v.id, van: v.status, status: gezet ? 'lopende' : v.status, gezet,
+        autoboek: await autoboekVerplaats(b.id, 'binnen')
+      });
     }
 
     // Bevestigen door een beheerder: status 'verkocht' én de regel in het Autoboek verplaatsen.

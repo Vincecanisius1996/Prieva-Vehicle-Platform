@@ -111,7 +111,8 @@ uit), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
 `PUT /api/vehicle` (team+admin, auto corrigeren), `/api/inruil` (GET+POST, team+admin),
 `/api/carport-afgeleverd` (**alleen team+admin**),
 `/api/vehicle-del` (**alleen admin**), `/api/vehicledoc`, `/api/uitlezen`, `/api/autoboek-retry`,
-`/api/verkoop-bevestigen` + `/api/verkoop-terug` (**alleen admin**), `/api/binnengekomen`,
+`/api/verkoop-bevestigen` + `/api/verkoop-terug` (**alleen admin**),
+`/api/binnengekomen` (team+admin of het verkoop-token),
 `/uploads/*` (auth).
 Auth = HMAC-ondertekende cookie (stateless).
 
@@ -794,10 +795,21 @@ agents, want twee exemplaren van dezelfde logica lopen uiteen. Drie dingen om te
   diezelfde ochtend. `voedtScherm` bepaalt de slotzin: bij een koppeling "wat hieronder staat kan
   verouderd zijn", bij een back-up "een back-up die stilstaat merk je pas als je hem nodig hebt".
 
-- **Een inruil is een feit, geen voorstel** (23-08-2026). Staat er een inruilauto op een
-  verkoopovereenkomst, dan komt die auto bij de aflevering binnen. De agent maakt hem aan bij
-  **Komende** en schrijft hem naar *Komende Autos* in het Autoboek, met leverancier `Inruil`, de
-  inruilprijs als inkoopprijs en een notitie bij welke verkoop hij hoort. Alleen voor een inruil die
+- **Een inruil is een feit, geen voorstel** (23-08-2026). De agent maakt hem aan met leverancier
+  `Inruil`, de inruilprijs als inkoopprijs en een notitie bij welke verkoop hij hoort. **Wánneer die
+  auto er staat hangt af van het soort stuk** (opgave Prieva, 07-09-2026):
+  - op een **verkoopovereenkomst** komt hij bij de aflevering binnen → aanmaken bij **Komende**, in
+    het Autoboek op *Komende Autos*, en iemand vinkt hem aan zodra hij er is;
+  - op een **factuur** staat hij er al: de klant levert zijn oude auto in op het moment dat hij zijn
+    nieuwe ophaalt, en de factuur ís dat moment. De agent zet hem daarom **meteen op binnen, met de
+    factuurdatum** als moment van binnenkomst, en de regel gaat direct naar *Lopende Autos*.
+
+  Dat onderscheid is er niet voor de sier. Het handmatige vinkje "binnengekomen" bestaat voor
+  **ingekochte auto's uit het buitenland**: die komen weken later en per batch aan, en je weet vooraf
+  niet welke er morgen precies staan. Een inruiler wacht op niets. Bleef hij op *Komende* staan, dan
+  wachtte hij op een vinkje dat niemand komt zetten — zo stond de BMW 6-serie `RX-813-G` drie dagen
+  op komend en de Volkswagen Caddy `V-99-PLV` vijf. Bij de invoering zijn die drie (samen met de
+  Citroën C3 `XL-220-G`) alsnog op binnen gezet met hun eigen factuurdatum. Alleen voor een inruil die
   nog niet in `mobilox_inruil` staat: wat daar al ligt is geschiedenis (128 regels uit 2026), en die
   auto's zijn allang binnen of alweer weg.
   - Mobilox geeft geen VIN bij een inruil en schrijft het kenteken zonder streepjes in kleine letters.
@@ -867,6 +879,20 @@ binnen een kwartier weer — de werkbon staat immers nog open.
      `AGENDA_ALS=<e-mailadres>` in `/var/pvp/agenda.env`. Het account handelt dan namens die collega en
      komt dus niet meer van buiten — ongevoelig voor het deelbeleid.
   `node agenda/sync.js --toets <agenda-id>` zegt welke weg actief is en wat er nog mist.
+
+## `/api/binnengekomen` zet sinds 07-09-2026 ook de status
+Daarvóór verhuisde dit endpoint alleen de regel in het Autoboek van *Komende Autos* naar *Lopende
+Autos*; de status zelf kwam uit `PUT /api/state`. Prima zolang alleen de app het aanriep, maar de
+Mobilox-agent heeft geen state-blob — en die weg mag hij ook niet op, want dat is het schrijfpad dat
+op 20-08-2026 het traject van 64 auto's kostte. Nu is één aanroep genoeg en gelden voor de app en de
+koppeling dezelfde regels.
+- Neemt **twee soorten toegang** aan, net als `/api/verkocht`: een sessie (team/admin) of het
+  bearer-token uit `/var/pvp/verkoop.env`.
+- `datum` (dd-mm-jjjj) is optioneel en zet het moment van binnenkomst; zonder datum is dat nu. De
+  agent geeft de **factuurdatum** mee — een inruiler stond op die dag al op de zaak, en hem later
+  "binnen" melden zou de doorlooptijd van die auto verkeerd laten beginnen.
+- **Zet de status alleen vanaf `komende`.** Een auto die al lopende of verkocht is blijft ongemoeid,
+  dus een tweede aanroep kan niets kapotmaken. Het antwoord zegt met `gezet` of er iets veranderd is.
 
 ## Een auto wijzigen
 Sinds 23-08-2026. `PUT /api/vehicle` (team en admin), en in de app de knop **Gegevens wijzigen**

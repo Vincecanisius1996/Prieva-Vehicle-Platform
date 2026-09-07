@@ -174,7 +174,7 @@ function uitRegel(r, soort) {
       ? (/^PVP_VERKOOP_TOKEN=(.*)$/m.exec(fs.readFileSync('/var/pvp/verkoop.env','utf8')) || [])[1] : '') || '';
     if (ECHT && !token) throw new Error('PVP_VERKOOP_TOKEN ontbreekt — zonder token weigert /api/verkocht terecht');
 
-    const uitkomsten = { gemeld:0, verkocht:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0, advertentie:0, aangevuld:0, vervallen:0, notitie:0 };
+    const uitkomsten = { gemeld:0, verkocht:0, vervangen:0, ongewijzigd:0, botsing:0, 'geen-auto':0, mislukt:0, carport:0, inruil:0, binnen:0, advertentie:0, aangevuld:0, vervallen:0, notitie:0 };
     for (const { r, a } of perAuto.values()) {
       const regel = `${(a.merk+' '+a.model).padEnd(24)} ${String(a.kenteken).padEnd(11)} ${r.soort} ${r.nummer}`;
       if (!ECHT) { console.log('  zou melden: ' + regel + `  € ${r.prijs} · ${r.datum}` + (r.afleverdatum?` · aflever ${r.afleverdatum}`:'')); continue; }
@@ -338,12 +338,21 @@ function uitRegel(r, soort) {
       } else if (w.bij || w.weg) console.log(`  (${w.bij} erbij, ${w.weg} eraf)`);
     }
 
-    // Een inruil op een verkoopovereenkomst is een FEIT: die auto komt bij de aflevering binnen.
-    // Hij wordt dus aangemaakt bij Komende, precies wat "komend" betekent — afgesproken, nog niet er.
-    //
-    // Alleen voor een inruil die we nog niet eerder gezien hebben. De regels die er al liggen zijn
-    // geschiedenis: die auto's zijn allang binnengekomen of alweer weg, en die alsnog aanmaken zou
-    // de catalogus vullen met auto's die er niet meer zijn.
+    /* Een inruil is een FEIT, geen voorstel. Wánneer die auto er staat hangt af van het soort stuk:
+       - op een VERKOOPOVEREENKOMST komt hij bij de aflevering binnen -> aanmaken bij Komende, en
+         iemand vinkt hem aan zodra hij er is;
+       - op een FACTUUR staat hij er al. De klant levert zijn oude auto in op het moment dat hij zijn
+         nieuwe ophaalt, en de factuur is precies dat moment (opgave Prieva, 07-09-2026). Zo'n auto
+         wordt dus meteen op binnen gezet, met de FACTUURDATUM als moment van binnenkomst.
+       Dat onderscheid is er niet voor de sier: het handmatige vinkje "binnengekomen" bestaat voor
+       ingekochte auto's uit het buitenland, die per transport en per bosje aankomen en waarvan je
+       vooraf niet weet welke er morgen precies staan. Een inruiler wacht op niets. Bleef hij op
+       Komende staan, dan wachtte hij op een vinkje dat niemand komt zetten — zo stond de BMW 6-serie
+       RX-813-G drie dagen op komend en de Opel Corsa E ruim twee weken.
+
+       Alleen voor een inruil die we nog niet eerder gezien hebben. De regels die er al liggen zijn
+       geschiedenis: die auto's zijn allang binnengekomen of alweer weg, en die alsnog aanmaken zou
+       de catalogus vullen met auto's die er niet meer zijn. */
     if (ECHT) for (const r of regels.filter(x => x.inruil)) {
       const i = r.inruil;
       if ((await pool.query('SELECT id FROM mobilox_inruil WHERE extern_id=$1', [r.externId])).rows.length) continue;
@@ -363,6 +372,27 @@ function uitRegel(r, soort) {
             if (j.autoboek && j.autoboek.status === 'fout') console.log('     !! Autoboek: ' + j.autoboek.fout);
           } else { status = 'mislukt'; melding = j.error || String(res.status); }
         } catch (err) { status = 'mislukt'; melding = err.message; }
+
+        /* Staat hij op een factuur, dan is hij binnen. Via /api/binnengekomen en niet met eigen SQL:
+           daar zit de verhuizing Komende -> Lopende in het Autoboek al in, en één weg naar binnen
+           betekent één set regels. Het endpoint doet niets als de auto al lopende of verkocht is,
+           dus een tweede ronde kan geen kwaad. Mislukt het, dan blijft de auto gewoon op Komende
+           staan en kan iemand hem met de hand aanvinken — dat mag de inruil niet laten mislukken. */
+        if (pvpId && r.soort === 'factuur') {
+          try {
+            const bres = await fetch(PVP + '/api/binnengekomen', { method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+              body: JSON.stringify({ id: pvpId, datum: r.datum }) });
+            const bj = await bres.json().catch(() => ({}));
+            if (bres.ok && bj.gezet) {
+              uitkomsten.binnen = (uitkomsten.binnen || 0) + 1;
+              console.log(`     -> meteen op binnen gezet (factuurdatum ${r.datum})`
+                + ((bj.autoboek || {}).status === 'fout' ? '  !! Autoboek: ' + bj.autoboek.fout : ''));
+            } else if (!bres.ok) {
+              console.log(`     !! op binnen zetten mislukt: ${bj.error || bres.status} — staat nog op Komende`);
+            }
+          } catch (err) { console.log(`     !! op binnen zetten mislukt: ${err.message} — staat nog op Komende`); }
+        }
       }
       await pool.query(`INSERT INTO mobilox_inruil (extern_id,vin,kenteken,omschrijving,prijs,km,bpm,gezien_ts,status,pvp_id,melding)
                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
