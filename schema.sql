@@ -444,3 +444,35 @@ DO $$ BEGIN
   ALTER TABLE carport_bonnen ADD CONSTRAINT carport_bon_heeft_auto CHECK (
     vehicle_id IS NOT NULL OR btrim(coalesce(los_kenteken,'')) <> '' );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- ===== Eén taakmodel (07-09-2026) =====
+-- Taken zaten in twee gescheiden administraties: `global_todos` (eigen tabel, met een optionele
+-- vehicle_id) en `vehicles.subtasks` (jsonb op de auto-rij). Gevolg: een taak die vanuit de
+-- to-do-lijst aan een auto werd gekoppeld verscheen NIET op die auto, en een taak die je op de auto
+-- maakte heette "extra taak" en telde wél mee in de voortgangsring. Twee soorten die niets van
+-- elkaar wisten.
+--
+-- Nu één tabel. Of een taak bij een auto hoort is één kolom, geen ander soort — daarmee verdwijnt
+-- het onderscheid. Eigen tabel en niet als kolom op `vehicles`: die rij wordt door PUT /api/state in
+-- zijn geheel vanuit de frontend overschreven, en precies dat schrijfpad kostte op 20-08-2026 de
+-- statusvelden van 64 auto's.
+--
+-- Carport-taken blijven apart (`carport_taken`): dat is werk van een andere partij, met een eigen
+-- soort en een eigen `door`, dat Carport zelf mag aanpassen en Prieva's taken juist niet.
+CREATE TABLE IF NOT EXISTS taken (
+  id              bigserial PRIMARY KEY,
+  tekst           text NOT NULL,
+  vehicle_id      text,               -- NULL = losse to-do, hoort bij geen auto
+  owner           text,               -- weergavenaam, net als elders (zie /api/team)
+  klaar           boolean NOT NULL DEFAULT false,
+  aangemaakt_ts   bigint,
+  aangemaakt_door text,
+  klaar_ts        bigint,
+  klaar_door      text,
+  -- Waar de rij vandaan kwam bij de samenvoeging: 'gt:35' of 'sub:<auto>:7'. Alleen om na te kunnen
+  -- kijken en om de migratie idempotent te maken (UNIQUE): twee keer draaien voegt niets dubbel toe.
+  herkomst        text UNIQUE,
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS taken_open    ON taken (klaar, id DESC);
+CREATE INDEX IF NOT EXISTS taken_vehicle ON taken (vehicle_id) WHERE vehicle_id IS NOT NULL;

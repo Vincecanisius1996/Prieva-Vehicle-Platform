@@ -267,12 +267,17 @@ async function getState() {
     pool.query('SELECT naam,ts,ok,melding,gelukt_ts FROM agent_runs')
   ]);
   const vehicles = {};
-  for (const r of veh.rows) vehicles[r.id] = { status: r.status, klaar: r.klaar, route: r.route, owner: r.owner, subtasks: r.subtasks || [], photos: r.photos || {}, arrivedAt: r.arrived_at, taxAt: r.tax_at };
+  // subtasks gaat niet meer mee: taken komen uit /api/taken. Een oud tabblad ziet daardoor een lege
+  // takenlijst — zichtbaar mis, en dus een reden om te verversen — in plaats van klikken die
+  // stilzwijgend nergens landen.
+  for (const r of veh.rows) vehicles[r.id] = { status: r.status, klaar: r.klaar, route: r.route, owner: r.owner, subtasks: [], photos: r.photos || {}, arrivedAt: r.arrived_at, taxAt: r.tax_at };
   const m = {}; for (const r of meta.rows) m[r.key] = r.value;
   return {
     vehicles,
     subUid: m.subUid || 1,
-    globalTodos: todos.rows.map(r => {
+    // Idem: de to-do's komen uit /api/taken. Deze lijst blijft leeg.
+    globalTodos: [],
+    _globalTodosBevroren: todos.rows.map(r => {
       const t = { id: r.id, text: r.text, owner: r.owner, vehicleId: r.vehicle_id, done: r.done };
       // createdAt/doneAt/doneBy alleen meesturen als ze gevuld zijn — precies zoals de JSON-versie deed.
       if (r.created_at !== null) t.createdAt = r.created_at;
@@ -418,22 +423,21 @@ async function putState(b) {
                        THEN vehicles.status ELSE EXCLUDED.status END,
            klaar=EXCLUDED.klaar, route=EXCLUDED.route, owner=EXCLUDED.owner,
            arrived_at=EXCLUDED.arrived_at, tax_at=EXCLUDED.tax_at,
-           photos=EXCLUDED.photos, subtasks=EXCLUDED.subtasks, updated_at=now()`,
+           -- subtasks staat hier NIET meer bij: die kolom is sinds 07-09-2026 bevroren en taken
+           -- staan in de tabel taken. Wel nog in de INSERT-kolommen, zodat een nieuwe rij een
+           -- lege array krijgt in plaats van NULL.
+           photos=EXCLUDED.photos, updated_at=now()`,
         [id, v.status || 'komende', Number(v.klaar) || 0, v.route || null, v.owner || null,
          v.arrivedAt || null, v.taxAt || null,
-         JSON.stringify(v.photos || {}), JSON.stringify(Array.isArray(v.subtasks) ? v.subtasks : [])]);
+         JSON.stringify(v.photos || {}), '[]']);
     }
 
-    const todos = Array.isArray(b.globalTodos) ? b.globalTodos : [];
-    await client.query('DELETE FROM global_todos');
-    if (todos.length) {
-      await client.query(
-        `INSERT INTO global_todos (id,text,owner,vehicle_id,done,created_at,done_at,done_by)
-         SELECT * FROM unnest($1::bigint[],$2::text[],$3::text[],$4::text[],$5::boolean[],$6::bigint[],$7::bigint[],$8::text[])`,
-        [todos.map(t => t.id), todos.map(t => t.text || null), todos.map(t => t.owner || null),
-         todos.map(t => t.vehicleId || null), todos.map(t => !!t.done), todos.map(t => t.createdAt || null),
-         todos.map(t => t.doneAt || null), todos.map(t => t.doneBy || null)]);
-    }
+    /* `globalTodos` en `subtasks` worden hier BEWUST genegeerd sinds 07-09-2026. Taken leven in de
+       tabel `taken` met eigen endpoints. Een tabblad dat nog openstaat van vóór die wijziging stuurt
+       ze nog steeds mee; zouden we ze verwerken, dan schrijft dat oude tabblad de oude gegevens over
+       de nieuwe heen — precies het scenario dat op 20-08-2026 het traject van 64 auto's kostte.
+       `global_todos` blijft als bevroren bron staan voor de rollback; hij wordt niet meer gelezen
+       en niet meer geschreven. */
 
     const log = Array.isArray(b.activityLog) ? b.activityLog : [];
     await client.query('DELETE FROM activity_log');
@@ -1109,6 +1113,9 @@ const server = http.createServer(async (req, res) => {
       try {
         await client.query('BEGIN');
         await client.query('DELETE FROM global_todos WHERE vehicle_id=$1', [b.id]);
+        // Taken van deze auto gaan mee. Ze staan sinds 07-09-2026 in `taken`; global_todos hierboven
+        // blijft staan voor de bevroren bron, die raakt nu niets meer.
+        await client.query('DELETE FROM taken WHERE vehicle_id=$1', [b.id]);
         await client.query('DELETE FROM bpm_reports  WHERE vehicle_id=$1', [b.id]);
         await client.query('DELETE FROM bpm_notifs   WHERE vehicle_id=$1', [b.id]);
         await client.query('DELETE FROM vehicles     WHERE id=$1', [b.id]);
@@ -1512,6 +1519,103 @@ const server = http.createServer(async (req, res) => {
 
     if (url === '/api/bpmnotif-seen' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); await pool.query('UPDATE bpm_notifs SET seen=true WHERE seen=false'); return sendJson(res, 200, { ok: true }); }
     if (url === '/api/bpmreport-del' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'taxateur' && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.url) return sendJson(res, 400, { error: 'missing' }); await pool.query('DELETE FROM bpm_reports WHERE vehicle_id=$1 AND url=$2', [b.id, b.url]); try { const rel = decodeURIComponent(String(b.url).replace(/^\/uploads\//, '')); if (rel.indexOf('..') < 0) fs.unlink(path.join(UPLOAD_DIR, rel), () => {}); } catch (_) {} return sendJson(res, 200, { ok: true }); }
+
+    /* ===== Taken (07-09-2026) =============================================================
+       Eén taakmodel. Een taak hoort bij een auto (vehicle_id) of bij niemand; verder is er geen
+       verschil. Daarmee is de scheiding tussen "to-do" en "extra taak" weg: dezelfde rij staat op
+       Vandaag én op de autopagina.
+
+       Team en admin. Carport, fotograaf en taxateur krijgen 403 — dit is Prieva's eigen werklijst;
+       het werk van Carport loopt via carport_taken op de werkbon. */
+
+    if (url === '/api/taken' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const r = await pool.query(`SELECT t.*, v.merk, v.model, v.kenteken, v.status AS auto_status
+                                    FROM taken t LEFT JOIN vehicles v ON v.id = t.vehicle_id
+                                   ORDER BY t.klaar, t.id DESC`);
+      return sendJson(res, 200, {
+        taken: r.rows.map(x => ({
+          id: x.id, tekst: x.tekst, vehicleId: x.vehicle_id, owner: x.owner, klaar: x.klaar,
+          ts: x.aangemaakt_ts, door: x.aangemaakt_door, klaarTs: x.klaar_ts, klaarDoor: x.klaar_door,
+          auto: x.vehicle_id ? `${x.merk || ''} ${x.model || ''}`.trim() : null,
+          autoKenteken: x.vehicle_id ? x.kenteken : null,
+          autoStatus: x.vehicle_id ? x.auto_status : null
+        }))
+      });
+    }
+
+    if (url === '/api/taak' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const tekst = String(b.tekst === undefined || b.tekst === null ? '' : b.tekst).trim();
+      if (!tekst) return sendJson(res, 400, { error: 'lege taak' });
+      if (tekst.length > 2000) return sendJson(res, 400, { error: 'taak te lang' });
+      const vid = String(b.vehicleId === undefined || b.vehicleId === null ? '' : b.vehicleId).trim() || null;
+      // Aan een auto hangen mag alleen als die bestaat: een verwijzing naar niets is erger dan geen.
+      if (vid && !(await pool.query('SELECT 1 FROM vehicles WHERE id=$1', [vid])).rowCount)
+        return sendJson(res, 404, { error: 'onbekende auto' });
+      const owner = String(b.owner === undefined || b.owner === null ? '' : b.owner).trim() || null;
+      const wie = u.n || u.u;
+      const r = await pool.query(
+        `INSERT INTO taken (tekst,vehicle_id,owner,aangemaakt_ts,aangemaakt_door) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [tekst, vid, owner, Date.now(), wie]);
+      await logSchrijf(wie, 'taak', r.rows[0].id, 'toegevoegd', { naar: vid, melding: tekst.slice(0, 160) });
+      return sendJson(res, 200, { ok: true, id: r.rows[0].id });
+    }
+
+    // Afvinken en terugzetten: dezelfde weg heen en terug, dus geen bevestiging nodig.
+    if (url === '/api/taak-af' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const id = Number(b.id); if (!Number.isFinite(id)) return sendJson(res, 400, { error: 'missing' });
+      const oud = (await pool.query('SELECT * FROM taken WHERE id=$1', [id])).rows[0];
+      if (!oud) return sendJson(res, 404, { error: 'onbekende taak' });
+      const klaar = b.klaar === true;
+      const wie = u.n || u.u;
+      // Het moment hoort bij het afvinken. Terugzetten wist het: een open taak met een afvinkdatum
+      // eronder is een tegenstrijdigheid.
+      await pool.query('UPDATE taken SET klaar=$2, klaar_ts=$3, klaar_door=$4, updated_at=now() WHERE id=$1',
+        [id, klaar, klaar ? Date.now() : null, klaar ? wie : null]);
+      if (oud.klaar !== klaar)
+        await logSchrijf(wie, 'taak', id, klaar ? 'afgevinkt' : 'teruggezet', { melding: (oud.tekst || '').slice(0, 160) });
+      return sendJson(res, 200, { ok: true, id, klaar });
+    }
+
+    // Toewijzen. Een lege waarde haalt de eigenaar eraf.
+    if (url === '/api/taak-wie' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const id = Number(b.id); if (!Number.isFinite(id)) return sendJson(res, 400, { error: 'missing' });
+      const oud = (await pool.query('SELECT * FROM taken WHERE id=$1', [id])).rows[0];
+      if (!oud) return sendJson(res, 404, { error: 'onbekende taak' });
+      const owner = String(b.owner === undefined || b.owner === null ? '' : b.owner).trim() || null;
+      await pool.query('UPDATE taken SET owner=$2, updated_at=now() WHERE id=$1', [id, owner]);
+      if ((oud.owner || null) !== owner)
+        await logSchrijf(u.n || u.u, 'taak', id, 'toegewezen', {
+          van: oud.owner || null, naar: owner, melding: (oud.tekst || '').slice(0, 160) });
+      return sendJson(res, 200, { ok: true, id, owner });
+    }
+
+    /* Verwijderen. Team en admin, want dat kon vóór de samenvoeging ook — een taak weggooien was
+       geen beheerdersrecht en dat afnemen zou werk kosten. De tekst gaat mee het logboek in:
+       weggooien mag, maar niet spoorloos. De knop Ongedaan werkt hier niet meer op; dat zat in de
+       undo-stack van de browser en taken leven nu op de server. Vandaar een bevestiging in beeld. */
+    if (url === '/api/taak-del' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const id = Number(b.id); if (!Number.isFinite(id)) return sendJson(res, 400, { error: 'missing' });
+      const oud = (await pool.query('SELECT * FROM taken WHERE id=$1', [id])).rows[0];
+      if (!oud) return sendJson(res, 404, { error: 'onbekende taak' });
+      await pool.query('DELETE FROM taken WHERE id=$1', [id]);
+      await logSchrijf(u.n || u.u, 'taak', id, 'verwijderd', {
+        van: oud.vehicle_id || null, melding: (oud.tekst || '').slice(0, 200) });
+      return sendJson(res, 200, { ok: true, id });
+    }
 
     /* ===== Logistiek (28-08-2026) =========================================================
        Waar staat welke auto: bij Purol, Carport, DSH of het dealerschap. Voor het eigen overzicht

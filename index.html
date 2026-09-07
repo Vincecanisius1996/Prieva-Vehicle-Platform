@@ -528,10 +528,8 @@ const V = [
 ];
 // De velden die NIET uit de catalogus komen maar tijdens het traject ontstaan. Eén definitie, want
 // dit is nodig voor zowel de terugvallijst hierboven als de rijen die loadVehicles() ophaalt.
-function initVeh(v){ v.owner=null; v.klaar=0; v.route=null; v.photos={}; v.subtasks=[]; v.arrivedAt=null; v.taxAt=null; }
+function initVeh(v){ v.owner=null; v.klaar=0; v.route=null; v.photos={}; v.arrivedAt=null; v.taxAt=null; }
 V.forEach(initVeh);
-let subUid=1;
-let globalTodos=[]; let gtUid=1;
 let currentUser=null; let adPhotos={}; let fotoState={car:null}; let taxState={car:null};
 // Staat het automatisch uitlezen aan op de server? Zo niet, dan tonen we de knop niet — een knop die
 // alleen "staat uit" kan zeggen, is erger dan geen knop.
@@ -682,18 +680,18 @@ let apiOk=false, saveT=null;
 // server: V staat dan nog op de beginwaarden (alles 'komende', geen foto's, geen subtaken) en één
 // klik zou dat over de database heen schrijven.
 let stateOk=false;
-function buildState(){const vehicles={}; V.forEach(v=>{vehicles[v.id]={status:v.status,klaar:v.klaar,route:v.route,owner:v.owner,subtasks:v.subtasks,photos:v.photos,arrivedAt:v.arrivedAt||null,taxAt:v.taxAt||null};}); return {vehicles,subUid,globalTodos,gtUid,activityLog};}
+/* Taken gaan hier NIET meer in mee (07-09-2026): die leven in de tabel `taken` met eigen endpoints.
+   De server negeert `globalTodos` en `subtasks` ook als een oud tabblad ze nog opstuurt. */
+function buildState(){const vehicles={}; V.forEach(v=>{vehicles[v.id]={status:v.status,klaar:v.klaar,route:v.route,owner:v.owner,photos:v.photos,arrivedAt:v.arrivedAt||null,taxAt:v.taxAt||null};}); return {vehicles,activityLog};}
 /* Hoe de achtergrondtaken erbij staan (Mobilox-agent, agenda). Alleen zichtbaar als er iets mis is:
    een groen vinkje dat het goed gaat leest niemand, een melding dat het beeld uren oud is wel. */
 let agents=[];
 async function loadState(){
   stateOk=false;   // opnieuw inlezen: tot het gelukt is mag er niets terug naar de server
   try{ const r=await fetch("/api/state",{cache:"no-store"}); if(!r.ok)return; const s=await r.json(); apiOk=true;
-    if(s&&s.vehicles){ V.forEach(v=>{const d=s.vehicles[v.id]; if(d){ if(d.status)v.status=d.status; if(typeof d.klaar==="number")v.klaar=d.klaar; v.route=d.route||null; v.owner=d.owner||null; v.subtasks=Array.isArray(d.subtasks)?d.subtasks:[]; v.photos=d.photos||{}; v.arrivedAt=d.arrivedAt||null; v.taxAt=d.taxAt||null; }});
-      if(typeof s.subUid==="number")subUid=Math.max(subUid,s.subUid);
-      if(Array.isArray(s.globalTodos))globalTodos=s.globalTodos;
+    if(s&&s.vehicles){ V.forEach(v=>{const d=s.vehicles[v.id]; if(d){ if(d.status)v.status=d.status; if(typeof d.klaar==="number")v.klaar=d.klaar; v.route=d.route||null; v.owner=d.owner||null; v.photos=d.photos||{}; v.arrivedAt=d.arrivedAt||null; v.taxAt=d.taxAt||null; }});
+
       if(Array.isArray(s.activityLog))activityLog=s.activityLog;
-      if(typeof s.gtUid==="number")gtUid=Math.max(gtUid,s.gtUid);
       if(Array.isArray(s.agents))agents=s.agents; }
     stateOk=true;   // pas hier: alles is zonder fout ingelezen, vanaf nu mag er opgeslagen worden
   }catch(_){ /* geen backend: lokaal verder */ }
@@ -713,9 +711,42 @@ async function loadVehicles(){ if(!apiOk)return;
     // eerstvolgende klik die lege waarden over de database. Op 20-08-2026 kostte dat de fase, foto's,
     // subtaken en eigenaren van 64 auto's. Eén vergeten aanroep mag dat niet kunnen doen.
     const vorige={}; V.forEach(v=>{ vorige[v.id]={owner:v.owner,klaar:v.klaar,route:v.route,
-      photos:v.photos,subtasks:v.subtasks,arrivedAt:v.arrivedAt,taxAt:v.taxAt}; });
+      photos:v.photos,arrivedAt:v.arrivedAt,taxAt:v.taxAt}; });
     V.length=0; rows.forEach(r2=>{ V.push(r2); const p=vorige[r2.id]; if(p)Object.assign(r2,p); else initVeh(r2); });
   }catch(_){ /* geen backend of onleesbaar antwoord: terugvallijst blijft staan */ }
+}
+/* ===== Taken =====
+   Eén taakmodel sinds 07-09-2026. Een taak hoort bij een auto (vehicleId) of bij niemand; verder is
+   er geen verschil. Daarvóór bestonden er twee soorten: `globalTodos` (stond alleen op Vandaag) en
+   `v.subtasks` (stond alleen op de auto, als "extra taak"). Een taak die je vanuit de to-do-lijst aan
+   een auto koppelde was op die auto onvindbaar. Nu is het dezelfde rij, twee keer getoond. */
+const taken = [];
+async function loadTaken(){ if(!apiOk)return;
+  try{ const r=await fetch("/api/taken",{cache:"no-store"}); if(!r.ok)return;
+    const j=await r.json(); if(!j||!Array.isArray(j.taken))return;
+    taken.length=0; j.taken.forEach(t=>taken.push(t));
+  }catch(_){}
+}
+const takenVoorAuto = id => taken.filter(t=>t.vehicleId===id);
+async function taakDoe(pad,body,melding){
+  if(!apiOk)return null;
+  try{
+    const r=await fetch(pad,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ showToast(j.error==='forbidden'?"Daar heb je geen rechten voor":(j.error||"Opslaan mislukt"),false); return null; }
+    await loadTaken(); rerenderCurrent();
+    if(melding)showToast(melding,false);
+    return j;
+  }catch(_){ showToast("Geen verbinding met de server",false); return null; }
+}
+function taakAf(id,klaar){ return taakDoe('/api/taak-af',{id,klaar}); }
+function taakWie(id,owner){ return taakDoe('/api/taak-wie',{id,owner:owner||null}); }
+function taakWeg(id){
+  const t=taken.find(x=>x.id===id);
+  // Verwijderen loopt nu via de server en zit dus niet meer in de knop Ongedaan. Vandaar een
+  // bevestiging: afvinken is de omkeerbare weg, dit niet.
+  if(!window.confirm(`Deze taak definitief verwijderen?\n\n"${(t&&t.tekst)||''}"\n\nAfvinken kan ook — dat is terug te zetten.`))return;
+  return taakDoe('/api/taak-del',{id},"Taak verwijderd");
 }
 /* Snelle notities: het prikbord onder de to-do's. IN PLACE vervangen, net als de rest. */
 const notities = {open:[], klaar:[]};
@@ -844,26 +875,30 @@ function renderVandaag(){
   const kom=V.filter(v=>v.status==="komende");
   const lop=V.filter(v=>v.status==="lopende");
   const acties=lop.map(v=>({v,a:currentAction(v)})).filter(x=>x.a);
-  const subs=[]; lop.forEach(v=>v.subtasks.filter(s=>!s.done).forEach(s=>subs.push({v,sub:s})));
-  const gopen=globalTodos.filter(t=>!t.done).map(t=>({gt:t}));
-  const openCount=acties.length+subs.length+gopen.length;
+  /* Eén lijst open taken, of ze nu aan een auto hangen of niet. Vóór 07-09-2026 waren dit twee
+     bronnen: subtaken van uitsluitend LOPENDE auto's, plus alle losse to-do's. Een taak op een
+     komende of verkochte auto was daardoor nergens te zien. Nu doen ze allemaal mee: open werk is
+     open werk, ongeacht waar de auto in het traject staat. */
+  const topen=taken.filter(t=>!t.klaar).map(t=>({tk:t}));
+  const openCount=acties.length+topen.length;
   const verwacht=V.filter(v=>v.status==="komende"&&v.batch); // transport gepland, nog niet binnen
   const groups={}; PEOPLE.forEach(p=>groups[p]=[]); groups["_"]=[];
   acties.forEach(x=>{(groups[x.v.owner]||groups["_"]).push(x);});
-  subs.forEach(x=>{(groups[x.sub.owner]||groups["_"]).push(x);});
-  gopen.forEach(x=>{(groups[x.gt.owner]||groups["_"]).push(x);});
-  const rank=z=>z.gt?2:(z.sub?1:0);
+  topen.forEach(x=>{(groups[x.tk.owner]||groups["_"]).push(x);});
+  // Trajectstappen eerst, taken erachter: de stap is wat de auto vooruit helpt.
+  const rank=z=>z.tk?1:0;
   Object.values(groups).forEach(g=>g.sort((a,b)=>{const ra=rank(a),rb=rank(b); if(ra!==rb)return ra-rb; if(ra===0)return steps(a.v).currentIdx-steps(b.v).currentIdx; return 0;}));
 
   function todoRow(x){
-    const person=x.gt?x.gt.owner:(x.sub?x.sub.owner:x.v.owner);
+    const person=x.tk?x.tk.owner:x.v.owner;
     const opts=['<option value="">— toewijzen</option>'].concat(PEOPLE.map(p=>`<option value="${p}" ${person===p?'selected':''}>${p}</option>`)).join("");
     const ageChip=ts=>{const a=ageStr(ts); return a?` · <span class="agechip" title="Staat zo lang open">⏱ ${a} open</span>`:'';};
-    if(x.gt){const t=x.gt; const veh=t.vehicleId?V.find(v=>v.id===t.vehicleId):null;
-      const sub=veh?`${veh.merk} ${veh.model} · ${veh.kenteken!=='—'?veh.kenteken:veh.vin}`:'Algemene taak';
-      return `<div class="todo"><label class="chk" title="Afvinken"><input type="checkbox" onchange="toggleGlobalTodo(${t.id},this.checked)"><span class="box"></span></label><div class="body" ${veh?`onclick="openVeh('${veh.id}')" style="cursor:pointer"`:'style="cursor:default"'}><div class="act">${t.text} <span class="tag" style="background:var(--blue-soft);color:var(--blue)">Los</span></div><div class="veh">${sub}${ageChip(t.createdAt)}</div></div><select class="assign" onchange="assignGlobalTodo(${t.id},this.value)">${opts}</select></div>`;}
-    if(x.sub){const s=x.sub,v=x.v;
-      return `<div class="todo"><span class="tk" style="background:var(--accent)"></span><div class="body" onclick="openVeh('${v.id}')"><div class="act">${s.text} <span class="tag" style="background:var(--amber-soft);color:var(--amber)">Extra</span></div><div class="veh">${v.merk} ${v.model} · ${v.kenteken!=='—'?v.kenteken:v.vin}${ageChip(s.createdAt)}</div></div><select class="assign" onchange="assignSubtask('${v.id}',${s.id},this.value)">${opts}</select></div>`;}
+    /* Eén soort taakregel. Geen labels "Los" en "Extra" meer: dat waren de twee administraties, en
+       die zijn er niet meer. Hangt hij aan een auto, dan staat die auto eronder en klik je erheen. */
+    if(x.tk){ const t=x.tk; const veh=t.vehicleId?V.find(v=>v.id===t.vehicleId):null;
+      const sub=veh?`${esc(veh.merk)} ${esc(veh.model)} · ${esc(veh.kenteken!=='—'?veh.kenteken:veh.vin)}`
+                : (t.vehicleId?esc(t.auto||t.vehicleId):'Algemene taak');
+      return `<div class="todo"><label class="chk" title="Afvinken"><input type="checkbox" onchange="taakAf(${t.id},this.checked)"><span class="box"></span></label><div class="body" ${veh?`onclick="openVeh('${esc(veh.id)}')" style="cursor:pointer"`:'style="cursor:default"'}><div class="act">${esc(t.tekst)}</div><div class="veh">${sub}${ageChip(t.ts)}</div></div><select class="assign" onchange="taakWie(${t.id},this.value)">${opts}</select></div>`;}
     const v=x.v,a=x.a;
     return `<div class="todo"><span class="tk"></span><div class="body" onclick="openVeh('${v.id}')"><div class="act">${a.actie}</div><div class="veh">${v.merk} ${v.model} · ${v.kenteken!=='—'?v.kenteken:v.vin}${ageChip(v.arrivedAt)}</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div>`;}
   function personCard(name,list){const disp=name==="_"?"Niet toegewezen":name; const av=name==="_"?`<span class="pav" style="background:var(--slate)">?</span>`:pav(name);
@@ -1788,7 +1823,7 @@ function vraagVerwijderen(id, tochWeg, waarschuwing){
   if(!ov){ov=document.createElement('div'); ov.id='delModal'; ov.className='modal-ov';
     ov.addEventListener('click',e=>{if(e.target===ov)sluitVerwijderen();}); document.body.appendChild(ov);}
   const docs=(v.docs||[]).length, fotos=Object.keys(v.photos||{}).length, ads=adList(v.id).length;
-  const todos=globalTodos.filter(t=>t.vehicleId===v.id).length;
+  const todos=takenVoorAuto(v.id).length;
   const sleutel=v.kenteken&&v.kenteken!=='—'?v.kenteken:v.vin;
   const regel=r=>`<div class="spec"><span class="k">${r[0]}</span><span class="v">${r[1]}</span></div>`;
   ov.innerHTML=`<div class="modal">
@@ -1830,7 +1865,6 @@ async function verwijderAuto(id, tochWeg){
     // Uit het geheugen halen. De gekoppelde to-do's moeten mee: putState() schrijft die tabel
     // helemaal opnieuw uit wat de frontend stuurt, dus wat hier blijft staan komt zo weer terug.
     const i=V.indexOf(v); if(i>-1)V.splice(i,1);
-    for(let k=globalTodos.length-1;k>=0;k--) if(globalTodos[k].vehicleId===id)globalTodos.splice(k,1);
     delete adPhotos[id];
     logActivity('Auto verwijderd', `${j.naam||id} (${v.kenteken&&v.kenteken!=='—'?v.kenteken:v.vin})`, null);
     scheduleSave();
@@ -1873,30 +1907,26 @@ function photoCard(v,g){
       <div class="note" style="margin-top:10px">${apiOk?"Foto's worden op de server bewaard en gedeeld met het team.":"Demo: foto's worden alleen in je browser bewaard (geen server gevonden)."}</div>
     </div></div>`;
 }
-/* ===== Extra taken per auto (sub-to-do) ===== */
-function addSubtask(id){const v=V.find(x=>x.id===id); if(!v)return; const inp=document.getElementById('subin-'+id); if(!inp)return;
-  const t=inp.value.trim(); if(!t)return; const st={id:subUid++,text:t,owner:v.owner||null,done:false,createdAt:Date.now()}; v.subtasks.push(st);
-  pushUndo(`${v.merk} ${v.model} — extra taak toegevoegd: ${t}`, ()=>{const i=v.subtasks.indexOf(st); if(i>-1)v.subtasks.splice(i,1);});
-  rerender();}
-function toggleSubtask(id,sid,checked){const v=V.find(x=>x.id===id); if(!v)return; const st=v.subtasks.find(s=>s.id===sid); if(!st)return;
-  const pv=st.done, pda=st.doneAt, pdb=st.doneBy; st.done=checked;
-  if(checked){ st.doneAt=Date.now(); st.doneBy=(currentUser&&currentUser.name)||'?'; logActivity('Extra taak afgevinkt',`${st.text} (${v.merk} ${v.model})`,id); }
-  else { st.doneAt=null; st.doneBy=null; }
-  pushUndo(`${v.merk} ${v.model} — extra taak ${checked?'afgevinkt':'heropend'}: ${st.text}`, ()=>{st.done=pv; st.doneAt=pda; st.doneBy=pdb;}); rerender();}
-function assignSubtask(id,sid,val){const v=V.find(x=>x.id===id); if(!v)return; const st=v.subtasks.find(s=>s.id===sid); if(!st)return;
-  const po=st.owner; st.owner=val||null;
-  pushUndo(`${v.merk} ${v.model} — extra taak toegewezen aan ${st.owner||'niemand'}`, ()=>{st.owner=po;}); rerender();}
-function delSubtask(id,sid){const v=V.find(x=>x.id===id); if(!v)return; const i=v.subtasks.findIndex(s=>s.id===sid); if(i<0)return; const st=v.subtasks[i];
-  v.subtasks.splice(i,1);
-  pushUndo(`${v.merk} ${v.model} — extra taak verwijderd: ${st.text}`, ()=>{v.subtasks.splice(i,0,st);}); rerender();}
+/* ===== Taken per auto =====
+   Dezelfde taken als op Vandaag, gefilterd op deze auto. Er is geen apart soort "extra taak" meer:
+   een taak die vanuit de to-do-lijst aan deze auto is gekoppeld staat hier gewoon tussen. */
+function addSubtask(id){
+  const v=V.find(x=>x.id===id); if(!v)return;
+  const inp=document.getElementById('subin-'+id); if(!inp)return;
+  const t=inp.value.trim(); if(!t){inp.focus();return;}
+  inp.value="";
+  // De eigenaar van de auto is de logische eerste eigenaar van een taak die je hier aanmaakt.
+  taakDoe('/api/taak',{tekst:t,vehicleId:id,owner:v.owner||null});
+}
 function subtaskCard(v){
+  const lijst=takenVoorAuto(v.id);
   const opt=st=>['<option value="">— niemand</option>'].concat(PEOPLE.map(p=>`<option value="${p}" ${st.owner===p?'selected':''}>${p}</option>`)).join("");
-  const rows=v.subtasks.length? v.subtasks.map(st=>`<div class="todo">
-      <label class="chk"><input type="checkbox" ${st.done?'checked':''} onchange="toggleSubtask('${v.id}',${st.id},this.checked)"><span class="box"></span></label>
-      <div class="body" style="cursor:default"><div class="act" style="${st.done?'text-decoration:line-through;color:var(--muted)':''}">${st.text}</div></div>
-      <select class="assign" onchange="assignSubtask('${v.id}',${st.id},this.value)">${opt(st)}</select>
-      <button class="premove" style="position:static;background:#eef2f6;color:var(--slate)" title="Verwijderen" onclick="delSubtask('${v.id}',${st.id})">×</button>
-    </div>`).join("") : `<div class="empty" style="padding:14px">Nog geen extra taken voor deze auto.</div>`;
+  const rows=lijst.length? lijst.map(st=>`<div class="todo">
+      <label class="chk"><input type="checkbox" ${st.klaar?'checked':''} onchange="taakAf(${st.id},this.checked)"><span class="box"></span></label>
+      <div class="body" style="cursor:default"><div class="act" style="${st.klaar?'text-decoration:line-through;color:var(--muted)':''}">${esc(st.tekst)}</div></div>
+      <select class="assign" onchange="taakWie(${st.id},this.value)">${opt(st)}</select>
+      <button class="premove" style="position:static;background:#eef2f6;color:var(--slate)" title="Verwijderen" onclick="taakWeg(${st.id})">×</button>
+    </div>`).join("") : `<div class="empty" style="padding:14px">Nog geen taken voor deze auto.</div>`;
   const tv=takenVan(v.id);
   const carportRijen=tv.carport.length?`<div style="padding:2px 0;border-top:1px solid var(--line)">
       <div class="note" style="margin:10px 16px 4px">Bij Carport op de werkbon${tv.bon&&tv.bon.afleverdatum?` · aflevering ${esc(tv.bon.afleverdatum)}`:''}</div>
@@ -2244,18 +2274,11 @@ function addGlobalTodo(){
   const inp=document.getElementById('gt-text'); if(!inp)return; const t=inp.value.trim(); if(!t){inp.focus();return;}
   const owner=document.getElementById('gt-owner').value||null;
   const vehicleId=document.getElementById('gt-veh').value||null;
-  const td={id:gtUid++,text:t,owner,vehicleId,done:false,createdAt:Date.now()}; globalTodos.push(td);
-  pushUndo(`Algemene to-do toegevoegd: ${t}`, ()=>{const i=globalTodos.indexOf(td); if(i>-1)globalTodos.splice(i,1);});
-  closeTodoModal(); if(state.view!=='vandaag')go('vandaag'); else rerender();
+  closeTodoModal();
+  taakDoe('/api/taak',{tekst:t,owner,vehicleId}).then(()=>{ if(state.view!=='vandaag')go('vandaag'); });
 }
-function toggleGlobalTodo(id,checked){const td=globalTodos.find(x=>x.id===id); if(!td)return; const pv=td.done, pda=td.doneAt, pdb=td.doneBy; td.done=checked;
-  if(checked){ td.doneAt=Date.now(); td.doneBy=(currentUser&&currentUser.name)||'?'; logActivity('To-do afgevinkt',td.text,td.vehicleId); }
-  else { td.doneAt=null; td.doneBy=null; }
-  pushUndo(`Algemene to-do ${checked?'afgevinkt':'heropend'}: ${td.text}`, ()=>{td.done=pv; td.doneAt=pda; td.doneBy=pdb;}); rerender();}
-function assignGlobalTodo(id,val){const td=globalTodos.find(x=>x.id===id); if(!td)return; const po=td.owner; td.owner=val||null;
-  pushUndo(`Algemene to-do toegewezen aan ${td.owner||'niemand'}`, ()=>{td.owner=po;}); rerender();}
-function delGlobalTodo(id){const i=globalTodos.findIndex(x=>x.id===id); if(i<0)return; const td=globalTodos[i]; globalTodos.splice(i,1);
-  pushUndo(`Algemene to-do verwijderd: ${td.text}`, ()=>{globalTodos.splice(i,0,td);}); rerender();}
+/* toggleGlobalTodo / assignGlobalTodo / delGlobalTodo zijn vervallen (07-09-2026). Alles loopt nu
+   via taakAf / taakWie / taakWeg — één soort taak, één weg. */
 /* ===== Advertentiefoto's ===== */
 async function loadAdphotos(){ if(!apiOk)return; try{ const r=await fetch("/api/adphotos",{cache:"no-store"}); if(r.ok){adPhotos=await r.json()||{};} }catch(_){} }
 function adList(id){ return Array.isArray(adPhotos[id])?adPhotos[id]:[]; }
@@ -2310,10 +2333,12 @@ function takenVan(vehicleId){
   const v=V.find(x=>x.id===vehicleId);
   const bon=[...(carportData.planning||[]),...(carportData.afgemeld||[])].find(b=>b.vehicleId===vehicleId);
   const carport=(bon&&bon.taken)||[];
-  const eigen=(v&&v.subtasks)||[];
+  /* Vóór 07-09-2026 stond hier v.subtasks. Een taak die vanuit de to-do-lijst aan deze auto was
+     gekoppeld telde daardoor NIET mee in de ring — die stond dan op 0/0 terwijl er werk lag. */
+  const eigen=takenVoorAuto(vehicleId);
   return { carport, eigen, bon: bon||null,
            totaal: carport.length+eigen.length,
-           af: carport.filter(t=>t.klaar).length+eigen.filter(t=>t.done).length };
+           af: carport.filter(t=>t.klaar).length+eigen.filter(t=>t.klaar).length };
 }
 function takenRing(af,totaal,titel){
   if(!totaal) return '';
@@ -2407,10 +2432,10 @@ function afleverPaneel(){
         ${takenlijst('Bij de poetser',poetsTaken,aflever,`Vóór de aflevering op ${b.afleverdatum}`,'poetser')}
         ${tv.eigen.length?`<div style="flex:1;min-width:250px">
           <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span style="font-weight:700;font-size:12px">Bij Prieva</span>
-            <span class="note" style="margin:0">extra taken op deze auto</span></div>
-          ${tv.eigen.map(st=>`<div class="taak ${st.done?'af':''}" style="padding:4px 0">
-            <label class="chk" title="Afvinken"><input type="checkbox" ${st.done?'checked':''} onchange="toggleSubtask('${esc(b.vehicleId)}',${st.id},this.checked)"><span class="box"></span></label>
-            <span class="tk">${esc(st.text)}</span>${st.owner?`<span class="vanwie">${esc(st.owner)}</span>`:''}
+            <span class="note" style="margin:0">taken op deze auto</span></div>
+          ${tv.eigen.map(st=>`<div class="taak ${st.klaar?'af':''}" style="padding:4px 0">
+            <label class="chk" title="Afvinken"><input type="checkbox" ${st.klaar?'checked':''} onchange="taakAf(${st.id},this.checked)"><span class="box"></span></label>
+            <span class="tk">${esc(st.tekst)}</span>${st.owner?`<span class="vanwie">${esc(st.owner)}</span>`:''}
           </div>`).join('')}
         </div>`:''}
       </div>`:''}
@@ -3156,7 +3181,7 @@ async function startFor(){
   if(foto){ state.view='foto'; loadAdphotos().then(loadStatusFoto).then(renderFoto); }
   else if(tax){ state.view='tax'; loadTaxState().then(loadBpm).then(loadTaxAfgerond).then(renderTax); }
   else if(cp){ state.view='carport'; loadCarport().then(renderCarport); }
-  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen(),loadNotities(),loadLogistiek()]).then(()=>go('vandaag')); }
+  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen(),loadNotities(),loadLogistiek(),loadTaken()]).then(()=>go('vandaag')); }
 }
 async function boot(){
   try{ const r=await fetch("/api/me",{cache:"no-store"});

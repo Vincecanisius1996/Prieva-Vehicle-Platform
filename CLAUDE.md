@@ -105,7 +105,8 @@ uit), `/api/photo` (team+admin), `/api/adphotos` + `/api/adphoto` +
 `/api/rdw-dossier` (GET, team+admin+RDW-token), `/api/rdw-dossier-status` (POST, **alleen team+admin**),
 `/api/team` (elke rol), `/api/notities` + `/api/notitie` + `/api/notitie-af` (team+admin),
 `/api/notitie-del` (**alleen admin**), `/api/betalingen` (team+admin), `/api/betaling` (**alleen admin**),
-`/api/taxafgerond` (taxateur+team+admin), `/api/logistiek` + `-plaatsen` + `-verplaatsen` + `-terug` +
+`/api/taxafgerond` (taxateur+team+admin),
+`/api/taken` + `/api/taak` + `-af` + `-wie` + `-del` (team+admin), `/api/logistiek` + `-plaatsen` + `-verplaatsen` + `-terug` +
 `-notitie` + `-volgorde` (team+admin), `/api/logistiek-del` (**alleen admin**),
 `PUT /api/vehicle` (team+admin, auto corrigeren), `/api/inruil` (GET+POST, team+admin),
 `/api/carport-afgeleverd` (**alleen team+admin**),
@@ -212,6 +213,16 @@ hoort **niet** in de repo. Vervangen? Nieuwe sleutel maken, publieke helft in Gi
 keys (mét "Allow write access"), oude verwijderen.
 
 ## Back-up van de database
+> **Valstrik, gerepareerd 07-09-2026.** De controle was `gunzip -c "$FILE" | grep -q '^COPY public.vehicles '`.
+> `grep -q` stopt bij de eerste treffer en sluit de pijp; `gunzip` eindigt dan op SIGPIPE met 141, en
+> door `set -o pipefail` telt de hele pijplijn als mislukt. Het script concludeerde dat `vehicles`
+> ontbrak en **gooide een perfecte back-up weg**. Zolang de dump klein was viel het niet op — gunzip
+> was dan al klaar vóór grep stopte. Toen de dump groeide sloeg het elke nacht toe: **van 29-08 t/m
+> 07-09-2026 dertien nachten geen lokale back-up**, zonder melding die iemand zag. De offsite-kopie
+> bleef wel werken (die maakt zijn eigen dump zonder deze controle). Nu telt `awk` de datarijen en
+> leest de stroom helemaal uit — geen vroegtijdige exit, dus geen SIGPIPE — en een dump zonder rijen
+> wordt nog steeds geweigerd.
+
 `pvp-backup.timer` draait elke nacht om 02:15 UTC `/usr/local/bin/pvp-backup.sh`: een `pg_dump` van
 **alleen** de database `pvp` naar `/var/backups/pvp/pvp-<stempel>.sql.gz` (mode 600, map 700),
 30 dagen bewaartermijn. Het script controleert daarna of het gzip-bestand heel is én of de tabel
@@ -374,6 +385,46 @@ Zie `rdw/LEESMIJ.md`.
 - **Stand bij de ingebruikname:** 59 importauto's in beeld (de verkochte eruit), waarvan **9 compleet
   en 50 onvolledig**; bij 48 ontbreken alle voertuigfoto's en bij 49 het buitenlandse kentekenbewijs.
   Dat is geen meetfout maar de reden dat dit gebouwd is: het dossier zat tot nu toe in de mailbox.
+
+## Eén taakmodel: de tabel `taken`
+Sinds 07-09-2026. Taken zaten in **twee gescheiden administraties** en dat gaf een gat dat je alleen
+zag als je erop lette:
+
+| | `global_todos` | `vehicles.subtasks` |
+|---|---|---|
+| Opslag | eigen tabel | jsonb-kolom op de auto-rij |
+| Zichtbaar op *Vandaag* | ja | **alleen als de auto `lopende` is** |
+| Zichtbaar op de autopagina | **nee** | ja, als "extra taak" |
+| Telt in `takenVan()` / de ring | **nee** | ja |
+
+Een taak die je vanuit de to-do-lijst aan een auto koppelde, was op die auto dus **onvindbaar** — en
+telde ook niet mee in de voortgangsring, die dan `0/0` toonde terwijl er werk lag. Andersom heette
+een taak die je op de auto maakte "extra taak" en stond hij niet in de gewone to-do-lijst als de auto
+niet op *Lopende* stond (3 van de 6 subtaken zaten in dat gat).
+
+Nu **één tabel `taken`**. Of een taak bij een auto hoort is één kolom (`vehicle_id`), geen ander
+soort; dezelfde rij staat op *Vandaag* én op de autopagina. Daarmee is het onderscheid "extra taak"
+weg, en de labels *Los* en *Extra* zijn van het scherm verdwenen.
+- Endpoints: `GET /api/taken`, `POST /api/taak` + `-af` + `-wie` + `-del` (team+admin; carport, foto
+  en taxateur 403). Alles in `pvp_log` onder `onderdeel='taak'`.
+- **Carport-taken blijven apart** (`carport_taken`): werk van een andere partij, met een eigen soort
+  en `door`, dat Carport zelf mag aanpassen en Prieva's taken juist niet. Ze staan al op de
+  autopagina en al in de ring.
+- **`PUT /api/state` negeert `globalTodos` en `subtasks` voortaan**, en `getState` stuurt ze leeg
+  terug. Nodig, want een tabblad dat nog openstaat van vóór de wijziging stuurt zijn hele geheugen op;
+  zouden we dat verwerken, dan schrijft het de oude taken over de nieuwe heen — precies wat op
+  20-08-2026 het traject van 64 auto's kostte. Getoetst: zo'n oud verzoek verandert niets.
+- **De bronnen blijven staan.** `global_todos` en `vehicles.subtasks` zijn bevroren, worden niet meer
+  gelezen of geschreven, en dienen als rollback — net als de JSON-bestanden na de Postgres-migratie.
+- **Migratie:** `inhaalslag/taken-samenvoegen.js` (proefdraai zonder `--echt`). Idempotent via
+  `taken.herkomst` (`UNIQUE`, `gt:<id>` of `sub:<auto>:<id>`), dus twee keer draaien voegt niets
+  dubbel toe — bewust, want tussen de migratie en de herstart kan er nog een taak bij komen. Een
+  koppeling naar een auto die niet meer bestaat wordt een losse taak; een taak zonder tekst vervalt.
+  Overgezet: **48 to-do's + 6 subtaken = 54 taken, waarvan 20 aan een auto**, teksten één op één
+  nagerekend.
+- **De knop *Ongedaan* werkt niet meer op het verwijderen van een taak** (keuze Prieva). Dat zat in de
+  undo-stack van de browser en taken leven nu op de server. Vandaar een bevestiging in beeld, en de
+  tekst gaat mee het logboek in.
 
 ## Eén logboek voor het nieuwe werk: `pvp_log`
 Sinds 28-08-2026. Elke handeling in de onderdelen hieronder komt in **`pvp_log`** (`onderdeel`:
