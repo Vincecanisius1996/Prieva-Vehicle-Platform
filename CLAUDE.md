@@ -1006,6 +1006,20 @@ versie haalde dat door elkaar en zag dertien inkoopprijzen aan voor verkoopdatum
   Roep je een teken-functie rechtstreeks aan, dan springt de pagina weer.
 - **`window.history` i.p.v. `history`:** in `index.html` bestaat een lokale `const history = []`
   (de undo-stack) die de globale `history` overschaduwt. Gebruik voor routing altijd `window.history`.
+- **Geen verbinding = een zichtbare rode balk, niet stilzwijgend de oude lijst** (07-09-2026). Lukt
+  `/api/me` niet, dan valt `boot()` terug op de bevroren lijst `V` in `index.html` — twintig auto's
+  van 12-08-2026, allemaal `komende`. Dat gebeurde stil, en op 07-09 leverde dat een melding op dat
+  er "twee auto's verdwenen" waren terwijl er in de database niets was veranderd: de pagina laadde
+  precies tijdens de seconde dat `pvp-api` herstartte voor een deploy. Nu drie dingen:
+  1. **`boot()` probeert het twee keer**, met een seconde ertussen. Een herstart duurt korter dan dat,
+     dus die valt niet meer op de terugval.
+  2. **De balk bovenaan wordt rood** met "je kijkt naar een oude lijst van 12-08-2026" en een knop
+     *Opnieuw proberen*. `V_BEVROREN` staat bij die code, zodat de datum meeloopt als de lijst ooit
+     ververst wordt.
+  3. **`loadState()` heeft nu ook het `apiOk`-slot** dat alle andere laders al hadden. Als enige zette
+     hij `apiOk` zélfs weer op `true`; kwam de server net ná de terugval terug, dan stond de rode balk
+     te melden dat er geen verbinding was terwijl de app deed alsof alles klopte, met twintig oude
+     auto's in beeld. Eén stand tegelijk: teruggevallen blijft teruggevallen tot iemand ververst.
 - **De catalogus komt uit de database** (sinds 17-08-2026, Fase 2): `loadVehicles()` in `index.html`
   haalt hem op uit `GET /api/vehicles` en vervangt `V` **in place** (`V` is `const` en wordt op ~39
   plekken bij naam gebruikt — nooit herwijzen). Auto's toevoegen of wijzigen doe je dus in de tabel
