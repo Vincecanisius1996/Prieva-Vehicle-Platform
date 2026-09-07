@@ -592,11 +592,18 @@ const nieuwsteEerst = (a,b) => inkoopSleutel(b)-inkoopSleutel(a) || String(a.mer
 /* In welke fase staat een auto. Eén definitie, want de filterchips en het sorteren moeten het over
    dezelfde fase eens zijn. 'Verkoopklaar' en 'Wacht op factuur' zijn geen fase maar een eindstand en
    krijgen daarom een eigen sleutel. */
-const faseVan = v => { const a=currentAction(v); return a?a.cat:(v.status==='lopende'?'__klaar':'__gemeld'); };
+/* De fase van het IMPORTtraject. Sinds de splitsing van 07-09-2026 betekent "geen importstap meer"
+   niet automatisch verkoopklaar: het verkooppad kan nog openstaan. */
+const faseVan = v => {
+  const a=currentAction(v);
+  if(a) return a.cat;
+  if(v.status!=='lopende') return '__gemeld';
+  return verkoopActie(v) ? '__importrond' : '__klaar';
+};
 /* Sorteren op status. De volgorde is die van het traject zelf: CATS staat al op volgorde van stap 1
    tot de laatste. '✓ Verkoopklaar' is de hoogste stand — daar zijn álle fases doorlopen. 'Wacht op
    factuur' staat daar nog achter: die auto is het traject helemaal uit. */
-const FASE_ORDE=[...CATS,'__klaar','__gemeld'];
+const FASE_ORDE=[...CATS,'__importrond','__klaar','__gemeld'];
 const faseIndex = v => { const i=FASE_ORDE.indexOf(faseVan(v)); return i<0?FASE_ORDE.length:i; };
 // Binnen dezelfde fase blijft de gewone volgorde staan (nieuwste inkoop eerst), zodat het sorteren
 // alleen de fases uit elkaar trekt en niet ook nog de volgorde daarbinnen omgooit.
@@ -620,10 +627,16 @@ function sorteerKop(pagina,label){
 /* Filterbalk: één chip per status, met het aantal erbij. `alles` is de standaard. */
 const boekFilter={komende:"alles",lopende:"alles",verkocht:"alles"};
 function zetFilter(pagina,waarde){ boekFilter[pagina]=waarde; rerender(); }
-function filterBalk(pagina,groepen){
-  const totaal=groepen.reduce((n,g)=>n+g.lijst.length,0);
+/* Een chip mag een eigen `kop` hebben; dan begint er een nieuwe groep in de balk. Zo staan de
+   importstappen en het verkooppad naast elkaar zonder dat je ze door elkaar haalt. De chips van het
+   verkooppad OVERLAPPEN met die van het importtraject — een auto die nog op de RDW wacht moet ook
+   nog op de foto — en dat is precies de bedoeling. */
+function filterBalk(pagina,groepen,totaalAantal){
+  const totaal=totaalAantal!==undefined?totaalAantal:groepen.reduce((n,g)=>n+g.lijst.length,0);
   const chip=(sleutel,label,n)=>`<button class="fchip ${boekFilter[pagina]===sleutel?"aan":""}" onclick="zetFilter('${pagina}','${sleutel}')">${label}<span class="n">${n}</span></button>`;
-  return `<div class="filterbar"><span class="fl">Status</span>${chip("alles","Alle",totaal)}${groepen.map(g=>chip(g.sleutel,g.label,g.lijst.length)).join("")}</div>`;
+  let uit=`<div class="filterbar"><span class="fl">Status</span>${chip("alles","Alle",totaal)}`;
+  groepen.forEach(g=>{ if(g.kop)uit+=`<span class="fl" style="margin-left:10px">${g.kop}</span>`; uit+=chip(g.sleutel,g.label,g.lijst.length); });
+  return uit+`</div>`;
 }
 const euro = n => (n==null||n===""?"—":"€ "+Number(n).toLocaleString("nl-NL",{minimumFractionDigits:2,maximumFractionDigits:2}));
 const statusLabel = {komende:"Komende",lopende:"Lopende","gemeld verkocht":"Gemeld verkocht",verkocht:"Verkocht"};
@@ -1243,13 +1256,22 @@ function renderLopende(){
   // Filteren op de fase waarin de auto staat. 'Verkoopklaar' is geen fase maar een eindstand en
   // krijgt daarom een eigen chip; zonder die chip was juist de grootste groep niet te isoleren.
   // faseVan() staat bovenin: de chips en het sorteren moeten dezelfde fase bedoelen.
-  const groepen=[...CATS.map(c=>({sleutel:c,label:c,lijst:lop.filter(v=>faseVan(v)===c)})),
-                 {sleutel:'__klaar',label:'✓ Verkoopklaar',lijst:lop.filter(v=>faseVan(v)==='__klaar')},
-                 {sleutel:'__gemeld',label:'Wacht op factuur',lijst:lop.filter(v=>faseVan(v)==='__gemeld')}]
-                .filter(g=>g.lijst.length);
+  /* Twee soorten chips naast elkaar. De importchips sluiten elkaar uit — een auto staat op één
+     stap. De verkoopchips niet: een auto die nog op de RDW wacht moet óók nog op de foto, en juist
+     die wil je kunnen opvragen. Elke chip heeft daarom een eigen test in plaats van één fase. */
+  const groep=(sleutel,label,test,kop)=>({sleutel,label,kop,test,lijst:lop.filter(test)});
+  const groepen=[
+    ...CATS.map(c=>groep(c,c,v=>faseVan(v)===c)),
+    groep('__importrond','✓ Import rond',v=>faseVan(v)==='__importrond'),
+    groep('__klaar','✓ Verkoopklaar',v=>faseVan(v)==='__klaar'),
+    groep('__gemeld','Wacht op factuur',v=>faseVan(v)==='__gemeld'),
+    groep('__foto','Fotograaf inplannen',v=>v.status==='lopende'&&!vkVan(v.id).fotoTs,'Verkooppad'),
+    groep('__online','Online zetten',v=>v.status==='lopende'&&!!vkVan(v.id).fotoTs&&!vkVan(v.id).onlineTs),
+  ].filter(g=>g.lijst.length);
   const keuze=boekFilter.lopende;
+  const gekozen=groepen.find(g=>g.sleutel===keuze);
   const volgorde=boekSorteer.lopende==='op'?opStatusOp:boekSorteer.lopende==='neer'?opStatusNeer:nieuwsteEerst;
-  const zicht=(keuze==='alles'?lop:lop.filter(v=>faseVan(v)===keuze)).slice().sort(volgorde);
+  const zicht=(gekozen?lop.filter(gekozen.test):lop).slice().sort(volgorde);
   const rows=zicht.map(v=>{const s=steps(v);const pct=s.total?Math.round(s.done/s.total*100):0;
     const a=currentAction(v);
     // currentAction() geeft null voor élke auto die niet 'lopende' is — ook voor een gemelde
@@ -1280,7 +1302,7 @@ function renderLopende(){
       <td>${v.owner?pav(v.owner):`<span class="pav" style="background:var(--slate)">?</span>`}</td></tr>`;}).join("");
   app.innerHTML=`
     <h1 class="page-title">Lopende auto's</h1><p class="page-sub">Binnengekomen auto's met hun stap in de import/BPM-flow.</p>
-    ${filterBalk('lopende',groepen)}
+    ${filterBalk('lopende',groepen,lop.length)}
     <div style="display:flex;flex-direction:column;gap:18px">
       <div class="card"><div class="card-body" style="padding:0 4px"><div class="tabelwrap"><table class="boek">${boekColgroup([],[186,62,46])}<thead><tr>${boekKoppen()}${sorteerKop('lopende','Status')}<th>Route</th><th>Wie</th></tr></thead><tbody>${rows}</tbody></table></div>${zicht.length?'':`<div class="empty">Geen auto's in deze fase.</div>`}</div></div>
       <div class="card" style="max-width:820px"><h3>Waar staan ze?</h3><div class="card-body"><div class="funnel">
