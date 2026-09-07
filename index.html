@@ -687,7 +687,11 @@ let apiOk=false, saveT=null;
 let stateOk=false;
 /* Taken gaan hier NIET meer in mee (07-09-2026): die leven in de tabel `taken` met eigen endpoints.
    De server negeert `globalTodos` en `subtasks` ook als een oud tabblad ze nog opstuurt. */
-function buildState(){const vehicles={}; V.forEach(v=>{vehicles[v.id]={status:v.status,klaar:v.klaar,route:v.route,owner:v.owner,photos:v.photos,arrivedAt:v.arrivedAt||null,taxAt:v.taxAt||null};}); return {vehicles,activityLog};}
+/* De versie van de gegevens die deze pagina heeft ingelezen. Gaat mee bij het opslaan; ziet de
+   server dat er intussen iets nieuwers is, dan weigert hij en vragen we om te verversen. Zonder dat
+   schrijft een tabblad dat uren openstaat zijn verouderde geheugen over de database. */
+let stateVersie=0;
+function buildState(){const vehicles={}; V.forEach(v=>{vehicles[v.id]={status:v.status,klaar:v.klaar,route:v.route,owner:v.owner,photos:v.photos,arrivedAt:v.arrivedAt||null,taxAt:v.taxAt||null};}); return {vehicles,activityLog,basisVersie:stateVersie};}
 /* Hoe de achtergrondtaken erbij staan (Mobilox-agent, agenda). Alleen zichtbaar als er iets mis is:
    een groen vinkje dat het goed gaat leest niemand, een melding dat het beeld uren oud is wel. */
 let agents=[];
@@ -699,6 +703,7 @@ async function loadState(){
   if(geenVerbinding)return;
   stateOk=false;   // opnieuw inlezen: tot het gelukt is mag er niets terug naar de server
   try{ const r=await fetch("/api/state",{cache:"no-store"}); if(!r.ok)return; const s=await r.json(); apiOk=true;
+    if(typeof s.versie==="number")stateVersie=s.versie;
     if(s&&s.vehicles){ V.forEach(v=>{const d=s.vehicles[v.id]; if(d){ if(d.status)v.status=d.status; if(typeof d.klaar==="number")v.klaar=d.klaar; v.route=d.route||null; v.owner=d.owner||null; v.photos=d.photos||{}; v.arrivedAt=d.arrivedAt||null; v.taxAt=d.taxAt||null; }});
 
       if(Array.isArray(s.activityLog))activityLog=s.activityLog;
@@ -855,9 +860,30 @@ async function loadTeam(){ if(!apiOk)return;
 // je zit dan met een browser waarvan het geheugen niet klopt en je wijzigingen komen niet aan.
 function scheduleSave(){ if(!apiOk||!stateOk)return; clearTimeout(saveT); saveT=setTimeout(()=>{
   fetch("/api/state",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(buildState())})
-    .then(r=>{ if(r.status===409){ stateOk=false;
-      showToast("Opslaan geweigerd — deze pagina loopt niet meer gelijk met de server. Ververs de pagina (⌘R) voordat je verder werkt.",false); } })
+    .then(async r=>{
+      if(r.ok){
+        // Onze eigen opslag maakt de gegevens nieuwer; anders zou de volgende klik zichzelf weigeren.
+        try{ const j=await r.json(); if(j&&typeof j.versie==="number")stateVersie=j.versie; }catch(_){}
+        return;
+      }
+      if(r.status===409){
+        stateOk=false;
+        const j=await r.json().catch(()=>({}));
+        toonVerouderd(j);
+      }
+    })
     .catch(()=>{}); },400); }
+/* Een weigering mag niet als een toast langsflitsen: de gebruiker denkt dan dat zijn klik gelukt is
+   terwijl er niets is opgeslagen. Vandaar een balk die blijft staan tot je ververst. */
+function toonVerouderd(j){
+  const autos=(j&&Array.isArray(j.autos)?j.autos:[]).map(id=>{const v=V.find(x=>x.id===id); return v?`${v.merk} ${v.model}`:id;});
+  let el=document.getElementById('verouderd');
+  if(!el){ el=document.createElement('div'); el.id='verouderd'; el.className='demo-bar geenverbinding'; 
+    document.body.insertBefore(el,document.body.firstChild); }
+  el.innerHTML=`⚠ <b>Niet opgeslagen.</b> Deze pagina staat al een tijd open en iemand anders heeft intussen `
+    + (autos.length?`${autos.length===1?'een auto':autos.length+' auto\'s'} gewijzigd (${esc(autos.slice(0,3).join(', '))}${autos.length>3?', …':''})`:'iets gewijzigd')
+    + `. Ververs de pagina en doe je wijziging opnieuw.<button onclick="window.location.reload()">Verversen</button>`;
+}
 function match(v){const q=state.q.toLowerCase(); return !q || (v.merk+" "+v.model+" "+v.uitv+" "+v.kenteken+" "+v.id).toLowerCase().includes(q);}
 
 /* ===== Ongedaan maken (undo) ===== */

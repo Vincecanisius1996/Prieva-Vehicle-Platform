@@ -260,7 +260,9 @@ function serveUpload(req, res, url) {
 // { vehicles:{ id:{status,klaar,route,owner,subtasks,photos,arrivedAt,taxAt} }, subUid, globalTodos, gtUid, activityLog }
 async function getState() {
   const [veh, todos, log, meta, runs] = await Promise.all([
-    pool.query('SELECT id,status,klaar,route,owner,subtasks,photos,arrived_at,tax_at FROM vehicles ORDER BY sort_order NULLS LAST, id'),
+    pool.query(`SELECT id,status,klaar,route,owner,subtasks,photos,arrived_at,tax_at,
+                       (extract(epoch from updated_at)*1000)::bigint AS up
+                  FROM vehicles ORDER BY sort_order NULLS LAST, id`),
     pool.query('SELECT id,text,owner,vehicle_id,done,created_at,done_at,done_by FROM global_todos ORDER BY id'),
     pool.query('SELECT ts,by_name,action,text,vehicle_id FROM activity_log ORDER BY id'),
     pool.query('SELECT key,value FROM meta'),
@@ -272,7 +274,13 @@ async function getState() {
   // stilzwijgend nergens landen.
   for (const r of veh.rows) vehicles[r.id] = { status: r.status, klaar: r.klaar, route: r.route, owner: r.owner, subtasks: [], photos: r.photos || {}, arrivedAt: r.arrived_at, taxAt: r.tax_at };
   const m = {}; for (const r of meta.rows) m[r.key] = r.value;
+  /* De versie van deze momentopname: het jongste moment waarop een voertuigrij is geschreven.
+     De frontend stuurt hem terug bij het opslaan, zodat putState kan zien of er intussen iets
+     nieuwers is. Zonder dat schrijft een tabblad dat uren openstaat zijn verouderde geheugen over
+     de database — op 20-08-2026 kostte dat het traject van 64 auto's, en op 07-09 zette het een
+     auto terug van lopende naar komende. */
   return {
+    versie: Number(veh.rows.reduce((m, r) => Math.max(m, Number(r.up) || 0), 0)),
     vehicles,
     subUid: m.subUid || 1,
     // Idem: de to-do's komen uit /api/taken. Deze lijst blijft leeg.
@@ -427,8 +435,35 @@ async function putState(b) {
       fout.code = 'wissing';
       throw fout;
     }
+    /* Wat er intussen door iemand anders is gewijzigd, laten we met rust. `basisVersie` is de
+       versie die deze browser bij het inlezen kreeg; is een rij daarna nog geschreven én stuurt
+       deze browser er iets ánders voor op, dan is dat een verouderd geheugen en geen wijziging.
+       Bewust per auto en niet over de hele blob: twee mensen die tegelijk werken hoeven elkaar niet
+       te blokkeren zolang ze niet dezelfde auto aanraken. */
+    // Geen versie meegestuurd = een tabblad van vóór deze wijziging. Dat telt als 0, dus als
+    // "alles is nieuwer": zo'n tabblad krijgt 409 en de vraag om te verversen. Eenmalige moeite,
+    // en precies de tabbladen waar het om gaat.
+    const basis = Number(b && b.basisVersie) || 0;
+    const ids = Object.keys(vs);
+    const nu = ids.length
+      ? (await client.query(`SELECT id, status, klaar, route, owner, arrived_at, tax_at, photos,
+                                    (extract(epoch from updated_at)*1000)::bigint AS up
+                               FROM vehicles WHERE id = ANY($1)`, [ids])).rows
+      : [];
+    const server = new Map(nu.map(r => [r.id, r]));
+    const overgeslagen = [];
+    const gelijk = (r, v) => String(r.status) === String(v.status || 'komende')
+      && Number(r.klaar || 0) === (Number(v.klaar) || 0)
+      && String(r.route || '') === String(v.route || '')
+      && String(r.owner || '') === String(v.owner || '')
+      && String(r.arrived_at || '') === String(v.arrivedAt || '')
+      && String(r.tax_at || '') === String(v.taxAt || '')
+      && JSON.stringify(r.photos || {}) === JSON.stringify(schoneFotos(v.photos, r.id));
+
     for (const id of Object.keys(vs)) {
       const v = vs[id] || {};
+      const r = server.get(id);
+      if (r && Number(r.up) > basis && !gelijk(r, v)) { overgeslagen.push(id); continue; }
       await client.query(
         `INSERT INTO vehicles (id,status,klaar,route,owner,arrived_at,tax_at,photos,subtasks,updated_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now())
@@ -457,6 +492,18 @@ async function putState(b) {
        `global_todos` blijft als bevroren bron staan voor de rollback; hij wordt niet meer gelezen
        en niet meer geschreven. */
 
+    /* Is er ook maar één auto overgeslagen, dan klopt het geheugen van deze browser niet meer en
+       mag ook het activiteitenlog er niet overheen — dat wordt namelijk in zijn geheel vervangen. */
+    if (overgeslagen.length) {
+      await client.query('ROLLBACK');
+      console.error('putState: verouderde opslag geweigerd — ' + overgeslagen.length
+        + ' auto(\'s) waren intussen gewijzigd: ' + overgeslagen.slice(0, 8).join(', ')
+        + (overgeslagen.length > 8 ? ', …' : ''));
+      const fout = new Error('je gegevens zijn verouderd — ververs de pagina');
+      fout.code = 'verouderd'; fout.autos = overgeslagen;
+      throw fout;
+    }
+
     const log = Array.isArray(b.activityLog) ? b.activityLog : [];
     await client.query('DELETE FROM activity_log');
     if (log.length) {
@@ -474,7 +521,11 @@ async function putState(b) {
       }
     }
 
+    // De nieuwe versie meegeven, zodat de browser meteen weer bij is en zijn volgende klik niet
+    // zichzelf weigert.
+    const na = await client.query('SELECT COALESCE(MAX((extract(epoch from updated_at)*1000)::bigint),0) AS up FROM vehicles');
     await client.query('COMMIT');
+    return Number(na.rows[0].up) || 0;
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;
@@ -655,8 +706,12 @@ const server = http.createServer(async (req, res) => {
 
     if (url === '/api/state' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); return sendJson(res, 200, await getState()); }
     if (url === '/api/state' && method === 'PUT') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req); if (b === null) return sendJson(res, 400, { error: 'bad' });
-      try { await putState(b); } catch (e) { if (e.code === 'wissing') return sendJson(res, 409, { error: 'wissing', melding: e.message }); throw e; }
-      return sendJson(res, 200, { ok: true }); }
+      let versie = 0;
+      try { versie = await putState(b); } catch (e) {
+        if (e.code === 'wissing') return sendJson(res, 409, { error: 'wissing', melding: e.message });
+        if (e.code === 'verouderd') return sendJson(res, 409, { error: 'verouderd', melding: e.message, autos: e.autos || [] });
+        throw e; }
+      return sendJson(res, 200, { ok: true, versie }); }
     if (url === '/api/photo' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.key || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = await saveDataUrl(b.dataUrl, b.id, String(b.key).replace(/[^A-Za-z0-9._-]/g, '_')); if (!up) return sendJson(res, 400, { error: 'format' }); return sendJson(res, 200, { url: up }); }
 
     if (url === '/api/status' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const r = await pool.query('SELECT id,status FROM vehicles ORDER BY sort_order NULLS LAST, id'); const out = {}; for (const row of r.rows) out[row.id] = { status: row.status }; return sendJson(res, 200, { vehicles: out }); }
