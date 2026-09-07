@@ -407,12 +407,33 @@ toevoegen.
 - **Een vakje met een foto blijft altijd zichtbaar**, ook als het voor de nieuwe soort niet geldt —
   dan met "n.v.t." erbij. Anders blijft een foto na een soortwissel onzichtbaar in de database staan,
   en daar hebben we deze week al genoeg van gehad.
-- Verplichte stukken per soort (route JA meegerekend): **M1 8 · N1 11 · L 7 · O2 6**. De M1-lijst is
+- Verplichte stukken per soort (route JA meegerekend): **M1 8 · N1 11 · L 8 · O2 6**. De M1-lijst is
   letter voor letter die van vóór deze wijziging.
-- **Op een aanhangwagen geldt het BPM-rapport nooit** (opgave Prieva), ook niet als iemand route JA
-  kiest: daar zit geen BPM op.
+- **De tellerstand is bij een motorfiets verplicht**, niet optioneel (opgave Prieva 07-09-2026). De
+  RDW-app zet hem daar op optioneel; dat is een fout in die app. Daarmee ging L van 7 naar 8.
 - De keuze staat **op de kaart RDW-foto's** (daar loop je er tegenaan) en in **Gegevens wijzigen** en
   **Auto toevoegen**. Eén veld, drie plekken om het te zetten.
+- **Het is een keuzescherm van vier tegels, geen keuzelijst** (07-09-2026): 2×2, vaste plaatsing
+  (M1 linksboven, N1 rechtsboven, L linksonder, O2 rechtsonder), elk met een inline-SVG-icoon, de
+  RDW-benaming, de voertuigcategorie en **hoeveel foto's die soort verplicht stelt**. Dat laatste
+  getal is waar het om gaat, en dat hoor je te zien vóórdat je kiest — een keuzelijst verstopt de
+  andere drie. De gekozen tegel draagt het blauwverloop. In het formulier staat dezelfde tegelrij
+  met de waarde in een **verborgen veld** eronder, zodat het opslaan hem gewoon met `w('na-soort')`
+  uitleest, net als elk ander veld.
+
+### Een aanhangwagen: wél het importtraject, geen BPM
+Sinds 07-09-2026. Eerst zou het hele importproces voor een aanhangwagen vervallen; bij het nazoeken
+bleek dat verkeerd. Boven **750 kg toegestane maximummassa** (leeggewicht plus laadvermogen) heeft een
+aanhangwagen een **eigen kenteken** nodig — en O2 is per definitie 750–3500 kg, dus élke O2 die Prieva
+invoert moet langs een RDW-keuringsstation, waar het complete buitenlandse kentekenbewijs wordt
+ingenomen. Wat er níét op zit is BPM: dat is de belasting van personenauto's en motorrijwielen, en een
+aanhanger is geen motorrijtuig.
+- Eigen route `ROUTE_AANHANGER` in `index.html`, zes stappen: RDW Foto's, Papieren Foto's, RDW
+  Importeer, RDW Goedkeuring, Wachten op BIN, BIN.
+- **De vraag "BPM Taxatie JA of NEE" wordt niet gesteld**: de kaart is weg, de routebadge op *Lopende*
+  blijft leeg en het is ook niet de volgende actie. De kop heet dan *Importtraject*.
+- Het BPM-taxatierapport gold al nooit voor een aanhangwagen (`eis` als functie in `rdw/velden.js`).
+- `zonderBpm(v)` is de enige plek waar dit hangt; de andere drie soorten veranderen niet.
 
 ### De dubbele eisenlijst is weg
 `rdw/velden.js` is nu de **enige** lijst. `index.html` haalt hem op via **`GET /api/velden`** (elke
@@ -1075,6 +1096,15 @@ versie haalde dat door elkaar en zag dertien inkoopprijzen aan voor verkoopdatum
   Back-up: `pg_hba.conf.bak-20260815-pvp`.
 - **`import-json.js` (in `/root/pvp/pg/`) is eenmalig geweest.** De JSON-bestanden zijn bevroren;
   opnieuw draaien overschrijft de database met oude data. Het script weigert dat zonder `--overschrijf`.
+- **De breedte van `main` hangt op één plek** (`zetBreedte()`, 07-09-2026). Er zijn twee standen:
+  1680px voor Komende/Lopende/Verkocht en de autopagina, 1160px voor de rest. Die klasse werd eerst
+  alleen in `rerenderNu()` gezet en niet in `openVehNu()`: een auto die je vanaf *Lopende* opende
+  bleef daardoor breed staan en klapte bij de eerstvolgende hertekening — een vinkje, een tegel —
+  terug naar 1160px. Kwam je van *Vandaag*, dan stond hij meteen smal en viel er niets op. Roep je
+  een teken-functie aan die de weergave wisselt, zet dan ook de breedte.
+- **`.det-grid>*{min-width:0}`**: zonder dat mag een grid-kolom niet smaller worden dan de
+  min-content van zijn inhoud, en dan duwt een lang fotolabel de verhouding 1.35 : 1 scheef zodra er
+  andere vakjes in beeld komen.
 - **Naar boven springen hoort bij navigeren, niet bij tekenen** (25-08-2026). `openVeh()`,
   `renderLog()`, `renderTaxCar()` en `renderFotoCar()` riepen zélf `window.scrollTo(0,0)` aan. Omdat
   elke handeling de pagina opnieuw tekent, sprong je bij élk vinkje terug naar boven: vinkje, sprong,
