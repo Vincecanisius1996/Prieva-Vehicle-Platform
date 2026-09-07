@@ -1613,6 +1613,7 @@ function renderLogistiek(){
 function openVeh(id){ scrollBewaard(()=>openVehNu(id)); }
 function openVehNu(id){
   const v=V.find(x=>x.id===id); if(!v)return; state.view="veh:"+id; setNav(v.status==='lopende'?'lopende':'komende');
+  zetBreedte();
   const s=steps(v); const act=currentAction(v);
   // De advertentie in Mobilox. Het id komt van de agent; het adres is vast. Nieuw tabblad met
   // rel="noopener", want een link naar een ander systeem hoort PVP niet te kunnen sturen.
@@ -3564,10 +3565,20 @@ function scrollBewaard(fn){
 }
 
 function rerender(){ scrollBewaard(rerenderNu); }
+/* De breedte hangt aan het scherm, en dus op ÉÉN plek — die elke tekenweg aanroept.
+   Stond eerst alleen in rerenderNu(). openVehNu() zette de klasse niet, dus een auto die je vanaf
+   Lopende opende bleef in de brede stand staan en klapte bij de eerstvolgende hertekening (een
+   vinkje, een tegel) terug naar 1160px. De pagina versprong dan onder je handen, en of dat gebeurde
+   hing af van waar je vandaan kwam: vanaf Vandaag stond hij meteen smal.
+   Kolom E t/m P van de lijsten past niet in 1160px, en de autopagina heeft twee kolommen met
+   fotorasters — die twee gaan de breedte in. De formulierachtige schermen blijven smal, want een
+   formulier van 1560px breed leest niemand prettig. */
+function zetBreedte(){
+  app.classList.toggle("breed",["komende","lopende","verkocht"].includes(state.view)
+                              || String(state.view).startsWith("veh:"));
+}
 function rerenderNu(){
-  // Kolom E t/m P past niet in 1160px. Alleen de drie boekpagina's gaan de breedte in; de rest
-  // blijft leesbaar smal, want een formulier van 1560px breed leest niemand prettig.
-  app.classList.toggle("breed",["komende","lopende","verkocht"].includes(state.view));
+  zetBreedte();
   if(state.view==="carport")return renderCarport();
   if(state.view==="logistiek")return renderLogistiek();
   if(state.view==="vandaag")renderVandaag();
