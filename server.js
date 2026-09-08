@@ -430,6 +430,9 @@ function schoneFotos(photos, id) {
   return uit;
 }
 
+const SOORT_BEVINDING = ['melding', 'banden', 'schade', 'overig'];
+const STAND_BEVINDING = ['open', 'verholpen', 'geaccepteerd'];
+
 async function putState(b) {
   const client = await pool.connect();
   try {
@@ -590,6 +593,17 @@ const CARPORT_MARGE_DAGEN = 2;
 function dagUitTekst(d) {                       // 'dd-mm-jjjj' -> epoch ms (UTC, begin van de dag)
   const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(String(d || ''));
   return m ? Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null;
+}
+/* Bestaat deze dag echt? `dagUitTekst` kijkt alleen naar de vorm, en Date.UTC rolt door: 31-31-2026
+   wordt dan gewoon een datum in 2028. Geeft de tekst terug als hij klopt, null bij leeg, NaN bij fout.
+   Bewust één functie: deze controle stond eerst alleen binnen PUT /api/vehicle, en twee exemplaren
+   van dezelfde logica lopen uiteen. */
+function echteDatum(x) {
+  const t = (x === undefined || x === null) ? '' : String(x).trim();
+  if (t === '') return null;
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(t); if (!m) return NaN;
+  const d = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
+  return (d.getUTCDate() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCFullYear() === +m[3]) ? t : NaN;
 }
 // Vandaag als 'dd-mm-jjjj', in Nederlandse tijd. De server draait op UTC; tussen middernacht en
 // twee uur 's nachts zou dat anders de dag ervoor opleveren.
@@ -865,12 +879,7 @@ const server = http.createServer(async (req, res) => {
       const tekst = x => { const t = (x === undefined || x === null) ? '' : String(x).trim(); return t === '' ? null : t; };
       const getal = x => { if (x === undefined || x === null || String(x).trim() === '') return null; const n = bedrag(x); return Number.isFinite(n) ? n : NaN; };
       // Niet alleen de vorm maar ook of de dag bestaat: 31-31-2026 heeft de goede vorm en is geen datum.
-      const datum = x => {
-        const t = tekst(x); if (t === null) return null;
-        const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(t); if (!m) return NaN;
-        const d = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
-        return (d.getUTCDate() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCFullYear() === +m[3]) ? t : NaN;
-      };
+      const datum = echteDatum;
 
       // Wat mag er gewijzigd worden. Alles wat hier niet staat is procesgegeven (status, fase, foto's,
       // eigenaar, verkoopvelden) en hoort via zijn eigen weg te lopen, niet via een correctieformulier.
@@ -1729,6 +1738,109 @@ const server = http.createServer(async (req, res) => {
 
        Team en admin. Carport, fotograaf en taxateur krijgen 403 — dit is Prieva's eigen werklijst;
        het werk van Carport loopt via carport_taken op de werkbon. */
+
+    /* ===== Technische staat per auto: bevindingen (08-09-2026) =====
+       Wat er technisch aan een auto mankeert stond alleen in het inkooprapport (een pdf) en in de
+       advertentietekst. Allebei slechte plekken: een pdf leest niemand terug, en een advertentietekst
+       wordt herschreven en dan is de kennis weg. Carport kon er sowieso niet bij.
+       Eén lijst, twee vensters: de autopagina bij Prieva en de werkbon bij Carport.
+       Wie wat mag: Prieva voegt toe en corrigeert, Carport vinkt af wat verholpen is. Zelfde
+       verdeling als bij de werkbontaken. Verwijderen is alleen voor een beheerder — een bevinding
+       weggooien wist de reden waarom er ooit aan gewerkt is. */
+    if (url === '/api/bevindingen' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin' && u.r !== 'carport') return sendJson(res, 403, { error: 'forbidden' });
+      const auto = (new URL(req.url, 'http://x').searchParams.get('auto') || '').trim();
+      const waar = [], arg = [];
+      if (auto) { arg.push(auto); waar.push(`b.vehicle_id = $${arg.length}`); }
+      // Carport ziet alleen de auto's op zijn eigen planning — net als bij /api/vehicles. Een
+      // afgeschermde rol hoort niet de hele vloot te kunnen uitlezen.
+      if (u.r === 'carport') waar.push('b.vehicle_id IN (SELECT vehicle_id FROM carport_bonnen WHERE vehicle_id IS NOT NULL)');
+      const r = await pool.query(
+        `SELECT b.*, v.merk, v.model, v.kenteken FROM bevindingen b
+           LEFT JOIN vehicles v ON v.id = b.vehicle_id
+          ${waar.length ? 'WHERE ' + waar.join(' AND ') : ''}
+          ORDER BY (b.stand <> 'open'), b.id DESC`, arg);
+      return sendJson(res, 200, {
+        bevindingen: r.rows.map(x => ({
+          id: x.id, vehicleId: x.vehicle_id, soort: x.soort, tekst: x.tekst,
+          bron: x.bron, bronDatum: x.bron_datum, stand: x.stand,
+          ts: x.ts, door: x.door, opgelostTs: x.opgelost_ts, opgelostDoor: x.opgelost_door,
+          auto: `${x.merk || ''} ${x.model || ''}`.trim() || null, autoKenteken: x.kenteken
+        }))
+      });
+    }
+
+    if (url === '/api/bevinding' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const tekst = String(b.tekst == null ? '' : b.tekst).trim();
+      if (!tekst) return sendJson(res, 400, { error: 'lege bevinding' });
+      if (tekst.length > 2000) return sendJson(res, 400, { error: 'bevinding te lang' });
+      const vid = String(b.vehicleId == null ? '' : b.vehicleId).trim();
+      if (!vid) return sendJson(res, 400, { error: 'missing' });
+      if (!(await pool.query('SELECT 1 FROM vehicles WHERE id=$1', [vid])).rowCount)
+        return sendJson(res, 404, { error: 'onbekende auto' });
+      const soort = SOORT_BEVINDING.includes(b.soort) ? b.soort : 'melding';
+      const bron = String(b.bron == null ? '' : b.bron).trim().slice(0, 120) || 'handmatig';
+      const bronDatum = echteDatum(b.bronDatum);
+      if (Number.isNaN(bronDatum))
+        return sendJson(res, 400, { error: 'datum', melding: 'datum moet dd-mm-jjjj zijn en moet bestaan' });
+      const wie = u.n || u.u;
+      try {
+        const r = await pool.query(
+          `INSERT INTO bevindingen (vehicle_id,soort,tekst,bron,bron_datum,ts,door,herkomst)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+          [vid, soort, tekst, bron, bronDatum, Date.now(), wie, b.herkomst ? String(b.herkomst).slice(0, 200) : null]);
+        await logSchrijf(wie, 'techniek', vid, 'bevinding toegevoegd', { naar: soort, melding: tekst.slice(0, 160) });
+        return sendJson(res, 200, { ok: true, id: r.rows[0].id });
+      } catch (e) {
+        // UNIQUE op herkomst: hetzelfde rapport twee keer inlezen voegt niets dubbel toe.
+        if (e && e.code === '23505') return sendJson(res, 200, { ok: true, dubbel: true });
+        throw e;
+      }
+    }
+
+    /* De stand zetten. Omkeerbaar, dus geen bevestiging nodig — en Carport mag dit ook, want die
+       lost het werk op. `geaccepteerd` is bewust iets anders dan `verholpen`: een kras die zo blijft
+       is geen open punt meer, maar hij is ook niet gerepareerd, en dat verschil hoort zichtbaar te
+       blijven in de advertentie. */
+    if (url === '/api/bevinding-stand' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin' && u.r !== 'carport') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const id = Number(b.id); if (!Number.isFinite(id)) return sendJson(res, 400, { error: 'missing' });
+      const stand = STAND_BEVINDING.includes(b.stand) ? b.stand : null;
+      if (!stand) return sendJson(res, 400, { error: 'onbekende stand' });
+      const oud = (await pool.query('SELECT vehicle_id, stand, tekst FROM bevindingen WHERE id=$1', [id])).rows[0];
+      if (!oud) return sendJson(res, 404, { error: 'onbekend' });
+      if (u.r === 'carport' && !(await pool.query(
+        'SELECT 1 FROM carport_bonnen WHERE vehicle_id=$1', [oud.vehicle_id])).rowCount)
+        return sendJson(res, 403, { error: 'forbidden' });
+      const wie = u.n || u.u;
+      const open = stand === 'open';
+      await pool.query(
+        `UPDATE bevindingen SET stand=$2, opgelost_ts=$3, opgelost_door=$4, updated_at=now() WHERE id=$1`,
+        [id, stand, open ? null : Date.now(), open ? null : wie]);
+      await logSchrijf(wie, 'techniek', oud.vehicle_id, 'bevinding ' + stand,
+        { van: oud.stand, naar: stand, melding: String(oud.tekst || '').slice(0, 160) });
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (url === '/api/bevinding-del' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const id = Number(b.id); if (!Number.isFinite(id)) return sendJson(res, 400, { error: 'missing' });
+      const oud = (await pool.query('SELECT vehicle_id, tekst FROM bevindingen WHERE id=$1', [id])).rows[0];
+      if (!oud) return sendJson(res, 404, { error: 'onbekend' });
+      await pool.query('DELETE FROM bevindingen WHERE id=$1', [id]);
+      // De tekst gaat mee het logboek in: weggooien mag, maar niet spoorloos.
+      await logSchrijf(u.n || u.u, 'techniek', oud.vehicle_id, 'bevinding verwijderd',
+        { melding: String(oud.tekst || '').slice(0, 300) });
+      return sendJson(res, 200, { ok: true });
+    }
 
     if (url === '/api/taken' && method === 'GET') {
       const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });

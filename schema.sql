@@ -505,3 +505,33 @@ CREATE TABLE IF NOT EXISTS verkooptraject (
 -- NULL = personenauto, dus geen migratie voor de bestaande auto's. Zie rdw/velden.js voor de vier
 -- soorten en wat de RDW per soort wil zien.
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS voertuigsoort text;
+
+-- ===== Technische staat per auto: `bevindingen` (08-09-2026) =====
+-- Wat er technisch aan een auto mankeert stond alleen in het inkooprapport (een pdf) en in de tekst
+-- van een advertentie. Allebei slechte plekken: een pdf leest niemand terug, en een advertentietekst
+-- wordt herschreven of gewist en dan is de kennis weg. Carport kon er sowieso niet bij.
+--
+-- Bewust een EIGEN TABEL en geen kolom op `vehicles`: die rij wordt door PUT /api/state in zijn
+-- geheel overschreven — precies zo gingen op 20-08-2026 de statusvelden van 64 auto's verloren.
+--
+-- `bron` blijft staan, ook nadat een bevinding is afgevinkt. Over een half jaar wil je kunnen zien
+-- dat het batterijlampje bij inkoop al brandde, en niet alleen dát het ooit is opgelost.
+CREATE TABLE IF NOT EXISTS bevindingen (
+  id            bigserial PRIMARY KEY,
+  vehicle_id    text NOT NULL,
+  soort         text NOT NULL DEFAULT 'melding',   -- melding | banden | schade | overig
+  tekst         text NOT NULL,
+  bron          text,                              -- 'COS-statusrapport', 'CoC', 'handmatig', …
+  bron_datum    text,                              -- dd-mm-jjjj: wanneer het is vastgesteld
+  stand         text NOT NULL DEFAULT 'open',      -- open | verholpen | geaccepteerd
+  ts            bigint,
+  door          text,
+  opgelost_ts   bigint,
+  opgelost_door text,
+  -- Idempotentie voor wat een agent of een import automatisch aanmaakt: 'cos:<auto>:<regel>'.
+  -- Twee keer inlezen van hetzelfde rapport voegt dan niets dubbel toe.
+  herkomst      text UNIQUE,
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS bevindingen_vehicle ON bevindingen (vehicle_id, id DESC);
+CREATE INDEX IF NOT EXISTS bevindingen_open    ON bevindingen (stand, id DESC);

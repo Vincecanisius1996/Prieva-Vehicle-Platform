@@ -878,6 +878,54 @@ async function loadTaken(){ if(!apiOk)return;
   }catch(_){}
 }
 const takenVoorAuto = id => taken.filter(t=>t.vehicleId===id);
+
+/* ===== Technische staat: bevindingen (08-09-2026) =====
+   Wat er technisch aan een auto mankeert stond alleen in het inkooprapport en in de advertentietekst.
+   Nu één lijst in PVP, zichtbaar op de autopagina én op de Carport-werkbon: Prieva voegt toe en
+   corrigeert, Carport vinkt af wat verholpen is. `geaccepteerd` is bewust iets anders dan
+   `verholpen` — een kras die zo blijft is geen open punt meer, maar hij is ook niet gerepareerd, en
+   dat verschil hoort in de advertentie terug te komen. */
+const bevindingen = [];
+const BEV_SOORT = [['melding','melding'],['banden','banden'],['schade','schade'],['overig','overig']];
+async function loadBevindingen(){ if(!apiOk)return;
+  try{ const r=await fetch("/api/bevindingen",{cache:"no-store"}); if(!r.ok)return;
+    const j=await r.json(); if(!j||!Array.isArray(j.bevindingen))return;
+    bevindingen.length=0; j.bevindingen.forEach(b=>bevindingen.push(b));
+  }catch(_){}
+}
+const bevindingenVan = id => bevindingen.filter(b=>b.vehicleId===id);
+// Vandaag als dd-mm-jjjj, dezelfde vorm als elders in PVP en als wat de server accepteert.
+const vandaagNL = () => new Date().toLocaleDateString('nl-NL',{timeZone:'Europe/Amsterdam',day:'2-digit',month:'2-digit',year:'numeric'}).replace(/\//g,'-');
+const bevindingenOpen = id => bevindingenVan(id).filter(b=>b.stand==='open');
+async function bevindingDoe(pad,body,melding){
+  if(!apiOk)return null;
+  try{
+    const r=await fetch(pad,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ showToast(j.error==='forbidden'?"Daar heb je geen rechten voor":(j.melding||j.error||"Opslaan mislukt"),false); return null; }
+    await loadBevindingen(); rerenderCurrent();
+    if(melding)showToast(melding,false);
+    return j;
+  }catch(_){ showToast("Geen verbinding met de server",false); return null; }
+}
+function bevindingStand(id,stand){
+  const b=bevindingen.find(x=>x.id===id); if(!b)return;
+  return bevindingDoe('/api/bevinding-stand',{id,stand},
+    stand==='open'?'Weer als open punt gezet':stand==='verholpen'?'Verholpen':'Geaccepteerd — blijft zo');
+}
+function bevindingToevoegen(vid){
+  const inp=document.getElementById('bevin-'+vid), sel=document.getElementById('bevsoort-'+vid);
+  if(!inp)return; const tekst=inp.value.trim(); if(!tekst)return;
+  inp.value='';
+  bevindingDoe('/api/bevinding',{vehicleId:vid,tekst,soort:sel?sel.value:'melding',bron:'handmatig',bronDatum:vandaagNL()},'Bevinding toegevoegd');
+}
+function bevindingWeg(id){
+  const b=bevindingen.find(x=>x.id===id); if(!b)return;
+  // Verwijderen kan niet ongedaan gemaakt worden (de undo-stack zit in de browser, dit leeft op de
+  // server), vandaar een bevestiging. De tekst gaat mee het logboek in.
+  if(!window.confirm(`Bevinding verwijderen?\n\n“${b.tekst}”\n\nDit kan niet ongedaan gemaakt worden. De regel blijft wel in het logboek staan.`))return;
+  bevindingDoe('/api/bevinding-del',{id},'Bevinding verwijderd');
+}
 async function taakDoe(pad,body,melding){
   if(!apiOk)return null;
   try{
@@ -1669,6 +1717,7 @@ function openVehNu(id){
       <div style="display:flex;flex-direction:column;gap:18px">
         ${v.status==='lopende'?`<div class="card"><h3>Verantwoordelijke</h3><div class="owner-box">${v.owner?pav(v.owner):`<span class="pav" style="background:var(--slate)">?</span>`}<div style="flex:1"><div style="font-weight:600;font-size:13px">${v.owner||'Niet toegewezen'}</div><div class="muted" style="font-size:12px">voor huidige fase</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div></div>`:''}
         ${(v.status==='lopende'||v.status==='gemeld verkocht')?subtaskCard(v):''}
+        ${bevindingenKaart(v)}
         <div class="card"><h3>Herkomst</h3><div class="card-body">
           <div class="spec"><span class="k">Leverancier</span><span class="v">${v.lev||'—'}</span></div>
           <div class="spec" style="border-bottom:0"><span class="k">Transport / status</span><span class="v" style="max-width:160px">${v.note||'—'}</span></div>
@@ -2247,6 +2296,44 @@ function subtaskCard(v){
       <button class="btn btn-primary btn-sm" onclick="addSubtask('${v.id}')">Toevoegen</button>
     </div></div>`;
 }
+/* De kaart op de autopagina. `mag` zegt wat deze rol mag: Carport ziet dezelfde regels maar mag
+   alleen de stand zetten — die lost het werk op, maar bepaalt niet wat er aan een auto mankeert. */
+function bevindingRij(b,mag){
+  const dicht=b.stand!=='open';
+  const bron=[b.bron,b.bronDatum].filter(Boolean).join(' · ');
+  return `<div class="todo" style="align-items:flex-start">
+    <label class="chk" title="${dicht?'Weer als open punt zetten':'Afvinken als verholpen'}">
+      <input type="checkbox" ${dicht?'checked':''} onchange="bevindingStand(${b.id},this.checked?'verholpen':'open')"><span class="box"></span></label>
+    <div class="body" style="cursor:default">
+      <div class="act" style="${dicht?'color:var(--muted)':''}">
+        <span class="soort ${b.soort==='banden'?'onderdeel':b.soort==='schade'?'schade':'reparatie'}">${esc(b.soort)}</span>
+        <span style="${b.stand==='verholpen'?'text-decoration:line-through':''}">${esc(b.tekst)}</span></div>
+      <div class="muted" style="font-size:11px;margin-top:2px">
+        ${bron?esc(bron):''}${dicht?` — ${b.stand==='verholpen'?'verholpen':'geaccepteerd'}${b.opgelostDoor?' door '+esc(b.opgelostDoor):''}`:''}</div>
+    </div>
+    ${mag.stand&&!dicht?`<button class="btn btn-ghost btn-sm" title="Blijft zo — geen open punt meer, maar ook niet gerepareerd" onclick="bevindingStand(${b.id},'geaccepteerd')">Blijft zo</button>`:''}
+    ${mag.del?`<button class="premove" style="position:static;background:#eef2f6;color:var(--slate)" title="Verwijderen" onclick="bevindingWeg(${b.id})">×</button>`:''}
+  </div>`;
+}
+function bevindingenKaart(v){
+  const lijst=bevindingenVan(v.id);
+  const open=lijst.filter(b=>b.stand==='open').length;
+  const mag={stand:true,del:isAdmin(),toevoegen:true};
+  const rows=lijst.length?lijst.map(b=>bevindingRij(b,mag)).join('')
+    :`<div class="empty" style="padding:14px">Nog niets vastgelegd over de technische staat.</div>`;
+  return `<div class="card"><h3>Technische staat
+      <span class="muted" style="font-weight:500;font-size:12px">${open?`${open} open punt${open===1?'':'en'}`:lijst.length?'alles afgehandeld':'geen punten'}</span></h3>
+    <div style="padding:2px 0">${rows}</div>
+    <div style="display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line)">
+      <select id="bevsoort-${v.id}" style="border:1px solid var(--line);border-radius:10px;padding:8px 6px;font-size:13px">
+        ${BEV_SOORT.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
+      <input id="bevin-${v.id}" placeholder="Bijv. batterijlampje brandt, achterband 4 mm…" style="flex:1;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px" onkeydown="if(event.key==='Enter')bevindingToevoegen('${v.id}')">
+      <button class="btn btn-primary btn-sm" onclick="bevindingToevoegen('${v.id}')">Toevoegen</button>
+    </div>
+    <div class="note" style="margin:0 16px 12px">Blijft staan als de advertentie verandert, en Carport ziet dezelfde lijst op de werkbon.</div>
+    </div>`;
+}
+
 /* ===== Algemene to-do's (los, optioneel gekoppeld aan auto) ===== */
 function openTodoModal(){
   let ov=document.getElementById('todoModal');
@@ -2912,6 +2999,19 @@ const isCarport=()=>currentUser&&currentUser.role==='carport';
    je open wat je nodig hebt. De bon waar je aan werkt onthoudt zijn stand tijdens de sessie. */
 let bonOpen={};
 function bonKlap(id){ bonOpen[id]=!bonOpen[id]; rerenderCurrent(); }
+/* Dezelfde bevindingen als op de autopagina, maar dan op de werkbon. Carport mag alleen de stand
+   zetten: die lost het werk op, maar bepaalt niet wat er aan een auto mankeert. Staat er niets, dan
+   staat er ook niets in beeld — een leeg kopje is ruis. */
+function bonTechniek(bon){
+  if(!bon.vehicleId)return '';
+  const lijst=bevindingenVan(bon.vehicleId);
+  if(!lijst.length)return '';
+  const open=lijst.filter(b=>b.stand==='open').length;
+  const mag={stand:true,del:isAdmin(),toevoegen:false};
+  return `<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">
+    <div class="note" style="margin:0 0 6px">Technische staat${open?` · ${open} open punt${open===1?'':'en'}`:' · alles afgehandeld'}</div>
+    ${lijst.map(b=>bevindingRij(b,mag)).join('')}</div>`;
+}
 function bonKaart(bon,sleepbaar){
   const a=bon.auto||{};
   const uit=!!bonOpen[bon.id];
@@ -2948,6 +3048,7 @@ function bonKaart(bon,sleepbaar){
     </div>
     <div class="bon-body" style="${uit?'':'display:none'}">
       ${taken}
+      ${bonTechniek(bon)}
       <div style="display:flex;gap:7px;align-items:center;margin-top:8px;flex-wrap:wrap">
         <select id="soort-${bon.id}" class="assign">${SOORTEN.map(([w,l])=>`<option value="${w}">${l}</option>`).join("")}</select>
         <input id="taak-${bon.id}" class="inp" style="flex:1;min-width:180px" placeholder="Wat moet er gebeuren?" onkeydown="if(event.key==='Enter')carportTaakBij(${bon.id})">
@@ -3517,8 +3618,8 @@ async function startFor(){
   if(db&&cp)db.textContent=(currentUser.name||'CarPort')+' · planning · werk af en meld een auto af zodra hij klaarstaat';
   if(foto){ state.view='foto'; loadAdphotos().then(loadStatusFoto).then(loadVerkooptraject).then(renderFoto); }
   else if(tax){ state.view='tax'; loadTaxState().then(loadBpm).then(loadTaxAfgerond).then(renderTax); }
-  else if(cp){ state.view='carport'; loadCarport().then(renderCarport); }
-  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen(),loadNotities(),loadLogistiek(),loadTaken(),loadVerkooptraject()]).then(()=>go('vandaag')); }
+  else if(cp){ state.view='carport'; loadCarport().then(loadBevindingen).then(renderCarport); }
+  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen(),loadNotities(),loadLogistiek(),loadTaken(),loadVerkooptraject(),loadBevindingen()]).then(()=>go('vandaag')); }
 }
 /* De lijst V onderaan dit bestand is bevroren op deze datum. Staat er geen verbinding, dan is dát
    wat je ziet — en dan hoort er te staan hoe oud het is. */

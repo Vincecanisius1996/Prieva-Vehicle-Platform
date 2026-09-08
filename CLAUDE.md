@@ -526,9 +526,36 @@ weg, en de labels *Los* en *Extra* zijn van het scherm verdwenen.
   undo-stack van de browser en taken leven nu op de server. Vandaar een bevestiging in beeld, en de
   tekst gaat mee het logboek in.
 
+## Technische staat per auto: `bevindingen`
+Sinds 08-09-2026. Wat er technisch aan een auto mankeert stond alleen in het inkooprapport (een pdf)
+en in de tekst van een advertentie. Allebei slechte plekken: een pdf leest niemand terug, en een
+advertentietekst wordt herschreven of gewist en dan is de kennis weg. Carport kon er sowieso niet bij.
+- **Eigen tabel `bevindingen`**, nooit een kolom op `vehicles` — die rij wordt door `PUT /api/state`
+  in zijn geheel overschreven.
+- Vier soorten (`melding` · `banden` · `schade` · `overig`) en drie standen (`open` · `verholpen` ·
+  `geaccepteerd`). **`geaccepteerd` is bewust iets anders dan `verholpen`:** een kras die zo blijft is
+  geen open punt meer, maar hij is ook niet gerepareerd, en dat verschil hoort in de advertentie
+  terug te komen.
+- **`bron` en `bron_datum` blijven staan, ook na afvinken.** Over een half jaar wil je kunnen zien
+  dát het batterijlampje bij inkoop al brandde, niet alleen dat het ooit is opgelost.
+- **Eén lijst, twee vensters:** de kaart *Technische staat* op de autopagina en hetzelfde blok op de
+  Carport-werkbon. **Prieva voegt toe en corrigeert, Carport zet alleen de stand** — die lost het werk
+  op maar bepaalt niet wat er aan een auto mankeert. Verwijderen is alleen voor een admin, met een
+  bevestiging, en de tekst gaat mee het logboek in.
+- Endpoints: `GET /api/bevindingen` (team+admin+carport, carport alleen auto's met een werkbon),
+  `POST /api/bevinding` (team+admin), `-stand` (team+admin+carport), `-del` (**alleen admin**).
+  Foto en taxateur krijgen 403. Alles in `pvp_log` onder `onderdeel='techniek'`.
+- **`herkomst` is `UNIQUE`** (`cos:<auto>:<regel>`), zodat hetzelfde rapport twee keer inlezen niets
+  dubbel toevoegt — zelfde patroon als bij de migratie van de taken.
+- De kaart staat er bij **elke status**, ook bij *komende*: de bevindingen komen uit het
+  inkooprapport, en dat is er al voordat de auto op de zaak staat.
+- `echteDatum()` staat nu op één plek in `server.js` in plaats van alleen binnen `PUT /api/vehicle`.
+  Die controleert of de dag **bestaat**: `dagUitTekst()` kijkt alleen naar de vorm en `Date.UTC` rolt
+  door, dus `31-31-2026` werd anders gewoon een datum in 2028.
+
 ## Eén logboek voor het nieuwe werk: `pvp_log`
 Sinds 28-08-2026. Elke handeling in de onderdelen hieronder komt in **`pvp_log`** (`onderdeel`:
-`account` | `notitie` | `logistiek` | `betaling`). Server-geschreven en append-only; wordt nooit
+`account` | `notitie` | `logistiek` | `betaling` | `techniek`). Server-geschreven en append-only; wordt nooit
 opgeschoond. Bewust **niet** `activity_log`: die wordt door de frontend gevuld en meegestuurd in de
 state-blob van `PUT /api/state`, en een logboek dat een client kan herschrijven is geen logboek.
 Mislukt het schrijven van een logregel, dan gaat de handeling zelf gewoon door — met een melding in
