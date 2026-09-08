@@ -67,6 +67,14 @@ OPDRACHT=$(printf '%s' "$OPDRACHT_JSON" | lees '["opdracht"]')
 
 log "opdracht: $NAAM ($AUTO, $SOORT)"
 
+# macOS heeft van huis uit geen `timeout` (dat is GNU-gereedschap). Met coreutils heet het
+# `gtimeout`. Is geen van beide er, dan draaien we zonder harde tijdslimiet - liever een ronde die
+# lang duurt dan een ronde die helemaal niet loopt. De launchd-unit start hem toch pas een half uur
+# later opnieuw, en er is geen tweede tegelijk omdat de auto meteen op `bezig` gaat.
+if command -v timeout >/dev/null 2>&1;      then KLOK=(timeout "${MAX_MINUTEN}m")
+elif command -v gtimeout >/dev/null 2>&1;   then KLOK=(gtimeout "${MAX_MINUTEN}m")
+else KLOK=(); log "let op: geen timeout/gtimeout gevonden - de ronde loopt zonder tijdslimiet"; fi
+
 stand() {
   curl -sS -m 20 "${KOP[@]}" -X POST "$PVP_BASISURL/api/advertentie-stand" \
     -d "{\"id\":\"$AUTO\",\"stand\":\"$1\",\"melding\":$(printf '%s' "$2" | json)}" >/dev/null 2>&1 || true
@@ -76,7 +84,10 @@ stand() {
 # de volgende ronde hem niet nog een keer op (de opdrachtlijst geeft alleen auto's met stand=open).
 stand bezig "runner gestart $(date '+%d-%m-%Y %H:%M')"
 
-UIT=$(cd "$REPO" && timeout "${MAX_MINUTEN}m" claude -p "$OPDRACHT" 2>&1)
+command -v claude >/dev/null 2>&1 || { log "FOUT: claude staat niet in het PATH"; verslag false "claude niet gevonden op de Mac"; exit 1; }
+[ -d "$REPO" ] || { log "FOUT: repo $REPO bestaat niet"; verslag false "repo niet gevonden: $REPO"; exit 1; }
+
+UIT=$(cd "$REPO" && "${KLOK[@]}" claude -p "$OPDRACHT" 2>&1)
 CODE=$?
 
 if [ "$CODE" -eq 0 ]; then
