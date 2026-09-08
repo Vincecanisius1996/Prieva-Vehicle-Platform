@@ -20,13 +20,21 @@ en op de droplet staat geen browser. De verdeling is daarom:
 
 ## Eenmalig instellen
 
-1. **Het token.** Op de server staat het in `/var/pvp/advertentie.env`. Zet op de Mac een
-   `~/.pvp-advertentie.env` (chmod 600) met:
+1. **Het token.** Maak hem **op de Mac** aan en duw hem naar de server, zodat de waarde nergens
+   anders langskomt — niet in een chat, niet in een mailtje, niet in de repo:
+   ```bash
+   TOK=$(openssl rand -hex 32)
+   printf 'PVP_BASISURL=https://pvp.prieva.nl\nPVP_ADVERTENTIE_TOKEN=%s\n' "$TOK" > ~/.pvp-advertentie.env
+   chmod 600 ~/.pvp-advertentie.env
+   ssh root@pvp.prieva.nl "umask 077; printf 'PVP_ADVERTENTIE_TOKEN=%s\n' '$TOK' > /var/pvp/advertentie.env && systemctl restart pvp-api"
    ```
-   PVP_BASISURL=https://pvp.prieva.nl
-   PVP_ADVERTENTIE_TOKEN=<het token van de server>
+   Dit **vervangt** het token dat er staat; een oude waarde werkt daarna niet meer, en dat is precies
+   de bedoeling als hij ooit ergens is opgeschreven. Controleren:
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOK" \
+     https://pvp.prieva.nl/api/advertentie-opdracht      # 200 = goed, 401 = mis
    ```
-   **Niet committen.** Intrekken = `/var/pvp/advertentie.env` leegmaken plus
+   **Niet committen.** Helemaal intrekken = `/var/pvp/advertentie.env` leegmaken plus
    `systemctl restart pvp-api`; dat raakt de Mobilox-koppeling en het RDW-token niet.
 2. **De repo.** Het script draait `claude -p` vanuit `~/pvp`, zodat de skills in `.claude/skills/`
    meekomen. Staat de kloon ergens anders, zet dan `PVP_REPO` in het env-bestand.
