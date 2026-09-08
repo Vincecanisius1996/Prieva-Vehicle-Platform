@@ -1151,6 +1151,7 @@ function renderVandaag(){
     </div>
     ${(lop.length||topen.length)? `<div class="cols">${PEOPLE.map(p=>personCard(p,groups[p]||[])).join("")}</div>${groups["_"].length?`<div style="margin-top:16px">${personCard("_",groups["_"])}</div>`:""}`
       : `<div class="card"><div class="empty"><div class="eb">${ico("inbox",26)}</div>Nog geen open taken. Vink onderaan een auto op binnen, of voeg met <b>${ico("plus")} To-do</b> rechtsboven een losse taak toe.</div></div>`}
+    ${advertentiePaneel()}
     ${notitiePaneel()}
     <div style="margin-top:22px">${garantiePaneel()}</div>
     <div class="kpis" style="margin-top:22px">
@@ -1718,6 +1719,7 @@ function openVehNu(id){
         ${v.status==='lopende'?`<div class="card"><h3>Verantwoordelijke</h3><div class="owner-box">${v.owner?pav(v.owner):`<span class="pav" style="background:var(--slate)">?</span>`}<div style="flex:1"><div style="font-weight:600;font-size:13px">${v.owner||'Niet toegewezen'}</div><div class="muted" style="font-size:12px">voor huidige fase</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div></div>`:''}
         ${(v.status==='lopende'||v.status==='gemeld verkocht')?subtaskCard(v):''}
         ${bevindingenKaart(v)}
+        ${advertentieKaart(v)}
         <div class="card"><h3>Herkomst</h3><div class="card-body">
           <div class="spec"><span class="k">Leverancier</span><span class="v">${v.lev||'—'}</span></div>
           <div class="spec" style="border-bottom:0"><span class="k">Transport / status</span><span class="v" style="max-width:160px">${v.note||'—'}</span></div>
@@ -2296,6 +2298,85 @@ function subtaskCard(v){
       <button class="btn btn-primary btn-sm" onclick="addSubtask('${v.id}')">Toevoegen</button>
     </div></div>`;
 }
+/* ===== Advertentiewerk (08-09-2026) =====
+   De advertentie kan gemaakt worden zodra de auto BINNEN is — niet eerder, want vóór die tijd staat
+   hij er niet en kun je niets controleren. Zodra de fotograaf klaar is hoeven de foto's er alleen
+   nog bij. Twee soorten werk: een inruiler staat al in Mobilox (aanvullen), een importauto niet
+   (van nul opbouwen). */
+let advertentieWerk={werk:[],open:0,bezig:0,concept:0};
+const ADV_STAND=[['open','Nog niet begonnen'],['bezig','Mee bezig'],['concept','Concept klaar — wacht op foto\'s']];
+async function loadAdvertentiewerk(){ if(!apiOk)return;
+  try{ const r=await fetch("/api/advertentiewerk",{cache:"no-store"}); if(!r.ok)return;
+    const j=await r.json(); if(j&&Array.isArray(j.werk))advertentieWerk=j;
+  }catch(_){}
+}
+const advVan = id => advertentieWerk.werk.find(w=>w.id===id) || null;
+async function advertentieStand(id,stand,melding){
+  if(!apiOk)return;
+  try{
+    const r=await fetch("/api/advertentie-stand",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id,stand,melding:melding||null})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ showToast(j.error==='forbidden'?"Daar heb je geen rechten voor":(j.error||"Opslaan mislukt"),false); return; }
+    await loadAdvertentiewerk(); rerenderCurrent();
+    showToast('Advertentie: '+(ADV_STAND.find(x=>x[0]===stand)||[,stand])[1],false);
+  }catch(_){ showToast("Geen verbinding met de server",false); }
+}
+function advertentieKaart(v){
+  if(v.status!=='lopende')return '';
+  const w=advVan(v.id);
+  const online=w?false:!!v.mobiloxOnline;
+  // Staat hij online, dan valt hij uit de werklijst en is er niets voor te bereiden.
+  if(!w)return online?`<div class="card"><h3>Advertentie <span class="muted" style="font-weight:500;font-size:12px">staat online</span></h3>
+    <div class="card-body"><div class="note" style="margin:0">De advertentie is gepubliceerd in Mobilox.${v.mobiloxId?` <a href="https://members.mobilox.nl/#vehicles/${v.mobiloxId}" target="_blank" rel="noopener">Openen →</a>`:''}</div></div></div>`:'';
+  const nieuw=w.soortWerk==='nieuw';
+  const klaarVoor=[
+    w.coc?null:'geen CoC-foto',
+    w.docs?null:'geen inkoopdocumenten',
+  ].filter(Boolean);
+  return `<div class="card"><h3>Advertentie
+      <span class="muted" style="font-weight:500;font-size:12px">${nieuw?'nieuw opbouwen':'aanvullen — staat al in Mobilox'}</span></h3>
+    <div class="card-body">
+      <div class="note" style="margin:0 0 10px">${nieuw
+        ? 'Importauto: geen Nederlands kenteken, dus geen bedrijfsvoorraadregel. Het voertuig moet in Mobilox handmatig aangemaakt worden.'
+        : 'Staat de auto nog niet onder <b>Voertuigen</b> in Mobilox, kijk dan bij <b>RDW-Diensten → Bedrijfsvoorraad</b> en druk op het groene plusje.'}</div>
+      <div class="spec"><span class="k">Bronmateriaal</span><span class="v">${w.coc?'CoC aanwezig':'<span class="muted">geen CoC</span>'} · ${w.docs} document${w.docs===1?'':'en'} · ${w.openPunten} open technisch punt${w.openPunten===1?'':'en'}</span></div>
+      <div class="spec"><span class="k">Foto's</span><span class="v">${w.fotoGedaan?'fotograaf is geweest':'<span class="muted">nog niet gefotografeerd</span>'}</span></div>
+      <div class="spec" style="border-bottom:0"><span class="k">In Mobilox</span><span class="v">${w.mobiloxId
+        ? `<a href="https://members.mobilox.nl/#vehicles/${w.mobiloxId}" target="_blank" rel="noopener">advertentie openen →</a>`
+        : '<span class="muted">nog geen advertentie</span>'}</span></div>
+      <div class="route-btns" style="margin-top:12px">
+        ${ADV_STAND.map(([k,l])=>`<button class="rb ${w.stand===k?(k==='concept'?'active-ja':'active-nee'):''}" onclick="advertentieStand('${esc(v.id)}','${k}')">${esc(l)}</button>`).join('')}
+      </div>
+      ${w.stand==='concept'?`<div class="infobar" style="background:var(--green-soft);border-color:#bfe6d1;color:var(--green);margin-top:12px">
+        <div class="ai" style="background:#cbecdb;color:var(--green)">✓</div>
+        <div>Het concept staat klaar in Mobilox. Zodra de foto's erin zitten kan hij online.${w.melding?` <b>${esc(w.melding)}</b>`:''}</div></div>`:''}
+      ${klaarVoor.length?`<div class="note" style="margin-top:10px">Let op: ${esc(klaarVoor.join(' en '))} — de technische velden moeten dan uit een andere bron komen.</div>`:''}
+    </div></div>`;
+}
+/* Op Vandaag: alleen wat nog moet. Staat er niets open, dan staat er ook niets — een leeg kopje is
+   ruis, en dat is de regel op elk scherm in PVP. */
+function advertentiePaneel(){
+  const lijst=advertentieWerk.werk.filter(w=>w.stand!=='concept');
+  if(!lijst.length)return '';
+  const rij=w=>`<div class="todo">
+      <div class="body" onclick="openVeh('${esc(w.id)}')" title="Naar de auto">
+        <div class="act">${esc((w.merk||'')+' '+(w.model||''))} <span class="muted" style="font-weight:500">${esc(w.uitv||'')}</span></div>
+        <div class="muted" style="font-size:11px;margin-top:2px">
+          ${w.soortWerk==='nieuw'?'nieuw opbouwen':'aanvullen — staat al in Mobilox'}
+          ${w.coc?' · CoC aanwezig':''}${w.docs?` · ${w.docs} document${w.docs===1?'':'en'}`:''}
+          ${w.stand==='bezig'?' · mee bezig':''}</div>
+      </div>
+      ${w.kenteken&&w.kenteken!=='—'?`<span class="vanwie">${esc(w.kenteken)}</span>`:''}
+      <button class="btn btn-ghost btn-sm" onclick="advertentieStand('${esc(w.id)}','concept')" title="Het concept staat klaar in Mobilox">Concept klaar</button>
+    </div>`;
+  return `<div style="margin-top:22px"><div class="card"><h3>Advertenties voorbereiden
+      <span class="muted" style="font-weight:500;font-size:12px">${lijst.length} auto${lijst.length===1?'':"'s"}${advertentieWerk.concept?` · ${advertentieWerk.concept} concept klaar`:''}</span></h3>
+    <div style="padding:2px 0">${lijst.map(rij).join('')}</div>
+    <div class="note" style="margin:0 16px 12px">De advertentie kan af zodra de auto binnen is; alleen de foto's ontbreken dan nog.</div>
+    </div></div>`;
+}
+
 /* De kaart op de autopagina. `mag` zegt wat deze rol mag: Carport ziet dezelfde regels maar mag
    alleen de stand zetten — die lost het werk op, maar bepaalt niet wat er aan een auto mankeert. */
 function bevindingRij(b,mag){
@@ -3619,7 +3700,7 @@ async function startFor(){
   if(foto){ state.view='foto'; loadAdphotos().then(loadStatusFoto).then(loadVerkooptraject).then(renderFoto); }
   else if(tax){ state.view='tax'; loadTaxState().then(loadBpm).then(loadTaxAfgerond).then(renderTax); }
   else if(cp){ state.view='carport'; loadCarport().then(loadBevindingen).then(renderCarport); }
-  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen(),loadNotities(),loadLogistiek(),loadTaken(),loadVerkooptraject(),loadBevindingen()]).then(()=>go('vandaag')); }
+  else { Promise.all([loadState(),loadAdphotos(),loadBpm(),loadCarport(),loadGarantie(),loadInruil(),loadBetalingen(),loadNotities(),loadLogistiek(),loadTaken(),loadVerkooptraject(),loadBevindingen(),loadAdvertentiewerk()]).then(()=>go('vandaag')); }
 }
 /* De lijst V onderaan dit bestand is bevroren op deze datum. Staat er geen verbinding, dan is dát
    wat je ziet — en dan hoort er te staan hoe oud het is. */

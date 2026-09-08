@@ -432,6 +432,7 @@ function schoneFotos(photos, id) {
 
 const SOORT_BEVINDING = ['melding', 'banden', 'schade', 'overig'];
 const STAND_BEVINDING = ['open', 'verholpen', 'geaccepteerd'];
+const STAND_ADVERTENTIE = ['open', 'bezig', 'concept'];
 
 async function putState(b) {
   const client = await pool.connect();
@@ -1738,6 +1739,124 @@ const server = http.createServer(async (req, res) => {
 
        Team en admin. Carport, fotograaf en taxateur krijgen 403 — dit is Prieva's eigen werklijst;
        het werk van Carport loopt via carport_taken op de werkbon. */
+
+    /* ===== Advertentiewerk (08-09-2026) =====
+       De advertentie kan gemaakt worden zodra de auto BINNEN is — opgave Prieva: niet eerder, want
+       vóór die tijd staat de auto er niet en kun je niets controleren. Zodra de fotograaf zijn werk
+       heeft gedaan hoeven de foto's er alleen nog bij en kan hij online.
+
+       Twee soorten werk, en dat scheelt uren:
+         * `aanvullen` — de auto staat al in Mobilox (inruil/bedrijfsvoorraad, `mobilox_id` gevuld).
+           De RDW-opzoeking heeft de basis al ingevuld; je controleert en vult aan.
+         * `nieuw`     — een importauto heeft geen Nederlands kenteken en dus geen
+           bedrijfsvoorraadregel. Alles handmatig aanmaken.
+       Staat een inruiler nog niet onder Voertuigen in Mobilox, dan zit hij onder
+       RDW-Diensten > Bedrijfsvoorraad en moet daar eerst het groene plusje ingedrukt worden. */
+    if (url === '/api/advertentiewerk' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const r = await pool.query(`
+        SELECT v.id, v.merk, v.model, v.uitv, v.kenteken, v.vin, v.km, v.reg, v.import_auto,
+               v.voertuigsoort, v.mobilox_id, v.mobilox_online, v.mobilox_prijs, v.inkoopprijs,
+               jsonb_array_length(COALESCE(v.docs,'[]'::jsonb))   AS docs,
+               (SELECT count(*) FROM jsonb_object_keys(COALESCE(v.photos,'{}'::jsonb))) AS fotos,
+               (COALESCE(v.photos,'{}'::jsonb) ? 'd_cov_v')       AS coc,
+               t.foto_ts, t.online_ts,
+               a.stand, a.melding, a.ts AS stand_ts, a.door AS stand_door,
+               (SELECT count(*) FROM bevindingen b WHERE b.vehicle_id = v.id AND b.stand='open') AS open_punten
+          FROM vehicles v
+          LEFT JOIN verkooptraject t      ON t.vehicle_id = v.id
+          LEFT JOIN advertentie_concept a ON a.vehicle_id = v.id
+         WHERE v.status = 'lopende'
+         ORDER BY v.sort_order NULLS LAST, v.id`);
+      const werk = r.rows
+        // Klaar is klaar: staat de advertentie online, dan hoeft er niets meer voorbereid te worden.
+        .filter(x => !x.online_ts)
+        .map(x => ({
+          id: x.id, merk: x.merk, model: x.model, uitv: x.uitv, kenteken: x.kenteken, vin: x.vin,
+          km: x.km === null ? null : Number(x.km), reg: x.reg,
+          importAuto: x.import_auto, voertuigsoort: x.voertuigsoort || null,
+          mobiloxId: x.mobilox_id, mobiloxOnline: x.mobilox_online,
+          mobiloxPrijs: x.mobilox_prijs === null ? null : Number(x.mobilox_prijs),
+          inkoopprijs: x.inkoopprijs === null ? null : Number(x.inkoopprijs),
+          soortWerk: x.mobilox_id ? 'aanvullen' : 'nieuw',
+          docs: Number(x.docs) || 0, fotos: Number(x.fotos) || 0, coc: !!x.coc,
+          fotoGedaan: !!x.foto_ts, openPunten: Number(x.open_punten) || 0,
+          stand: x.stand || 'open', melding: x.melding || null,
+          standTs: x.stand_ts, standDoor: x.stand_door
+        }));
+      return sendJson(res, 200, {
+        werk,
+        open: werk.filter(w => w.stand === 'open').length,
+        bezig: werk.filter(w => w.stand === 'bezig').length,
+        concept: werk.filter(w => w.stand === 'concept').length
+      });
+    }
+
+    /* Alles wat je voor één advertentie nodig hebt in één antwoord: de catalogusgegevens, welke
+       stukken er liggen (met het CoC apart, want dat is de sterkste bron voor de technische velden),
+       de technische staat en waar de auto in Mobilox staat. Bewust één aanroep: wie het uit vijf
+       endpoints bij elkaar moet sprokkelen, vergeet er één. */
+    if (url === '/api/advertentiedossier' && method === 'GET') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const id = (new URL(req.url, 'http://x').searchParams.get('auto') || '').trim();
+      if (!id) return sendJson(res, 400, { error: 'missing' });
+      const vr = await pool.query('SELECT * FROM vehicles WHERE id=$1', [id]);
+      if (!vr.rowCount) return sendJson(res, 404, { error: 'onbekende auto' });
+      const v = vr.rows[0];
+      const [bev, tr, con] = await Promise.all([
+        pool.query(`SELECT soort,tekst,bron,bron_datum,stand,opgelost_door FROM bevindingen
+                     WHERE vehicle_id=$1 ORDER BY (stand<>'open'), id`, [id]),
+        pool.query('SELECT foto_ts, online_ts FROM verkooptraject WHERE vehicle_id=$1', [id]),
+        pool.query('SELECT stand, melding, ts, door FROM advertentie_concept WHERE vehicle_id=$1', [id])
+      ]);
+      const fotos = v.photos && typeof v.photos === 'object' ? v.photos : {};
+      // Het CoC apart: dat hoort bij dít voertuig en wint van een modelbrochure of een inkooprapport.
+      const coc = ['d_cov_v', 'd_cov_a'].filter(k => fotos[k]).map(k => ({ kant: k === 'd_cov_v' ? 'voorkant' : 'achterkant', url: fotos[k] }));
+      return sendJson(res, 200, {
+        auto: {
+          id: v.id, vin: v.vin, kenteken: v.kenteken, merk: v.merk, model: v.model, uitv: v.uitv,
+          kleur: v.kleur, brandstof: v.brandstof, transm: v.transm, reg: v.reg,
+          km: v.km === null ? null : Number(v.km), lev: v.lev, inkoopdatum: v.inkoopdatum,
+          importAuto: v.import_auto, voertuigsoort: v.voertuigsoort || null, note: v.note,
+          inkoopprijs: v.inkoopprijs === null ? null : Number(v.inkoopprijs),
+          mobiloxId: v.mobilox_id, mobiloxOnline: v.mobilox_online,
+          mobiloxPrijs: v.mobilox_prijs === null ? null : Number(v.mobilox_prijs),
+          meldcode: String(v.vin || '').slice(-4) || null
+        },
+        soortWerk: v.mobilox_id ? 'aanvullen' : 'nieuw',
+        mobiloxUrl: v.mobilox_id ? ('https://members.mobilox.nl/#vehicles/' + v.mobilox_id) : null,
+        coc, docs: Array.isArray(v.docs) ? v.docs : [],
+        fotos: Object.keys(fotos).map(k => ({ vakje: k, label: (rdw.STUKKEN.find(st => st.key === k) || {}).label || k, url: fotos[k] })),
+        bevindingen: bev.rows.map(b => ({ soort: b.soort, tekst: b.tekst, bron: b.bron, bronDatum: b.bron_datum, stand: b.stand, opgelostDoor: b.opgelost_door })),
+        verkooptraject: { fotoTs: tr.rows[0] ? tr.rows[0].foto_ts : null, onlineTs: tr.rows[0] ? tr.rows[0].online_ts : null },
+        concept: con.rows[0] ? { stand: con.rows[0].stand, melding: con.rows[0].melding, ts: con.rows[0].ts, door: con.rows[0].door } : { stand: 'open' }
+      });
+    }
+
+    if (url === '/api/advertentie-stand' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      const id = String(b.id == null ? '' : b.id).trim();
+      if (!id) return sendJson(res, 400, { error: 'missing' });
+      if (!(await pool.query('SELECT 1 FROM vehicles WHERE id=$1', [id])).rowCount)
+        return sendJson(res, 404, { error: 'onbekende auto' });
+      const stand = STAND_ADVERTENTIE.includes(b.stand) ? b.stand : null;
+      if (!stand) return sendJson(res, 400, { error: 'onbekende stand' });
+      const melding = String(b.melding == null ? '' : b.melding).trim().slice(0, 500) || null;
+      const oud = (await pool.query('SELECT stand FROM advertentie_concept WHERE vehicle_id=$1', [id])).rows[0];
+      const wie = u.n || u.u;
+      await pool.query(
+        `INSERT INTO advertentie_concept (vehicle_id,stand,melding,ts,door)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (vehicle_id) DO UPDATE SET stand=$2, melding=$3, ts=$4, door=$5, updated_at=now()`,
+        [id, stand, melding, Date.now(), wie]);
+      await logSchrijf(wie, 'advertentie', id, 'stand ' + stand,
+        { van: oud ? oud.stand : 'open', naar: stand, melding });
+      return sendJson(res, 200, { ok: true });
+    }
 
     /* ===== Technische staat per auto: bevindingen (08-09-2026) =====
        Wat er technisch aan een auto mankeert stond alleen in het inkooprapport (een pdf) en in de

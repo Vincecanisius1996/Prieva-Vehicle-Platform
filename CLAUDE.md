@@ -526,6 +526,34 @@ weg, en de labels *Los* en *Extra* zijn van het scherm verdwenen.
   undo-stack van de browser en taken leven nu op de server. Vandaar een bevestiging in beeld, en de
   tekst gaat mee het logboek in.
 
+## Advertentiewerk: de voorbereiding zichtbaar maken
+Sinds 08-09-2026. De advertentie kan al af zijn voordat de fotograaf is geweest — alleen de foto's
+ontbreken dan nog. Tot nu toe was daar geen stand voor: je zag pas iets als de advertentie **online**
+stond, en dus niet welke auto's klaarstonden.
+- **Trigger is *binnen*, niet inkoop** (opgave Prieva 08-09-2026). Vóór die tijd staat de auto er niet
+  en kun je niets controleren. `GET /api/advertentiewerk` geeft alles op status `lopende` waarvan de
+  advertentie nog niet online staat.
+- **Twee soorten werk**, en dat scheelt uren:
+  - `aanvullen` — `mobilox_id` gevuld: de auto staat al in Mobilox via de RDW-opzoeking (inruil of
+    bedrijfsvoorraad). Staat hij nog niet onder *Voertuigen*, dan zit hij onder **RDW-Diensten →
+    Bedrijfsvoorraad** en moet daar eerst het **groene plusje** ingedrukt worden.
+  - `nieuw` — een importauto heeft geen Nederlands kenteken en dus geen bedrijfsvoorraadregel; alles
+    handmatig aanmaken. Stand bij de ingebruikname: 7 aanvullen, 2 nieuw.
+- **Eigen tabel `advertentie_concept`**, bewust los van `verkooptraject`: dat spoor legt vast wat er
+  *gedaan* is (foto's gemaakt, advertentie online), dit legt vast hoe ver de *voorbereiding* is — werk
+  dat op allebei die stappen vooruitloopt. Drie standen: `open` · `bezig` · `concept`. Geen rij =
+  `open`, dus geen migratie.
+- **`GET /api/advertentiedossier?auto=<id>`** geeft alles voor één advertentie in één antwoord: de
+  catalogusgegevens, de meldcode (laatste 4 van het VIN), het **CoC apart** (dat hoort bij dít
+  voertuig en wint van een modelbrochure), de documenten, de fotovakjes met hun label, de
+  bevindingen en waar de auto in Mobilox staat. Bewust één aanroep: wie het uit vijf endpoints bij
+  elkaar moet sprokkelen, vergeet er één.
+- Alles team+admin; carport, foto en taxateur krijgen 403. Log in `pvp_log` onder
+  `onderdeel='advertentie'`.
+- **De agent zelf draait in de browser**, niet op de droplet: Mobilox is een webapplicatie en het
+  inloggen hoort bij Prieva. PVP levert de werklijst en het dossier; de skills
+  `prieva-advertentie-assistent` en `prieva-occasionadvertentie` doen het schrijven.
+
 ## Technische staat per auto: `bevindingen`
 Sinds 08-09-2026. Wat er technisch aan een auto mankeert stond alleen in het inkooprapport (een pdf)
 en in de tekst van een advertentie. Allebei slechte plekken: een pdf leest niemand terug, en een

@@ -535,3 +535,22 @@ CREATE TABLE IF NOT EXISTS bevindingen (
 );
 CREATE INDEX IF NOT EXISTS bevindingen_vehicle ON bevindingen (vehicle_id, id DESC);
 CREATE INDEX IF NOT EXISTS bevindingen_open    ON bevindingen (stand, id DESC);
+
+-- ===== Advertentiewerk: `advertentie_concept` (08-09-2026) =====
+-- De advertentie kan al gemaakt worden zodra de auto binnen is; alleen de foto's ontbreken dan nog.
+-- Zonder deze tabel is er geen stand tussen "niets gedaan" en "online": je zag pas iets als de
+-- advertentie al gepubliceerd was, en dus niet welke auto's klaarstonden op de fotograaf.
+-- Geen rij = `open`, dus geen migratie voor de bestaande auto's.
+--
+-- Bewust LOS van `verkooptraject`: dat spoor legt vast wat er GEDAAN is (foto's gemaakt, advertentie
+-- online) met een moment per stap. Dit legt vast hoe ver de VOORBEREIDING is, en dat is werk dat
+-- vooruitloopt op allebei die stappen.
+CREATE TABLE IF NOT EXISTS advertentie_concept (
+  vehicle_id text PRIMARY KEY,
+  stand      text NOT NULL DEFAULT 'open',   -- open | bezig | concept
+  melding    text,                           -- wat er nog mist of opvalt
+  ts         bigint,
+  door       text,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS advertentie_concept_stand ON advertentie_concept (stand);
