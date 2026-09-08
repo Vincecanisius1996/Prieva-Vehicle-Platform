@@ -28,6 +28,15 @@ try { bpmlezen = require('./bpmlezen'); } catch (e) { console.error('bpmlezen ni
 let rdw = null;
 try { rdw = require('./rdw/velden'); } catch (e) { console.error('rdw/velden niet geladen:', e.message); }
 
+// Draaiverslagen (agent_runs) — dezelfde functie die de agents en de back-upscripts gebruiken.
+// Twee exemplaren van dezelfde logica lopen uiteen, dus dit is er één.
+let agentrun = { meld: async () => {} };
+try { agentrun = require('./agentrun'); } catch (e) { console.error('agentrun niet geladen:', e.message); }
+
+// Waar PVP van buiten bereikbaar is. Staat in de opdracht die de advertentierunner op de Mac krijgt,
+// dus die hoeft het adres niet zelf te kennen.
+const BASISURL = (process.env.PVP_BASISURL || 'https://pvp.prieva.nl').replace(/\/+$/, '');
+
 const DATA_DIR = process.env.PVP_DATA || '/var/pvp';
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const SECRET_FILE = path.join(DATA_DIR, 'secret');
@@ -207,6 +216,21 @@ const INTERNE_UPLOADS = '/intern-uploads/';
    /var/pvp/rdw.env (chmod 600, niet in de repo) en bewust niet PVP_VERKOOP_TOKEN hergebruikt — een
    andere partij, een ander doel, en apart in te trekken zonder de Mobilox-koppeling te breken.
    Geen token ingesteld = deze weg staat uit. Nooit "geen token dus vrije toegang". */
+/* Toegang met het advertentietoken: de runner op de Mac die de advertenties in Mobilox maakt.
+   Die draait daar en niet hier, want Mobilox is een webapplicatie en het inloggen hoort bij Prieva.
+   Mag precies drie dingen: de werklijst lezen, één opdracht ophalen en de stand terugmelden — geen
+   toegang tot /uploads, geen catalogus, niets schrijven aan een auto. Eigen token in
+   /var/pvp/advertentie.env, apart in te trekken zonder de andere koppelingen te raken.
+   Geen token ingesteld = deze weg staat uit. Nooit "geen token dus vrije toegang". */
+function advertentieToken(req) { return bearerGelijk(req, (process.env.PVP_ADVERTENTIE_TOKEN || '').trim()); }
+function bearerGelijk(req, token) {
+  if (!token) return false;
+  const kop = String(req.headers.authorization || '');
+  const gegeven = kop.startsWith('Bearer ') ? kop.slice(7).trim() : '';
+  const a = Buffer.from(gegeven), b = Buffer.from(token);
+  if (a.length !== b.length) return false;   // lengte eerst: timingSafeEqual gooit bij ongelijke lengte
+  return crypto.timingSafeEqual(a, b);
+}
 function rdwToken(req) {
   const token = (process.env.PVP_RDW_TOKEN || '').trim();
   if (!token) return false;
@@ -1753,8 +1777,10 @@ const server = http.createServer(async (req, res) => {
        Staat een inruiler nog niet onder Voertuigen in Mobilox, dan zit hij onder
        RDW-Diensten > Bedrijfsvoorraad en moet daar eerst het groene plusje ingedrukt worden. */
     if (url === '/api/advertentiewerk' && method === 'GET') {
-      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
-      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const bot = advertentieToken(req);
+      const u = bot ? null : userFromReq(req);
+      if (!bot && !u) return sendJson(res, 401, { error: 'auth' });
+      if (!bot && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
       const r = await pool.query(`
         SELECT v.id, v.merk, v.model, v.uitv, v.kenteken, v.vin, v.km, v.reg, v.import_auto,
                v.voertuigsoort, v.mobilox_id, v.mobilox_online, v.mobilox_prijs, v.inkoopprijs,
@@ -1798,8 +1824,10 @@ const server = http.createServer(async (req, res) => {
        de technische staat en waar de auto in Mobilox staat. Bewust één aanroep: wie het uit vijf
        endpoints bij elkaar moet sprokkelen, vergeet er één. */
     if (url === '/api/advertentiedossier' && method === 'GET') {
-      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
-      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const bot = advertentieToken(req);
+      const u = bot ? null : userFromReq(req);
+      if (!bot && !u) return sendJson(res, 401, { error: 'auth' });
+      if (!bot && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
       const id = (new URL(req.url, 'http://x').searchParams.get('auto') || '').trim();
       if (!id) return sendJson(res, 400, { error: 'missing' });
       const vr = await pool.query('SELECT * FROM vehicles WHERE id=$1', [id]);
@@ -1836,8 +1864,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url === '/api/advertentie-stand' && method === 'POST') {
-      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
-      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const bot = advertentieToken(req);
+      const u = bot ? null : userFromReq(req);
+      if (!bot && !u) return sendJson(res, 401, { error: 'auth' });
+      if (!bot && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
       const b = await readBody(req) || {};
       const id = String(b.id == null ? '' : b.id).trim();
       if (!id) return sendJson(res, 400, { error: 'missing' });
@@ -1847,7 +1877,7 @@ const server = http.createServer(async (req, res) => {
       if (!stand) return sendJson(res, 400, { error: 'onbekende stand' });
       const melding = String(b.melding == null ? '' : b.melding).trim().slice(0, 500) || null;
       const oud = (await pool.query('SELECT stand FROM advertentie_concept WHERE vehicle_id=$1', [id])).rows[0];
-      const wie = u.n || u.u;
+      const wie = bot ? 'advertentie-agent' : (u.n || u.u);
       await pool.query(
         `INSERT INTO advertentie_concept (vehicle_id,stand,melding,ts,door)
          VALUES ($1,$2,$3,$4,$5)
@@ -1855,6 +1885,75 @@ const server = http.createServer(async (req, res) => {
         [id, stand, melding, Date.now(), wie]);
       await logSchrijf(wie, 'advertentie', id, 'stand ' + stand,
         { van: oud ? oud.stand : 'open', naar: stand, melding });
+      return sendJson(res, 200, { ok: true });
+    }
+
+    /* Eén opdracht voor de runner op de Mac: welke auto, en wat er precies moet gebeuren.
+       De instructie wordt HIER samengesteld en niet in het script op de Mac — verandert de werkwijze,
+       dan verandert er één ding op één plek. Het script hoeft alleen te kunnen curlen. */
+    if (url === '/api/advertentie-opdracht' && method === 'GET') {
+      const bot = advertentieToken(req);
+      const u = bot ? null : userFromReq(req);
+      if (!bot && !u) return sendJson(res, 401, { error: 'auth' });
+      if (!bot && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const gevraagd = (new URL(req.url, 'http://x').searchParams.get('auto') || '').trim();
+      const r = await pool.query(`
+        SELECT v.id, v.merk, v.model, v.uitv, v.vin, v.kenteken, v.mobilox_id,
+               COALESCE(a.stand,'open') AS stand
+          FROM vehicles v
+          LEFT JOIN verkooptraject t      ON t.vehicle_id = v.id
+          LEFT JOIN advertentie_concept a ON a.vehicle_id = v.id
+         WHERE v.status = 'lopende' AND t.online_ts IS NULL
+           AND ($1 = '' OR v.id = $1)
+           AND ($1 <> '' OR COALESCE(a.stand,'open') = 'open')
+         ORDER BY v.sort_order NULLS LAST, v.id
+         LIMIT 1`, [gevraagd]);
+      if (!r.rowCount) return sendJson(res, 200, { leeg: true, melding: gevraagd ? 'die auto staat niet op de werklijst' : 'niets te doen' });
+      const w = r.rows[0];
+      const naam = `${w.merk || ''} ${w.model || ''}`.trim();
+      const sleutel = (w.vin && w.vin !== '—') ? w.vin : (w.kenteken || w.id);
+      const opdracht = [
+        `Maak de Mobilox-advertentie voor de ${naam} (${w.uitv || ''}), PVP-id ${w.id}, VIN ${sleutel}.`,
+        '',
+        'Werkwijze:',
+        `1. Haal het dossier op: GET ${BASISURL}/api/advertentiedossier?auto=${encodeURIComponent(w.id)}`,
+        '   met de bearer uit ~/.pvp-advertentie.env. Daar staat alles in: de catalogusgegevens, de',
+        '   meldcode, het CoC, de documenten, de fotovakjes en de technische bevindingen.',
+        '2. Volg de skill prieva-advertentie-assistent voor de velden en de werkwijze in Mobilox, en',
+        '   prieva-occasionadvertentie voor de tekst.',
+        w.mobilox_id
+          ? `3. De advertentie bestaat al: https://members.mobilox.nl/#vehicles/${w.mobilox_id} — aanvullen en controleren, niet opnieuw aanmaken.`
+          : '3. Er is nog geen advertentie. Dit is een importauto zonder Nederlands kenteken, dus hij staat ook niet in de bedrijfsvoorraad: maak het voertuig handmatig aan.',
+        '4. Lees het CoC (de foto d_cov_v/d_cov_a uit het dossier) en vul daarmee de technische velden.',
+        '   Het CoC hoort bij dít voertuig en wint van een modelbrochure of een inkooprapport.',
+        '5. De alinea "Technische staat bij inkoop" komt uit de bevindingen met stand=open. Wat op',
+        '   verholpen staat laat je weg; wat op geaccepteerd staat noem je feitelijk.',
+        '6. Vul GEEN vraagprijs in en publiceer NIET. Opslaan als concept ("Advertentie bewaren").',
+        '',
+        'Als je klaar bent, meld dat terug:',
+        `  POST ${BASISURL}/api/advertentie-stand  {"id":"${w.id}","stand":"concept","melding":"<wat er nog mist>"}`,
+        'Lukt het niet, meld dan stand "bezig" met in de melding waar je bleef.'
+      ].join('\n');
+      return sendJson(res, 200, {
+        leeg: false,
+        auto: { id: w.id, naam, uitv: w.uitv, vin: w.vin, kenteken: w.kenteken, mobiloxId: w.mobilox_id },
+        soortWerk: w.mobilox_id ? 'aanvullen' : 'nieuw',
+        stand: w.stand,
+        dossierUrl: BASISURL + '/api/advertentiedossier?auto=' + encodeURIComponent(w.id),
+        opdracht
+      });
+    }
+
+    /* De runner meldt elke ronde hoe het ging, net als de back-ups en de Mobilox-koppeling. Zonder
+       dit zou een Mac die uit staat onzichtbaar zijn: er gebeurt dan gewoon niets, en niets ziet er
+       hetzelfde uit als "niets te doen". */
+    if (url === '/api/advertentie-ronde' && method === 'POST') {
+      const bot = advertentieToken(req);
+      const u = bot ? null : userFromReq(req);
+      if (!bot && !u) return sendJson(res, 401, { error: 'auth' });
+      if (!bot && u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      await agentrun.meld(pool, 'advertentie', !!b.ok, String(b.melding == null ? '' : b.melding).slice(0, 500));
       return sendJson(res, 200, { ok: true });
     }
 

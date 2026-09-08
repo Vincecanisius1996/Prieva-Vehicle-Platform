@@ -19,6 +19,9 @@ EnvironmentFile=-/var/pvp/verkoop.env
 # ophalen). Ontbreekt het bestand of is de regel leeg, dan staat die weg dicht en werkt alleen de
 # sessiecookie. Zo is de toegang in te trekken door dit bestand leeg te maken en te herstarten.
 EnvironmentFile=-/var/pvp/rdw.env
+# Het advertentietoken: de runner op de Mac die de Mobilox-advertenties maakt. Leeg of afwezig =
+# die weg staat uit. Intrekken is dit bestand leegmaken plus een herstart.
+EnvironmentFile=-/var/pvp/advertentie.env
 
 [Install]
 WantedBy=multi-user.target

@@ -2786,6 +2786,10 @@ const AGENT_SOORT={
   uploads: {naam:'de foto-back-up',         stilMin:26*60,   kantoortijd:false, voedtScherm:false, slot:'Een back-up die stilstaat merk je pas als je hem nodig hebt.'},
   offsite: {naam:'de kopie bij Backblaze',  stilMin:26*60,   kantoortijd:false, voedtScherm:false, slot:'Een back-up die stilstaat merk je pas als je hem nodig hebt.'},
   opruimen:{naam:"het opruimen van wees-foto's", stilMin:26*60, kantoortijd:false, voedtScherm:false, slot:'Zolang dit stilstaat groeit /var/pvp/uploads door met bestanden die nergens meer bij horen.'},
+  // De advertentierunner draait op de Mac van Prieva en niet hier. Staat die uit of is Chrome dicht,
+  // dan gebeurt er niets — en niets doen ziet er precies zo uit als "niets te doen". Vandaar dat hij
+  // zich elke ronde meldt, ook als er geen werk was. Elk half uur, dus 90 minuten stilte is te lang.
+  advertentie:{naam:'de advertentierunner op de Mac', stilMin:90, kantoortijd:true, voedtScherm:false, slot:'Er worden dan geen advertenties voorbereid; staat de Mac aan en is Chrome ingelogd op Mobilox?'},
 };
 const AGENT_NAMEN=Object.fromEntries(Object.entries(AGENT_SOORT).map(([k,v])=>[k,v.naam]));
 const AGENT_STANDAARD={stilMin:45,kantoortijd:true,voedtScherm:true};   // een taak die we nog niet kennen

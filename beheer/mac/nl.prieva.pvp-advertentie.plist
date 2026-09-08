@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Draait pvp-advertentie-runner.sh elk half uur, maandag t/m zaterdag tussen 08:00 en 18:00.
+
+  Waarom die uren en niet de klok rond: er moet een mens in de buurt zijn die kan ingrijpen als
+  Mobilox iets onverwachts doet, en Chrome moet open en ingelogd staan. Dezelfde gedachte als bij
+  de Mobilox-koppeling op de server, die ook alleen tijdens werkuren loopt.
+
+  Elk half uur en niet vaker: een advertentie maken duurt minuten, niet seconden, en er komen er
+  geen tien per uur bij.
+
+  Installeren:
+    cp nl.prieva.pvp-advertentie.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/nl.prieva.pvp-advertentie.plist
+  Stoppen:
+    launchctl unload ~/Library/LaunchAgents/nl.prieva.pvp-advertentie.plist
+  Een keer met de hand draaien:
+    launchctl start nl.prieva.pvp-advertentie
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>nl.prieva.pvp-advertentie</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>$HOME/bin/pvp-advertentie-runner.sh</string>
+  </array>
+
+  <!-- Elk half uur, ma t/m za, 08:00-18:00. StartCalendarInterval neemt een lijst momenten. -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>7</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>37</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>7</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>37</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>7</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>37</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>11</integer><key>Minute</key><integer>7</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>11</integer><key>Minute</key><integer>37</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>7</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>37</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>7</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>37</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>7</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>37</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>7</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>37</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>7</integer></dict>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>37</integer></dict>
+  </array>
+
+  <!--
+    Bovenstaande lijst is alleen maandag (Weekday 1). Voor dinsdag t/m zaterdag dezelfde 18 momenten
+    met Weekday 2 t/m 6 eronder plakken; dat is bewust uitgeschreven en niet afgekort, want launchd
+    kent geen bereik in StartCalendarInterval en een half ingevulde lijst is erger dan een lange.
+    Wil je het korter: laat Weekday helemaal weg en accepteer dat hij ook op zondag draait - hij
+    meldt dan gewoon "niets te doen".
+  -->
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <!-- De runner logt zelf naar ~/Library/Logs/pvp-advertentie.log; dit vangt alleen wat daarbuiten valt. -->
+  <key>StandardOutPath</key>
+  <string>/tmp/pvp-advertentie.out</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/pvp-advertentie.err</string>
+</dict>
+</plist>

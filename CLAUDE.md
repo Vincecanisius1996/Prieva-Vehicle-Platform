@@ -569,6 +569,29 @@ stond, en dus niet welke auto's klaarstonden.
   inloggen hoort bij Prieva. PVP levert de werklijst en het dossier; de skills
   `prieva-advertentie-assistent` en `prieva-occasionadvertentie` doen het schrijven.
 
+### Onbemand: de runner op de Mac
+Sinds 08-09-2026. Prieva wil er niet als handeling tussen zitten — "dan vergeet ik het". De
+verdeling: **PVP weet wélke auto en wát er moet gebeuren, de Mac voert het uit.**
+- **`GET /api/advertentie-opdracht`** geeft één auto plus de **complete instructie als tekst**. Die
+  instructie wordt op de server samengesteld en niet in het script op de Mac: verandert de werkwijze,
+  dan verandert er één ding op één plek en hoeft er niets opnieuw geïnstalleerd te worden.
+- **`PVP_ADVERTENTIE_TOKEN`** in `/var/pvp/advertentie.env` (chmod 600, **niet committen**, via
+  `EnvironmentFile=`). Mag precies drie dingen: de werklijst lezen, een opdracht ophalen en de stand
+  terugmelden. Géén toegang tot `/uploads`, geen catalogus, niets schrijven aan een auto. Bewust een
+  eigen token: apart in te trekken zonder de Mobilox-koppeling of het RDW-token te raken.
+- **`beheer/mac/`** bevat de runner (`pvp-advertentie-runner.sh`) en de launchd-unit. Zie
+  `beheer/mac/LEESMIJ.md`. Elk half uur, ma–za 08:00–18:00 — er moet iemand in de buurt zijn die kan
+  ingrijpen, zelfde gedachte als bij de Mobilox-koppeling.
+- **Eén auto per ronde**: gaat er iets mis, dan gaat er één advertentie mis en niet tien. De auto
+  gaat meteen op `bezig`, zodat een vastgelopen ronde niet de volgende ronde opnieuw wordt opgepakt
+  (de opdrachtlijst geeft alleen auto's met stand `open`).
+- **Elke ronde meldt zich in `agent_runs` onder `advertentie`, ook als er niets te doen was.** Staat
+  de Mac uit of is Chrome dicht, dan gebeurt er niets — en niets doen ziet er precies zo uit als
+  "niets te doen". Na 90 minuten stilte verschijnt er een melding op *Vandaag*.
+- **Publiceren doet de runner nooit**, en een vraagprijs vult hij niet in.
+- Direct berichten sturen naar een sessie op de Mac (`SendMessage` over Remote Control) kán, maar
+  alleen als die sessie op dat moment aan staat. Dat is geen automatisering; vandaar de runner.
+
 ## Technische staat per auto: `bevindingen`
 Sinds 08-09-2026. Wat er technisch aan een auto mankeert stond alleen in het inkooprapport (een pdf)
 en in de tekst van een advertentie. Allebei slechte plekken: een pdf leest niemand terug, en een
