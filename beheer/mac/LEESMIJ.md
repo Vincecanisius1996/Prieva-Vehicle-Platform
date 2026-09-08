@@ -18,7 +18,20 @@ en op de droplet staat geen browser. De verdeling is daarom:
 - **De Mac** voert het uit: Claude Code met de Chrome-extensie doet het werk in Mobilox en meldt de
   uitkomst terug.
 
-## Eenmalig instellen
+## Installeren: één regel
+
+```bash
+cd ~/pvp && git pull && bash beheer/mac/installeer.sh
+```
+
+Dat script doet alles wat hieronder met de hand staat: het controleert wat er moet zijn, maakt een
+nieuw token en zet dat op de server, installeert de runner, start de eerste ronde **mét jou erbij**
+zodat je de toestemmingen voor de browsertools kunt goedkeuren, en zet daarna pas de timer aan.
+Nog een keer draaien mag: het maakt dan een nieuw token en overschrijft het script.
+
+Zorg vooraf dat Chrome open staat en ingelogd is op `members.mobilox.nl`.
+
+## Eenmalig instellen (met de hand, als je liever zelf stapt)
 
 1. **Het token.** Maak hem **op de Mac** aan en duw hem naar de server, zodat de waarde nergens
    anders langskomt — niet in een chat, niet in een mailtje, niet in de repo:
