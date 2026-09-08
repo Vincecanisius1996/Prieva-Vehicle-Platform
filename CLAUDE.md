@@ -605,6 +605,19 @@ verborgen) dat op merk, model, kenteken en chassisnummer zoekt en normaliseert, 
   koopovereenkomsten.
 
 ## Wees-bestanden in uploads
+> **Valstrik, gerepareerd 08-09-2026.** De query die ophaalt "waar verwijst de database naar" kende
+> drie van de **vier** plekken waar de app bestanden vastlegt: `vehicles.ad_photos`,
+> `vehicles.photos` en `bpm_reports.url` — maar **niet `vehicles.docs`**. Daarmee telde élk
+> inkoopdocument als wees. Op de dag dat het opviel waren dat er 8 die gewoon bij een auto hoorden,
+> waaronder het COS-statusrapport en het serviceboekje van de e-Berlingo: precies de stukken waar een
+> advertentie op gebouwd wordt. Ze zijn nooit verplaatst omdat de **veiligheidsklep** eerder afbrak
+> (31% wees, boven de 25%-grens) — die klep heeft dus gedaan waarvoor hij er is. Komt er een vijfde
+> opslagplek bij, zet hem dan ook in die query.
+>
+> De keerzijde: het script brak daardoor **van 29-08 t/m 08-09-2026 elke nacht af**, en dat stond
+> alleen in `systemctl --failed`. Het meldt zich nu in `agent_runs` onder de naam `opruimen`, dus
+> stilstand verschijnt op *Vandaag* — zelfde patroon als de back-ups.
+
 De app verwijdert URL's uit de database zonder het bestand van schijf te halen — zowel via
 `/api/adphotos-set` (advertentiefoto weggegooid) als via `PUT /api/state` (keuringsfoto verwijderd
 **of overschreven**). Zonder opruimen groeit `/var/pvp/uploads` dus door met onzichtbare bestanden;
@@ -681,6 +694,24 @@ De vier die er lagen zijn omgezet met `inhaalslag/base64-fotos-omzetten.js` (pro
 `--echt`), inclusief HEIC→JPEG via `heif-convert`, en vervangen alleen als er nog steeds diezelfde
 data-URL stond. Uitkomst: `vehicles.photos` ging van **7 MB naar 8,7 kB**, de dump van 5,3 MB naar
 39 kB, en alle vier de bestanden geven `200` via de app.
+
+## Een foto wordt bij het uploaden meteen aan de auto gekoppeld
+Sinds 08-09-2026 schrijft **`/api/photo` de URL zelf in `vehicles.photos`**. Daarvóór zette de
+frontend hem alleen in zijn geheugen en moest `PUT /api/state` hem wegschrijven. Werd die opslag
+geweigerd — een tabblad dat te lang openstaat krijgt sinds 07-09 een **409** — dan stond het bestand
+er wel en wist niemand ervan. Op 08-09 kostte dat zes papierenfoto's van de e-Berlingo: kentekenbewijs
+deel I en II en het CoC lagen op schijf, `photos` was leeg, en de nachtelijke opruimer zou ze als wees
+hebben afgevoerd. Handmatig teruggezet; de sleutel stond in de bestandsnaam, dus dat kon nog.
+- **Bewust zónder `updated_at = now()`.** Die kolom betekent "de voortgang van deze auto is
+  geschreven" en voedt de versiecontrole. Bumpen zou twee dingen kapotmaken: het tabblad dat zojuist
+  zelf uploadde krijgt bij zijn volgende vinkje een **valse 409**, en een verouderd tabblad zou via
+  zijn eigen upload de drempel kunnen optillen en zo alsnog het werk van een collega overschrijven.
+  Een foto erbij zetten is een toevoeging, geen statuswijziging.
+- Mislukt het vastleggen, dan blijft het bestand staan en valt de frontend terug op de oude weg.
+- `/api/adphoto` deed dit al zo; `/api/photo` liep achter.
+- **De weigeringsbalk staat nu vast bovenaan het scherm** (`#verouderd`, `position:fixed`) in plaats
+  van bovenaan de pagina. Hij scrolde weg, en dan werk je door in een tabblad dat niets meer opslaat.
+  De tekst zegt er nu ook bij dat foto's wél bewaard blijven en de rest niet.
 
 ## HEIC-foto's (Mac en iPhone)
 Sinds 19-08-2026 zet `server.js` HEIC bij binnenkomst om naar JPEG. Zonder dat bleef een foto die

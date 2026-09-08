@@ -40,6 +40,10 @@
      dat mag je nooit voor de echte voorraad aanzien. Rood en niet te missen, met een knop om het
      opnieuw te proberen — zie boot(). */
   .demo-bar.geenverbinding{background:var(--red-soft);color:var(--red);border-bottom-color:#f3c9c9}
+  /* Een balk bovenaan de pagina scrolt weg, en dan werk je vrolijk door in een tabblad dat niets
+     meer opslaat — precies wat er op 08-09-2026 gebeurde. Deze blijft staan waar je kijkt. */
+  #verouderd{position:fixed;top:0;left:0;right:0;z-index:120;box-shadow:0 2px 12px rgba(192,57,43,.28)}
+  body.heeftverouderd{padding-top:34px}
   .demo-bar.geenverbinding button{margin-left:10px;font:inherit;font-weight:700;color:#fff;background:var(--red);border:0;border-radius:8px;padding:3px 11px;cursor:pointer}
   header.top{background:linear-gradient(120deg,var(--brand-2),var(--brand));color:#fff;padding:0 22px;display:flex;align-items:center;gap:22px;height:62px;position:sticky;top:0;z-index:40;box-shadow:0 2px 14px rgba(5,106,127,.3)}
   .brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:18px;letter-spacing:1.5px}
@@ -1011,9 +1015,11 @@ function toonVerouderd(j){
   let el=document.getElementById('verouderd');
   if(!el){ el=document.createElement('div'); el.id='verouderd'; el.className='demo-bar geenverbinding'; 
     document.body.insertBefore(el,document.body.firstChild); }
-  el.innerHTML=`⚠ <b>Niet opgeslagen.</b> Deze pagina staat al een tijd open en iemand anders heeft intussen `
-    + (autos.length?`${autos.length===1?'een auto':autos.length+' auto\'s'} gewijzigd (${esc(autos.slice(0,3).join(', '))}${autos.length>3?', …':''})`:'iets gewijzigd')
-    + `. Ververs de pagina en doe je wijziging opnieuw.<button onclick="window.location.reload()">Verversen</button>`;
+  document.body.classList.add('heeftverouderd');
+  el.innerHTML=`⚠ <b>Er wordt niets meer opgeslagen.</b> Deze pagina staat al een tijd open en intussen is `
+    + (autos.length?`${autos.length===1?'een auto':autos.length+' auto\'s'} gewijzigd (${esc(autos.slice(0,3).join(', '))}${autos.length>3?', …':''})`:'er iets gewijzigd')
+    + `. Alles wat je hierna aanvinkt gaat verloren. Foto's die je uploadt worden wél bewaard.`
+    + `<button onclick="window.location.reload()">Verversen</button>`;
 }
 function match(v){const q=state.q.toLowerCase(); return !q || (v.merk+" "+v.model+" "+v.uitv+" "+v.kenteken+" "+v.id).toLowerCase().includes(q);}
 
@@ -2608,9 +2614,10 @@ async function loadBpm(){ if(!apiOk)return; try{ const r=await fetch("/api/bpmre
 const AGENT_SOORT={
   mobilox: {naam:'de Mobilox-agent',        stilMin:45,      kantoortijd:true,  voedtScherm:true},
   agenda:  {naam:'de agenda-koppeling',     stilMin:45,      kantoortijd:true,  voedtScherm:true},
-  backup:  {naam:'de database-back-up',     stilMin:26*60,   kantoortijd:false, voedtScherm:false},
-  uploads: {naam:'de foto-back-up',         stilMin:26*60,   kantoortijd:false, voedtScherm:false},
-  offsite: {naam:'de kopie bij Backblaze',  stilMin:26*60,   kantoortijd:false, voedtScherm:false},
+  backup:  {naam:'de database-back-up',     stilMin:26*60,   kantoortijd:false, voedtScherm:false, slot:'Een back-up die stilstaat merk je pas als je hem nodig hebt.'},
+  uploads: {naam:'de foto-back-up',         stilMin:26*60,   kantoortijd:false, voedtScherm:false, slot:'Een back-up die stilstaat merk je pas als je hem nodig hebt.'},
+  offsite: {naam:'de kopie bij Backblaze',  stilMin:26*60,   kantoortijd:false, voedtScherm:false, slot:'Een back-up die stilstaat merk je pas als je hem nodig hebt.'},
+  opruimen:{naam:"het opruimen van wees-foto's", stilMin:26*60, kantoortijd:false, voedtScherm:false, slot:'Zolang dit stilstaat groeit /var/pvp/uploads door met bestanden die nergens meer bij horen.'},
 };
 const AGENT_NAMEN=Object.fromEntries(Object.entries(AGENT_SOORT).map(([k,v])=>[k,v.naam]));
 const AGENT_STANDAARD={stilMin:45,kantoortijd:true,voedtScherm:true};   // een taak die we nog niet kennen
@@ -2632,7 +2639,7 @@ function agentBanner(){
     <div style="flex:1"><div class="bt">${stuk.length===1?'Een achtergrondtaak loopt niet':'Achtergrondtaken lopen niet'}</div>
       <div class="bs">${stuk.map(a=>`${AGENT_NAMEN[a.naam]||a.naam}: ${oud(a.geluktTs)}${a.melding&&a.ok===false?' — '+esc(a.melding):''}`).join(' · ')}.
         ${stuk.some(a=>(AGENT_SOORT[a.naam]||AGENT_STANDAARD).voedtScherm)?'Wat hieronder staat kan verouderd zijn.':''}
-        ${stuk.some(a=>(AGENT_SOORT[a.naam]||AGENT_STANDAARD).voedtScherm===false)?'Een back-up die stilstaat merk je pas als je hem nodig hebt.':''}
+        ${[...new Set(stuk.map(a=>(AGENT_SOORT[a.naam]||AGENT_STANDAARD).slot).filter(Boolean))].join(' ')}
       </div></div></div>`;
 }
 // De openstaande werkbon van een auto, als die een afleverdatum heeft. Gebruikt op Lopende en op

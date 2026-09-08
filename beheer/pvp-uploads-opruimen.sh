@@ -47,17 +47,48 @@ done
 log() { logger -t pvp-uploads-opruimen "$1"; echo "$1"; }
 afbreken() { logger -t pvp-uploads-opruimen "AFGEBROKEN: $1"; echo "AFGEBROKEN: $1" >&2; exit 1; }
 
+# ===== Verslag naar PVP =====
+# Dit script brak van 29-08 t/m 08-09-2026 elke nacht af op zijn eigen veiligheidsklep (32% wezen),
+# en dat stond alleen in `systemctl --failed` — waar niemand naar kijkt. Nu verschijnt het op
+# *Vandaag*, net als de back-ups. Het melden mag het opruimen zelf nooit laten mislukken.
+verslag() {
+  [ -r /var/pvp/pg.env ] || return 0
+  ( set +e; set -a; . /var/pvp/pg.env; set +a
+    node /opt/pvp-api/agentrun.js opruimen "$1" "$2" ) >/dev/null 2>&1 || true
+}
+
 [ -d "$UPLOADS" ] || afbreken "$UPLOADS bestaat niet"
 [ -r /var/pvp/pg.env ] || afbreken "/var/pvp/pg.env niet leesbaar"
 set -a; . /var/pvp/pg.env; set +a
 
-WERK=$(mktemp -d); trap 'rm -rf "$WERK"' EXIT
+WERK=$(mktemp -d)
+# Eén EXIT-trap voor allebei: een tweede `trap ... EXIT` vervangt de eerste. Via EXIT en niet via ERR,
+# zodat elke manier van stukgaan gemeld wordt — ook de `exit 1` uit afbreken().
+afloop() {
+  code=$?
+  [ "$code" -ne 0 ] && verslag 0 "mislukt (exitcode $code) — zie: journalctl -u pvp-uploads-opruimen"
+  rm -rf "$WERK"
+  return 0
+}
+trap afloop EXIT
 
-# Alles waar de database naar verwijst: advertentiefoto's, keuringsfoto's en BPM-rapporten.
+# Alles waar de database naar verwijst. Er zijn VIER plekken waar de app bestanden vastlegt, en
+# ze moeten hier alle vier in staan:
+#   vehicles.ad_photos   /api/adphoto      advertentiefoto's
+#   vehicles.photos      /api/photo        keurings- en papierenfoto's
+#   vehicles.docs        /api/vehicledoc   inkoopdocumenten (pdf, screenshots)
+#   bpm_reports.url      /api/bpmreport    taxatierapporten
+# `docs` ontbrak hier tot 08-09-2026, en daarmee telde ELK inkoopdocument als wees. Op de dag dat het
+# opviel waren dat er 8 die nog gewoon bij een auto hoorden — waaronder het COS-statusrapport en het
+# serviceboekje van de e-Berlingo, precies de stukken waar een advertentie op gebouwd wordt. Ze zijn
+# nooit verplaatst omdat de veiligheidsklep hieronder eerder afbrak (31% wees). Die klep heeft dus
+# gedaan waarvoor hij er is; zonder die klep waren ze weg geweest.
+# Komt er een vijfde plek bij, zet hem hier ook neer.
 if ! psql "$PVP_PG" -tAc "
   select url from (
     select jsonb_array_elements_text(ad_photos) as url from vehicles
     union all select value from vehicles, jsonb_each_text(photos)
+    union all select d->>'url' from vehicles, jsonb_array_elements(docs) d
     union all select url from bpm_reports
   ) x where url like '/uploads/%'" 2>"$WERK/psql.err" | sed 's#^/uploads/##' | sort -u > "$WERK/indb.txt"; then
   afbreken "database niet te bevragen: $(head -1 "$WERK/psql.err")"
@@ -112,7 +143,7 @@ MB=$(awk "BEGIN{printf \"%.0f\", $BYTES/1048576}")
 
 log "in database: $IN_DB, op schijf: $OP_SCHIJF, wees: $ALLE (waarvan $AANTAL ouder dan ${GRACE_DAYS}d: ${MB} MB)"
 
-if [ "$AANTAL" -eq 0 ]; then log "niets te verplaatsen"; exit 0; fi
+if [ "$AANTAL" -eq 0 ]; then log "niets te verplaatsen"; verslag 1 "niets te verplaatsen ($ALLE wees, nog binnen de wachttijd)"; exit 0; fi
 
 if [ "$PROEF" -eq 1 ]; then
   log "proefdraai: er zou $AANTAL bestand(en) (${MB} MB) naar de prullenbak gaan"
@@ -129,6 +160,7 @@ while IFS= read -r rel; do
 done < "$WERK/wezen.txt"
 cp "$WERK/wezen.txt" "$DOEL/_verplaatst.txt"
 log "$AANTAL bestand(en) (${MB} MB) verplaatst naar $DOEL"
+verslag 1 "$AANTAL bestand(en) (${MB} MB) naar de prullenbak"
 
 # Lege automappen achter laten is rommelig; de map zelf blijft staan zolang er foto's in zitten.
 find "$UPLOADS" -mindepth 1 -type d -empty -delete 2>/dev/null || true

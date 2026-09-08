@@ -721,7 +721,43 @@ const server = http.createServer(async (req, res) => {
         if (e.code === 'verouderd') return sendJson(res, 409, { error: 'verouderd', melding: e.message, autos: e.autos || [] });
         throw e; }
       return sendJson(res, 200, { ok: true, versie }); }
-    if (url === '/api/photo' && method === 'POST') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' }); const b = await readBody(req) || {}; if (!b.id || !b.key || !b.dataUrl) return sendJson(res, 400, { error: 'missing' }); const up = await saveDataUrl(b.dataUrl, b.id, String(b.key).replace(/[^A-Za-z0-9._-]/g, '_')); if (!up) return sendJson(res, 400, { error: 'format' }); return sendJson(res, 200, { url: up }); }
+    /* Een foto wordt hier OOK meteen bij de auto vastgelegd, niet alleen op schijf gezet.
+       Daarvoor liep de koppeling uitsluitend via PUT /api/state: de frontend zette de URL in zijn
+       geheugen en de eerstvolgende opslag schreef hem weg. Werd die opslag geweigerd — een tabblad
+       dat te lang openstond krijgt 409 — dan stond het bestand er wel en wist niemand ervan.
+       Op 08-09-2026 kostte dat zes papierenfoto's van de e-Berlingo: kentekenbewijs I en II en het
+       CoC lagen op schijf, `photos` was leeg, en de nachtelijke opruimer zou ze als wees hebben
+       weggehaald. Nu is de foto binnen zodra het bestand er is.
+       Bewust een gerichte jsonb-toevoeging en niet de hele blob: één sleutel erbij raakt niets
+       anders, en de latere PUT /api/state ziet dezelfde inhoud en gaat gewoon door. */
+    if (url === '/api/photo' && method === 'POST') {
+      const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' });
+      if (u.r !== 'team' && u.r !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const b = await readBody(req) || {};
+      if (!b.id || !b.key || !b.dataUrl) return sendJson(res, 400, { error: 'missing' });
+      const key = String(b.key).replace(/[^A-Za-z0-9._-]/g, '_');
+      const up = await saveDataUrl(b.dataUrl, b.id, key);
+      if (!up) return sendJson(res, 400, { error: 'format' });
+      let vastgelegd = false;
+      try {
+        /* Bewust ZONDER `updated_at = now()`. Die kolom betekent "de voortgang van deze auto is
+           geschreven" en voedt de versiecontrole van putState. Een foto erbij zetten is een
+           toevoeging, geen statuswijziging — en zou je hem wél bumpen, dan gebeuren er twee nare
+           dingen: het tabblad dat zojuist zelf uploadde krijgt bij zijn volgende vinkje een valse
+           409, en een verouderd tabblad zou via zijn eigen upload de drempel kunnen optillen en zo
+           alsnog het werk van een collega overschrijven. */
+        const r = await pool.query(
+          `UPDATE vehicles SET photos = COALESCE(photos, '{}'::jsonb) || jsonb_build_object($2::text, $3::text)
+             WHERE id = $1`, [b.id, key, up]);
+        vastgelegd = r.rowCount > 0;
+        if (!vastgelegd) console.error('photo: auto niet gevonden bij het vastleggen — ' + b.id + ' / ' + key);
+      } catch (e) {
+        // Het bestand staat er; dat mag nooit verloren gaan omdat het vastleggen mislukt. De
+        // frontend valt dan terug op de oude weg via PUT /api/state.
+        console.error('photo: vastleggen mislukt voor ' + b.id + ' / ' + key + ' — ' + e.message);
+      }
+      return sendJson(res, 200, { url: up, vastgelegd });
+    }
 
     if (url === '/api/status' && method === 'GET') { const u = userFromReq(req); if (!u) return sendJson(res, 401, { error: 'auth' }); const r = await pool.query('SELECT id,status FROM vehicles ORDER BY sort_order NULLS LAST, id'); const out = {}; for (const row of r.rows) out[row.id] = { status: row.status }; return sendJson(res, 200, { vehicles: out }); }
 
