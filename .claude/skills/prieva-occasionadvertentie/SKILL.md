@@ -87,6 +87,13 @@ facelift; emissieklasse; twee sleutels; trekhaak; recent groot onderhoud.
 Koopaccu: "Het betreft een koopaccu. Er is dus geen maandelijkse batterijhuur
 van toepassing."
 
+**Bij Prieva is een accu altijd een koopaccu, tenzij een brondocument expliciet
+zegt dat het een huuraccu is** (opgave Vince, 08-09-2026). Een huuraccu wordt
+altijd ergens vermeld — in het kentekenbewijs, de inkoopfactuur of het
+statusrapport — dus staat er niets over, dan is het koop. Noem het bij een
+elektrische auto dan ook actief: het is een van de eerste dingen waar een koper
+naar zoekt, en het scheelt maandelijks geld.
+
 ### 9. Highlights
 Sluit af met een Highlights-lijst; zet de sterkste verkoopargumenten bovenaan:
 
@@ -129,7 +136,8 @@ De lijst is simpelweg te lang om alles afzonderlijk te benoemen."
 5. Gebruik exacte onderhoudsdata en kilometerstanden wanneer bekend.
 6. Maak onderscheid tussen dealeronderhouden, volledig onderhouden en
    onderhoud door erkende bedrijven.
-7. Benoem koopaccu / huuraccu alleen wanneer bevestigd.
+7. Bij een elektrische auto: koopaccu is de standaard en mag benoemd worden.
+   Alleen als een brondocument expliciet huuraccu vermeldt, schrijf je dat.
 8. Neem twijfelachtige technische gegevens niet als feit op.
 9. Zet belangrijke uitvoering- en pakketnamen prominent in titel en tekst.
 10. Behoud de inhoud van een bestaande advertentie, maar maak de tekst

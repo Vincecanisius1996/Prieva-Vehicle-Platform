@@ -3523,18 +3523,34 @@ function taxPhotoCard(v,g){
 }
 // Bestandsnaam waar je buiten PVP nog iets aan hebt: merk, kenteken of VIN, wat het voorstelt, en de
 // juiste extensie. Zonder die extensie opent het bestand op Windows niet met een dubbelklik.
+/* De bestandsnaam van een gedownloade foto: <VIN>_<de titel van het vakje>.
+   Bijvoorbeeld: VR7EAZKXZNJ819441_Buitenlands kentekenbewijs deel I — voorkant.jpg
+   Waarom precies zo (opgave Prieva 08-09-2026): wie de import verzorgt — een collega of straks een
+   agent — moet aan de náám kunnen zien waar een foto hoort, in plaats van elke afbeelding te moeten
+   herkennen. De titel is daarom letterlijk die uit PVP, en dat is dezelfde lijst die de RDW
+   hanteert (rdw/velden.js). Eerder stond hier merk-model-kenteken-sleutel, en die interne sleutel
+   (`d_kb1v`) zegt buiten PVP niemand iets.
+   Alleen wat op Windows verboden is gaat eruit; spaties, accenten en de kastlijn blijven staan. */
+const bestandsVeilig = t => String(t||'').replace(/[<>:"/\\|?*\x00-\x1f]/g,'').replace(/\s+/g,' ').replace(/[. ]+$/,'').trim();
+function fotoSleutel(v){
+  // Het VIN is de bedoeling; een auto zonder VIN (een oude inruiler) valt terug op het kenteken.
+  return (v.vin&&v.vin!=='—'?v.vin:null) || (v.kenteken&&v.kenteken!=='—'?v.kenteken:null) || v.id;
+}
 function fotoNaam(v,p,url){
   const ext=((url||'').split('?')[0].split('.').pop()||'jpg').toLowerCase();
-  const sleutel=(v.kenteken&&v.kenteken!=='—')?v.kenteken:v.vin;
-  return `${v.merk||''}-${v.model||''}-${sleutel||v.id}-${p.key}`.replace(/[^A-Za-z0-9._-]+/g,'-')+'.'+ext;
+  const titel=p.label||stukLabel(p.key)||p.key;
+  return bestandsVeilig(`${fotoSleutel(v)}_${titel}`)+'.'+ext;
 }
 // Gebruikt door zowel het S-TAX-portaal als de interne weergave; bewust één functie, want twee
 // exemplaren van hetzelfde lopen uiteen.
+/* Ook in de zip krijgt elk bestand dezelfde naam als bij een losse download: <VIN>_<titel>.
+   Zonder dat had je twee naamgevingen voor dezelfde foto, en dan klopt precies datgene niet
+   waarvoor die naam er is — kunnen aflezen waar een foto hoort. */
 async function downloadFotoGroep(id,group){ const v=V.find(x=>x.id===id); if(!v)return; const g=fotoGroepen(v).find(x=>x.groep===group); if(!g)return; const items=g.items.filter(p=>v.photos[p.key]); if(!items.length)return;
-  const base=(`${v.merk}-${v.model}-${v.kenteken!=='—'?v.kenteken:v.vin}-${g.step}`).replace(/[^A-Za-z0-9._-]+/g,'-');
-  if(!window.JSZip){ items.forEach((p,i)=>{const a=document.createElement('a');a.href=v.photos[p.key];a.download=base+'-'+(i+1);a.click();}); return; }
+  const base=bestandsVeilig(`${fotoSleutel(v)}_${g.step}`);
+  if(!window.JSZip){ items.forEach(p=>{const a=document.createElement('a');a.href=v.photos[p.key];a.download=fotoNaam(v,p,v.photos[p.key]);a.click();}); return; }
   showToast("ZIP maken…",false); const zip=new JSZip(); const folder=zip.folder(base);
-  for(let i=0;i<items.length;i++){ try{ const u=v.photos[items[i].key]; const r=await fetch(u); const b=await r.blob(); const ext=(u.split('.').pop()||'jpg').split('?')[0]; folder.file(items[i].key+'.'+ext,b); }catch(_){}}
+  for(let i=0;i<items.length;i++){ try{ const u=v.photos[items[i].key]; const r=await fetch(u); const b=await r.blob(); folder.file(fotoNaam(v,items[i],u),b); }catch(_){}}
   const blob=await zip.generateAsync({type:'blob'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=base+'.zip'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),3000);
 }
 function isImg(f){ return /^image\//.test(f.type) || /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name||''); }

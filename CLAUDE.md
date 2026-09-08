@@ -526,6 +526,21 @@ weg, en de labels *Los* en *Extra* zijn van het scherm verdwenen.
   undo-stack van de browser en taken leven nu op de server. Vandaar een bevestiging in beeld, en de
   tekst gaat mee het logboek in.
 
+## Gedownloade foto's dragen hun bestemming in de naam
+Sinds 08-09-2026. Een foto die je uit PVP downloadt heet **`<VIN>_<de titel van het vakje>`**, dus
+`VR7EAZKXZNJ819441_Buitenlands kentekenbewijs deel I — voorkant.jpg`. Dat geldt voor een losse
+download én voor **Download alle** (de zip), want twee naamgevingen voor dezelfde foto maakt precies
+kapot waarvoor die naam er is.
+- **Waarom** (opgave Prieva 08-09-2026): wie de import verzorgt — een collega of straks een agent —
+  moet aan de náám kunnen zien waar een foto hoort, in plaats van elke afbeelding te moeten
+  herkennen. De titels komen uit `rdw/velden.js` en dat is dezelfde lijst die de RDW hanteert.
+- Eerder stond er `merk-model-kenteken-<sleutel>`; die interne sleutel (`d_kb1v`) zegt buiten PVP
+  niemand iets.
+- **Alleen wat op Windows verboden is gaat eruit** (`< > : " / \ | ? *` en stuurtekens); spaties,
+  accenten en de kastlijn blijven staan, anders wijkt de naam af van de titel in de RDW-app.
+- Een auto zonder VIN (een oude inruiler) valt terug op het kenteken, en anders op het interne id.
+- `fotoNaam()` wordt gebruikt door de autopagina én het S-TAX-portaal én de zip — één functie.
+
 ## Advertentiewerk: de voorbereiding zichtbaar maken
 Sinds 08-09-2026. De advertentie kan al af zijn voordat de fotograaf is geweest — alleen de foto's
 ontbreken dan nog. Tot nu toe was daar geen stand voor: je zag pas iets als de advertentie **online**

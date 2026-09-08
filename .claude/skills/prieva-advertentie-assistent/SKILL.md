@@ -127,6 +127,15 @@ Voor tekstscans (bv. zoeken naar placeholder-taal of het checken van lengte) con
 
 **Algemeen tab controleren na wijzigingen**: navigeer na een reeks bewerkingen naar dezelfde URL met een verse `navigate`-call (niet enkel `location.reload()`, dat kan soms een incomplete state tonen) en scroll door om te bevestigen dat alle waarden zijn opgeslagen, vóórdat je verdergaat naar het volgende voertuig.
 
+## Foto's uit PVP hebben hun bestemming in de naam
+Download je RDW- of papierenfoto's uit PVP — los of via **Download alle** (zip) — dan heet elk
+bestand **`<VIN>_<de titel van het vakje>`**, bijvoorbeeld
+`VR7EAZKXZNJ819441_Buitenlands kentekenbewijs deel I — voorkant.jpg`.
+Die titels zijn dezelfde als de velden die de RDW hanteert, dus **je kunt aan de naam aflezen waar een
+foto hoort** in plaats van elke afbeelding te moeten herkennen. Gebruik dat: sorteer op naam en volg
+de titel, en val alleen terug op het bekijken van de foto als een naam ontbreekt of niet klopt.
+Een auto zonder VIN (een oude inruiler) valt terug op het kenteken.
+
 ## Foto's uploaden — workflow en volgorde (bijgewerkt door Vince, referentie: Volvo XC40 Recharge PHEV T5 Twin Engine R-Design)
 
 **Aanlevering:** Vince levert per auto een map met foto's aan, benoemd op basis van het VIN-nummer van de auto. Gebruik het VIN om de map aan de juiste auto in Mobilox te koppelen. De fotograaf nummert de bestanden NIET in een vaste volgorde — het is aan jou om de inhoud van elke foto te herkennen en zelf de juiste volgorde te bepalen, aan de hand van de referentievolgorde hieronder.
