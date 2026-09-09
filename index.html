@@ -3257,10 +3257,11 @@ function afleverPaneel(){
        <button> binnen een <button> is ongeldig en werkt in geen enkele browser betrouwbaar. */
     return `<div class="rij-item" open-state="${uit?1:0}">
       <button class="rij-kop" aria-expanded="${uit}" aria-controls="afl-${b.id}" onclick="afleverKlap(${b.id})">
-        <span class="tijd">${b.afleverTijd?esc(b.afleverTijd):esc((b.afleverdatum||'').slice(0,5))}</span>
+        <span class="tijd"${b.afleverTijd?'':' title="Aflevertijd nog niet ingevuld — open de rij om hem te zetten" style="color:var(--ink-3)"'}>${b.afleverTijd?esc(b.afleverTijd):'—'}</span>
         <span class="rij-titel">
           <span class="naam">${esc(a.merk||'')} ${esc(a.model||'')}</span>
-          <span class="meta">${kentekenHtml(a.kenteken)||`<span class="mono">${esc(a.vin||'')}</span>`} aflevering ${esc(b.afleverdatum||'')}</span>
+          <span class="meta">${kentekenHtml(a.kenteken)||`<span class="mono">${esc(a.vin||'')}</span>`}
+            <span>aflevering <span class="mono">${esc(b.afleverdatum||'')}</span>${b.afleverTijd?` om <span class="mono">${esc(b.afleverTijd)}</span>`:''}</span></span>
         </span>
         <span class="rij-rechts">
           ${tijdStatus(aflever,`Aflevering ${b.afleverdatum}`)}
