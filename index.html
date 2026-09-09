@@ -3257,7 +3257,7 @@ function afleverPaneel(){
        <button> binnen een <button> is ongeldig en werkt in geen enkele browser betrouwbaar. */
     return `<div class="rij-item" open-state="${uit?1:0}">
       <button class="rij-kop" aria-expanded="${uit}" aria-controls="afl-${b.id}" onclick="afleverKlap(${b.id})">
-        <span class="tijd">${esc((b.afleverdatum||'').slice(0,5))}</span>
+        <span class="tijd">${b.afleverTijd?esc(b.afleverTijd):esc((b.afleverdatum||'').slice(0,5))}</span>
         <span class="rij-titel">
           <span class="naam">${esc(a.merk||'')} ${esc(a.model||'')}</span>
           <span class="meta">${kentekenHtml(a.kenteken)||`<span class="mono">${esc(a.vin||'')}</span>`} aflevering ${esc(b.afleverdatum||'')}</span>
@@ -3282,8 +3282,9 @@ function afleverPaneel(){
         </div>`:''}
       </div>
       ${magPlannen()?`<div class="acties">
-        <input type="text" id="afl-datum-${b.id}" style="width:124px" value="${esc(b.afleverdatum||'')}" title="Afleverdatum verzetten" onkeydown="if(event.key==='Enter')afleverDatum(${b.id})">
-        <button class="knop" onclick="afleverDatum(${b.id})" title="Nieuwe datum opslaan">Verzetten</button>
+        <input type="text" id="afl-datum-${b.id}" style="width:124px" value="${esc(b.afleverdatum||'')}" title="Afleverdatum verzetten (dd-mm-jjjj)" onkeydown="if(event.key==='Enter')afleverDatum(${b.id})">
+        <input type="time" id="afl-tijd-${b.id}" style="width:104px" value="${esc(b.afleverTijd||'')}" title="Aflevertijd — vul je zelf in, Mobilox levert alleen een datum" onkeydown="if(event.key==='Enter')afleverDatum(${b.id})">
+        <button class="knop" onclick="afleverDatum(${b.id})" title="Nieuwe datum en tijd opslaan">Verzetten</button>
         <button class="knop primair" onclick="afleveren(${b.id})" title="De auto staat bij de klant">Afgeleverd</button>
       </div>`:''}
       </div>`:''}
@@ -3336,7 +3337,10 @@ function afleverTerug(id){ afleverDoe('/api/carport-afgeleverd',{id,afgeleverd:f
 function afleverDatum(id){
   const inp=document.getElementById('afl-datum-'+id); const t=(inp&&inp.value||'').trim();
   if(t&&!/^\d{2}-\d{2}-\d{4}$/.test(t)){ showToast("Datum als dd-mm-jjjj",false); return; }
-  afleverDoe('/api/carport-bon',{id,afleverdatum:t||null},"Afleverdatum bijgewerkt");
+  // <input type="time"> geeft altijd HH:MM of een lege tekst; de server controleert het nog een keer.
+  const tv=document.getElementById('afl-tijd-'+id); const tijd=(tv&&tv.value||'').trim();
+  afleverDoe('/api/carport-bon',{id,afleverdatum:t||null,aflevertijd:tijd||null},
+    tijd?`Aflevering bijgewerkt — ${t||'zonder datum'} om ${tijd}`:"Afleverdatum bijgewerkt");
 }
 /* ===== Garantiegevallen =====
    Meldingen over een auto die al geleverd is. Ze staan op Vandaag omdat ze anders uit beeld raken:
@@ -3487,8 +3491,8 @@ function bonKaart(bon,sleepbaar){
       <div class="bon-auto"><div class="nm">${esc(a.merk||'')} ${esc(a.model||'')}</div>
         <div class="id">${a.kenteken&&a.kenteken!=='—'?esc(a.kenteken):esc(a.vin||'')}${a.km!=null?' · '+Number(a.km).toLocaleString("nl-NL")+' km':''}</div></div>
       ${deadlineChip(bon)}
-      <span class="note" style="margin:0">${bon.afleverdatum?'aflevering '+esc(bon.afleverdatum):''}</span>
-      ${magPlannen()?`<button class="btn btn-ghost btn-sm" onclick="carportDatum(${bon.id},'${esc(bon.afleverdatum||'')}')">Datum</button>`:''}
+      <span class="note" style="margin:0">${bon.afleverdatum?'aflevering '+esc(bon.afleverdatum)+(bon.afleverTijd?' om '+esc(bon.afleverTijd):''):''}</span>
+      ${magPlannen()?`<button class="btn btn-ghost btn-sm" onclick="carportDatum(${bon.id},'${esc(bon.afleverdatum||'')}','${esc(bon.afleverTijd||'')}')">Datum</button>`:''}
       ${naarAuto}
       ${takenRing(bon.taken.filter(t=>t.klaar).length,bon.taken.length,`${bon.taken.filter(t=>t.klaar).length} van de ${bon.taken.length} taken afgevinkt`)||`<span class="note" style="margin:0">nog geen werk</span>`}
       <button class="btn btn-primary btn-sm" onclick="carportAfmelden(${bon.id})">Auto staat klaar</button>
@@ -3656,12 +3660,18 @@ function carportBonBlok(planning){
     </details>
   </div></div>`;
 }
-function carportDatum(id,huidig){
+function carportDatum(id,huidig,huidigeTijd){
   const d=window.prompt("Gewenste afleverdatum (dd-mm-jjjj). Leeg laten haalt hem weg.",huidig||"");
   if(d===null)return;
   const t=d.trim();
   if(t&&!/^\d{2}-\d{2}-\d{4}$/.test(t)){ showToast("Afleverdatum als dd-mm-jjjj",false); return; }
-  carportDoe('/api/carport-bon',{id,afleverdatum:t||null},"Afleverdatum bijgewerkt");
+  // Twee vragen achter elkaar en niet één veld: een tijd is optioneel en de datum is dat niet.
+  const u=window.prompt("Aflevertijd (uu:mm). Leeg laten betekent: tijd nog niet bekend.",huidigeTijd||"");
+  if(u===null)return;
+  const tijd=u.trim();
+  if(tijd&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(tijd)){ showToast("Aflevertijd als uu:mm, bijvoorbeeld 10:30",false); return; }
+  carportDoe('/api/carport-bon',{id,afleverdatum:t||null,aflevertijd:tijd||null},
+    tijd?`Aflevering bijgewerkt — ${t||'zonder datum'} om ${tijd}`:"Afleverdatum bijgewerkt");
 }
 function carportAfmelden(id){
   const bon=carportData.planning.find(b=>b.id===id); if(!bon)return;

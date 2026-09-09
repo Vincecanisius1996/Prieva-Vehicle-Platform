@@ -914,6 +914,19 @@ Sinds 20-08-2026. Twee tabellen: `carport_bonnen` (één per auto die bij Carpor
 - **De deadline is afgeleid, niet ingevoerd:** gewenste afleverdatum min `CARPORT_MARGE_DAGEN` (2),
   zodat de auto daarna nog naar de poetser kan. Die constante staat in `server.js`; de frontend krijgt
   hem mee in het antwoord van `/api/carport` en rekent niet zelf.
+- **De aflevertijd vult Prieva zelf in** (09-09-2026), kolom `carport_bonnen.aflever_tijd` (`HH:MM`,
+  leeg = niet bekend). Mobilox levert alléén een datum — er staat geen tijdstip in een
+  verkoopovereenkomst — en daardoor wist niemand of een auto om negen uur of om vijf uur weg moest.
+  Een **kolom** en geen eigen tabel: de afleverdatum staat er al en dit is hetzelfde feit. De
+  `PUT /api/state`-valkuil speelt hier niet; die overschrijft de rij van `vehicles`, niet die van een
+  werkbon.
+  - Zetten mag alleen Prieva (`magPlannen`), net als de datum; **Carport krijgt 403** — die weet niet
+    wat er met de koper is afgesproken.
+  - `/api/carport-bon` raakt de tijd **alleen aan als de sleutel `aflevertijd` is meegestuurd**.
+    Anders zou een aanroep die alleen de datum verzet — of een oud tabblad dat de tijd niet kent —
+    hem stilzwijgend wissen.
+  - `echteTijd()` naast `echteDatum()`: `99:99` heeft de goede vorm en is geen tijd.
+  - Mobilox raakt de kolom nooit aan, dus een datum die daarvandaan verschuift laat de tijd staan.
 - **De afleverdatum komt uit Mobilox** — de gewenste afleverdatum uit de verkoopovereenkomst. Sinds
   20-08-2026 haalt de Mobilox-agent hem op; sinds 23-08 houdt hij hem ook **elke ronde bij**, zodat een
   verzette aflevering binnen een kwartier op de planning staat. Met de hand invullen kan nog steeds,
@@ -1086,8 +1099,20 @@ binnen een kwartier weer — de werkbon staat immers nog open.
 
 - Afspraken van PVP dragen een merkteken (`extendedProperties.private.pvp=aflevering`) en Google
   filtert daar al op bij het ophalen. **Wat een collega in de agenda zet, komt niet eens over de lijn.**
-- Een aflevering is een **hele dag** en staat op *vrij*: Mobilox geeft alleen een datum, en een
-  verzonnen tijdstip van 10:00 zou betrouwbaarder lijken dan het is.
+- **Zonder aflevertijd** is een aflevering een **hele dag** en staat hij op *vrij*: Mobilox geeft
+  alleen een datum, en een verzonnen tijdstip van 10:00 zou betrouwbaarder lijken dan het is.
+- **Met een aflevertijd** (sinds 09-09-2026) wordt het een afspraak **op tijd van een half uur**
+  (`DUUR_MIN`), in de zone `Europe/Amsterdam` — de server draait op UTC, en Google rekent de
+  zomertijd zelf uit als je de zone meegeeft in plaats van een offset. Dan pas staat hij op de
+  juiste plek in een dagweergave, en dat is het hele nut van een tijd. **De duur blijft een
+  aanname** en staat daarom met zoveel woorden in de omschrijving van de afspraak: een aanname die
+  je kunt zien is iets anders dan een aanname die je voor een feit aanziet.
+  - `gelijk()` vergelijkt **beide vormen** (`date` én `dateTime`); zonder dat zou een afspraak die
+    van hele dag naar een tijdstip gaat niet als gewijzigd gelden — of elke ronde opnieuw geschreven
+    worden.
+  - Ook de controle "laat afspraken uit het verleden staan" leest nu allebei de vormen. Zonder dat
+    zou een afgelopen aflevering mét tijd alsnog verwijderd worden.
+  - Over middernacht heen klopt het: 23:45 wordt 23:45–00:15 op de dag erna, ook over een jaargrens.
 - **Afleveringen uit het verleden blijven staan** en er worden er geen gemaakt voor een datum die al
   geweest is.
 - **Meer dan tien afspraken weghalen in één ronde wordt geweigerd** — dat is een fout, geen opruiming.

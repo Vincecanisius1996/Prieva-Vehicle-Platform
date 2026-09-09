@@ -12,6 +12,8 @@ const K = require('./kalender.js');
 const MARGE_DAGEN = 2;              // gelijk aan CARPORT_MARGE_DAGEN in server.js
 const TERUG_DAGEN = 90;             // zover kijken we terug om onze eigen afspraken terug te vinden
 const MAX_VERWIJDEREN = 10;         // meer dan dit in één ronde is een fout, geen opruiming
+const DUUR_MIN = 30;                // hoe lang een aflevering met een tijdstip in de agenda staat
+const ZONE = 'Europe/Amsterdam';    // de server draait op UTC; Google rekent de zomertijd zelf uit
 
 const dag = ms => new Date(ms).toISOString().slice(0, 10);
 const uitTekst = d => {             // 'dd-mm-jjjj' -> epoch ms (UTC, begin van de dag)
@@ -20,6 +22,14 @@ const uitTekst = d => {             // 'dd-mm-jjjj' -> epoch ms (UTC, begin van 
 };
 const kort = ms => { const d = new Date(ms); return `${String(d.getUTCDate()).padStart(2,'0')}-${String(d.getUTCMonth()+1).padStart(2,'0')}`; };
 const POETSWERK = t => t.soort === 'poetsen';
+const tijdUit = t => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || '')) ? String(t) : null;
+/* 'HH:MM' plus een aantal minuten -> { dag: 0 of 1, tijd: 'HH:MM' }. Over middernacht heen kan:
+   een aflevering om 23:45 loopt door in de volgende dag, en dan moet de einddatum meeschuiven. */
+function plusMinuten(tijd, min) {
+  const [u, m] = tijd.split(':').map(Number);
+  const tot = u * 60 + m + min;
+  return { dag: Math.floor(tot / 1440), tijd: `${String(Math.floor(tot / 60) % 24).padStart(2, '0')}:${String(tot % 60).padStart(2, '0')}` };
+}
 
 function titelVan(b) {
   const naam = [b.merk, b.model].filter(Boolean).join(' ') || 'Auto';
@@ -27,7 +37,7 @@ function titelVan(b) {
   return `Aflevering — ${naam}${kent ? ' · ' + kent : ''}`;
 }
 
-function beschrijvingVan(b, taken, aflever) {
+function beschrijvingVan(b, taken, aflever, tijd) {
   const open = taken.filter(t => !t.klaar);
   const af = taken.length - open.length;
   const r = [];
@@ -41,28 +51,45 @@ function beschrijvingVan(b, taken, aflever) {
   lijst('Bij de poetser', open.filter(POETSWERK), aflever);
   if (!open.length) r.push('Er staat geen werk meer open.', '');
   if (af) r.push(`${af} van de ${taken.length} punten ${af === 1 ? 'is' : 'zijn'} al afgevinkt.`, '');
+  if (tijd) r.push(`Afgesproken tijd: ${tijd}. De duur van een half uur is een aanname van PVP —`,
+                   'hoe lang een aflevering duurt staat nergens vast.', '');
   r.push('Deze afspraak wordt door PVP bijgehouden (pvp.prieva.nl → Carport).');
   r.push('Wijzigen hier heeft geen zin: PVP schrijft hem bij de volgende ronde opnieuw.');
   return r.join('\n');
 }
 
+/* Twee vormen, en welke het wordt hangt af van wat PVP weet.
+   Zonder aflevertijd blijft het een afspraak van een hele dag: Mobilox levert alleen een datum, en
+   een verzonnen tijdstip van 10:00 zou betrouwbaarder lijken dan het is.
+   Vult Prieva zelf een tijd in (sinds 09-09-2026), dan is dat gegeven er wél, en hoort de afspraak
+   op die plek in de dag te staan — dat is het hele nut ervan. De DUUR is dan nog steeds onbekend;
+   die staat op een half uur en dat zeggen we erbij in de omschrijving, want een aanname die je kunt
+   zien is iets anders dan een aanname die je voor een feit aanziet. */
 function afspraakVan(b, taken) {
   const aflever = uitTekst(b.afleverdatum);
+  const tijd = tijdUit(b.aflever_tijd);
+  const eind = tijd ? plusMinuten(tijd, DUUR_MIN) : null;
+  const wanneer = tijd
+    ? { start: { dateTime: `${dag(aflever)}T${tijd}:00`, timeZone: ZONE },
+        end:   { dateTime: `${dag(aflever + eind.dag * 86400000)}T${eind.tijd}:00`, timeZone: ZONE } }
+    : { start: { date: dag(aflever) },
+        end:   { date: dag(aflever + 86400000) } };   // Google rekent het einde exclusief
   return {
     summary: titelVan(b),
-    description: beschrijvingVan(b, taken, aflever),
-    start: { date: dag(aflever) },
-    end: { date: dag(aflever + 86400000) },      // Google rekent het einde exclusief
+    description: beschrijvingVan(b, taken, aflever, tijd),
+    ...wanneer,
     transparency: 'transparent',                 // een aflevering hoort niemands dag als bezet te tonen
     extendedProperties: { private: { [K.MERK.sleutel]: K.MERK.waarde, bon: String(b.id), auto: String(b.vehicle_id) } },
   };
 }
 
 // Alleen bijwerken als er echt iets verandert — anders schrijven we vier keer per uur dezelfde
-// afspraak opnieuw en staat de agenda vol met "gewijzigd door PVP".
+// afspraak opnieuw en staat de agenda vol met "gewijzigd door PVP". Vergelijkt beide vormen: een
+// afspraak die van hele dag naar een tijdstip gaat verschilt, en moet dus bijgewerkt worden.
+const stip = k => (k && (k.dateTime ? k.dateTime.slice(0, 19) : k.date)) || '';
 const gelijk = (ev, wil) =>
   ev.summary === wil.summary && (ev.description || '') === wil.description &&
-  ev.start && ev.start.date === wil.start.date && ev.end && ev.end.date === wil.end.date;
+  stip(ev.start) === stip(wil.start) && stip(ev.end) === stip(wil.end);
 
 async function synchroniseer(pool, opties) {
   const o = opties || {};
@@ -76,7 +103,7 @@ async function synchroniseer(pool, opties) {
   // Wat hoort erin: open werkbonnen met een afleverdatum die nog moet komen. Een aflevering van
   // vorige week is geschiedenis; die hoort niet alsnog in de agenda te verschijnen.
   const { rows: bonnen } = await pool.query(
-    `SELECT b.id, b.vehicle_id, b.afleverdatum, b.agenda_event_id, v.merk, v.model, v.kenteken, v.vin
+    `SELECT b.id, b.vehicle_id, b.afleverdatum, b.aflever_tijd, b.agenda_event_id, v.merk, v.model, v.kenteken, v.vin
        FROM carport_bonnen b LEFT JOIN vehicles v ON v.id = b.vehicle_id
       WHERE b.status = 'open' AND b.afleverdatum IS NOT NULL`);
   const { rows: taken } = await pool.query('SELECT bon_id, soort, tekst, klaar FROM carport_taken ORDER BY id');
@@ -103,7 +130,10 @@ async function synchroniseer(pool, opties) {
   const weg = dubbel.slice();
   for (const [bonId, e] of perBonId) {
     if (wil.has(bonId)) continue;
-    const d = e.start && e.start.date ? uitTekst(e.start.date.split('-').reverse().join('-')) : null;
+    // Werkt voor allebei de vormen: een afspraak met een tijdstip heeft geen `date` maar een
+    // `dateTime`, en zonder deze regel zou een afgelopen aflevering alsnog verwijderd worden.
+    const iso = (e.start && (e.start.date || (e.start.dateTime || '').slice(0, 10))) || '';
+    const d = iso ? uitTekst(iso.split('-').reverse().join('-')) : null;
     if (d !== null && d < vandaag) continue;
     weg.push(e);
   }

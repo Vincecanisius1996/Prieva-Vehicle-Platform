@@ -630,6 +630,13 @@ function echteDatum(x) {
   const d = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
   return (d.getUTCDate() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCFullYear() === +m[3]) ? t : NaN;
 }
+/* Een klokttijd als 'HH:MM'. Net als bij een datum is de vorm niet genoeg: 99:99 heeft de goede
+   vorm en is geen tijd. Geeft de tekst terug als hij klopt, null bij leeg, NaN bij fout. */
+function echteTijd(x) {
+  const t = (x === undefined || x === null) ? '' : String(x).trim();
+  if (t === '') return null;
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(t) ? t : NaN;
+}
 // Vandaag als 'dd-mm-jjjj', in Nederlandse tijd. De server draait op UTC; tussen middernacht en
 // twee uur 's nachts zou dat anders de dag ervoor opleveren.
 function vandaagTekst() {
@@ -666,7 +673,8 @@ async function getCarport() {
     id: t.id, soort: t.soort, tekst: t.tekst, door: t.door, soortHand: t.soort_hand,
     klaar: t.klaar, klaarTs: t.klaar_ts, klaarDoor: t.klaar_door, ts: t.aangemaakt_ts });
   const maak = r => ({
-    id: r.id, vehicleId: r.vehicle_id, afleverdatum: r.afleverdatum, deadline: deadlineVan(r.afleverdatum),
+    id: r.id, vehicleId: r.vehicle_id, afleverdatum: r.afleverdatum, afleverTijd: r.aflever_tijd,
+    deadline: deadlineVan(r.afleverdatum),
     volgorde: r.volgorde, status: r.status, klaarTs: r.klaar_ts, klaarDoor: r.klaar_door,
     afgeleverdTs: r.afgeleverd_ts, afgeleverdDoor: r.afgeleverd_door, afgeleverdDatum: r.afgeleverd_datum,
     ts: r.aangemaakt_ts, door: r.aangemaakt_door, notities: r.notities || [], taken: perBon[r.id] || [],
@@ -1490,8 +1498,17 @@ const server = http.createServer(async (req, res) => {
       const b = await readBody(req) || {};
       const datum = b.afleverdatum ? String(b.afleverdatum).trim() : null;
       if (datum && dagUitTekst(datum) === null) return sendJson(res, 400, { error: 'datum', melding: 'afleverdatum moet dd-mm-jjjj zijn' });
+      /* De tijd wordt alleen aangeraakt als hij ook is meegestuurd. Anders zou een aanroep die de
+         datum verzet — of een oud tabblad dat de tijd nog niet kent — hem stilzwijgend wissen. */
+      const tijdMee = Object.prototype.hasOwnProperty.call(b, 'aflevertijd');
+      const tijd = tijdMee ? echteTijd(b.aflevertijd) : null;
+      if (tijdMee && Number.isNaN(tijd))
+        return sendJson(res, 400, { error: 'tijd', melding: 'aflevertijd moet HH:MM zijn, bijvoorbeeld 10:30' });
       if (b.id) {
-        await pool.query('UPDATE carport_bonnen SET afleverdatum=$2, updated_at=now() WHERE id=$1', [b.id, datum]);
+        await pool.query(
+          tijdMee ? 'UPDATE carport_bonnen SET afleverdatum=$2, aflever_tijd=$3, updated_at=now() WHERE id=$1'
+                  : 'UPDATE carport_bonnen SET afleverdatum=$2, updated_at=now() WHERE id=$1',
+          tijdMee ? [b.id, datum, tijd] : [b.id, datum]);
         return sendJson(res, 200, { ok: true, id: Number(b.id) });
       }
       const tekst = x => { const t = (x === undefined || x === null) ? '' : String(x).trim(); return t === '' ? null : t; };

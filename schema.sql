@@ -554,3 +554,16 @@ CREATE TABLE IF NOT EXISTS advertentie_concept (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS advertentie_concept_stand ON advertentie_concept (stand);
+
+-- ===== Aflevertijd op de werkbon (09-09-2026) =====
+-- Mobilox levert alleen een afleverDATUM; een tijdstip staat niet in de verkoopovereenkomst en werd
+-- daarom nergens vastgelegd. De agenda maakte er een afspraak van een hele dag van, en op de
+-- planning wist niemand of een auto om negen uur of om vijf uur weg moest.
+--
+-- Een KOLOM op carport_bonnen en geen eigen tabel: hier staat de afleverdatum al, en dit is
+-- hetzelfde feit — wanneer gaat deze auto weg. De valkuil met PUT /api/state speelt hier niet:
+-- die overschrijft de rij van `vehicles`, niet die van een werkbon.
+--
+-- Blijft leeg als er geen tijd bekend is; dat is de bestaande situatie en betekent "hele dag".
+-- Mobilox raakt deze kolom nooit aan, dus een datum die daarvandaan verschuift laat de tijd staan.
+ALTER TABLE carport_bonnen ADD COLUMN IF NOT EXISTS aflever_tijd text;   -- 'HH:MM', of NULL
