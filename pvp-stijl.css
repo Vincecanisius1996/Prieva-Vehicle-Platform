@@ -1,0 +1,357 @@
+/* =============================================================================
+   PVP — huisstijl (typografie, kleur, componenten)
+   Prieva Vehicle Platform · versie 1.0 · 09-09-2026
+   -----------------------------------------------------------------------------
+   Overgenomen uit het goedgekeurde voorbeeld "Afleveringen met klantgegevens".
+   Plakken in de <style> van index.html, bovenaan, vóór de schermspecifieke regels.
+
+   In de <head> hoort daarbij (fonts, met echte fallback):
+   <link rel="preconnect" href="https://fonts.googleapis.com">
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+   Drie rollen, meer niet:
+     Archivo        → koppen, tabs, knoplabels, kapjes-labels   (karakter)
+     IBM Plex Sans  → alle lopende tekst en formulieren          (leesbaarheid)
+     IBM Plex Mono  → cijfers die uitlijnen: tijd, kenteken,
+                      bedragen, factuur-/VIN-nummers             (data)
+   ========================================================================== */
+
+
+/* 1 — TOKENS ================================================================
+   Alle kleuren komen uit deze lijst. Nooit een losse hex in een component;
+   dan klopt het donkere thema niet meer.                                     */
+
+:root{
+  /* vlakken en lijnen */
+  --ground:#f4f6f4;          /* paginablad                                   */
+  --surface:#ffffff;         /* kaart/paneel                                 */
+  --surface-2:#eef1ee;       /* ingesprongen vlak, hover, uitgeklapt blok    */
+  --line:#d9e0db;            /* rand van een kaart of veld                   */
+  --line-soft:#e7ebe7;       /* scheiding binnen een kaart                   */
+
+  /* tekst */
+  --ink:#15201b;             /* koppen en waarden                            */
+  --ink-2:#4c5a53;           /* lopende tekst                                */
+  --ink-3:#78857d;           /* labels, meta, uitleg                         */
+
+  /* accent (Prieva-groen) */
+  --accent:#14634a;
+  --accent-soft:#e2efe9;
+  --accent-ink:#0f4b38;
+
+  /* betekeniskleuren — los van het accent */
+  --done:#2e7d4f;            /* klaar, afgevinkt                             */
+  --warn:#9a5b00;            /* aandacht, ontbreekt                          */
+  --warn-soft:#fbeed8;
+  --stop:#a32020;            /* storing, fout                                */
+  --stop-soft:#f8e4e2;
+
+  /* kenteken */
+  --plate:#f5c518;
+  --plate-ink:#1a1a1a;
+  --plate-eu:#123a94;
+
+  /* maatvoering */
+  --radius:10px;
+  --radius-s:7px;
+  --shadow:0 1px 2px rgba(21,32,27,.06), 0 8px 24px -16px rgba(21,32,27,.28);
+  --gap:12px;
+  --pad:16px;
+}
+
+/* Donker thema: alleen de tokens opnieuw zetten, nooit componenten.
+   Twee blokken, zodat zowel de systeeminstelling als een eigen schakelaar werkt. */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#111614; --surface:#181f1c; --surface-2:#1f2724;
+    --line:#2c3733; --line-soft:#242d29;
+    --ink:#e8efea; --ink-2:#a7b5ad; --ink-3:#7f8d86;
+    --accent:#5cc79c; --accent-soft:#17332a; --accent-ink:#8fdcba;
+    --done:#5cc79c; --warn:#e0a458; --warn-soft:#3a2c15;
+    --stop:#e58b83; --stop-soft:#3a1f1d;
+    --plate:#e5b813; --plate-ink:#141414;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#111614; --surface:#181f1c; --surface-2:#1f2724;
+  --line:#2c3733; --line-soft:#242d29;
+  --ink:#e8efea; --ink-2:#a7b5ad; --ink-3:#7f8d86;
+  --accent:#5cc79c; --accent-soft:#17332a; --accent-ink:#8fdcba;
+  --done:#5cc79c; --warn:#e0a458; --warn-soft:#3a2c15;
+  --stop:#e58b83; --stop-soft:#3a1f1d;
+  --plate:#e5b813; --plate-ink:#141414;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+}
+
+
+/* 2 — BASIS =================================================================  */
+
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:"IBM Plex Sans", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  font-size:15px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* Koppen: Archivo, strak gespatieerd, nooit groter dan nodig. */
+h1,h2,h3,h4{
+  font-family:"Archivo", ui-sans-serif, system-ui, sans-serif;
+  font-weight:600;
+  letter-spacing:-.01em;
+  text-wrap:balance;
+  margin:0;
+}
+h1{font-size:21px;font-weight:700}
+h2{font-size:15px}
+h3{font-size:14px}
+
+p{margin:0 0 10px}
+a{color:var(--accent-ink)}
+
+/* Kapjes-label: het herkenningspunt van de stijl. Boven elk veld en elk blok. */
+.lbl{
+  font-family:"Archivo", sans-serif;
+  font-size:11px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  color:var(--ink-3);
+}
+.sub{font-size:12.5px;color:var(--ink-3)}
+.meta{font-size:12.5px;color:var(--ink-3)}
+
+/* Alles wat een getal is: mono en tabulair, zodat kolommen uitlijnen. */
+.mono,.tijd,.bedrag,.nummer,td.num{
+  font-family:"IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric:tabular-nums;
+  font-weight:600;
+}
+
+:where(a,button,input,select,textarea,[tabindex]):focus-visible{
+  outline:2px solid var(--accent);
+  outline-offset:2px;
+}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+
+
+/* 3 — RAAMWERK ==============================================================  */
+
+.wrap{max-width:1100px;margin:0 auto;padding:28px 20px 64px;display:flex;flex-direction:column;gap:20px}
+
+.appbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand b{font-family:"Archivo",sans-serif;font-weight:700;font-size:19px;letter-spacing:-.01em}
+.brand span{color:var(--ink-3);font-size:12.5px;letter-spacing:.08em;text-transform:uppercase}
+.who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2)}
+.who .dot{
+  width:26px;height:26px;border-radius:50%;
+  background:var(--accent-soft);color:var(--accent-ink);
+  display:grid;place-items:center;
+  font-family:"Archivo",sans-serif;font-weight:600;font-size:12px;
+}
+
+/* Schermwissel: onderstreping, geen knoppenbalk. */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs button{
+  appearance:none;background:none;border:0;border-bottom:2px solid transparent;
+  padding:9px 13px;cursor:pointer;white-space:nowrap;
+  font:500 14px/1 "Archivo",sans-serif;color:var(--ink-3);
+}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-current="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+
+
+/* 4 — PANEEL EN KAART =======================================================
+   Onderscheid met opzet: het paneel draagt schaduw, de kaart erbinnen niet.
+   Niet alles is een kaart — een rand of een vlak is vaak genoeg.             */
+
+.panel{
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;
+}
+.panel-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px var(--pad);border-bottom:1px solid var(--line-soft);
+}
+.panel-body{padding:var(--pad)}
+
+.kaart{
+  background:var(--surface);border:1px solid var(--line);border-radius:8px;
+  padding:12px 14px;display:flex;flex-direction:column;gap:8px;
+}
+.kaart .titel{font-family:"Archivo",sans-serif;font-weight:600;font-size:13.5px}
+.kaart ul{margin:0;padding-left:16px;color:var(--ink-2);font-size:13.5px;display:flex;flex-direction:column;gap:4px}
+
+
+/* 5 — RIJEN EN UITKLAPPERS ==================================================
+   Eén patroon voor alle lijsten: afleveringen, komende auto's, werkbonnen.
+   Kop = knop (toetsenbord werkt vanzelf), body verschijnt eronder.           */
+
+.lijst > .rij-item{border-bottom:1px solid var(--line-soft)}
+.lijst > .rij-item:last-child{border-bottom:0}
+
+.rij-kop{
+  width:100%;display:grid;grid-template-columns:58px 1fr auto;gap:14px;align-items:center;
+  padding:12px var(--pad);background:none;border:0;text-align:left;cursor:pointer;color:inherit;font:inherit;
+}
+.rij-kop:hover{background:var(--surface-2)}
+.rij-kop:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.rij-item[open-state="1"] .rij-kop{background:var(--surface-2)}
+
+.rij-titel{display:flex;flex-direction:column;gap:3px;min-width:0}
+.rij-titel .naam{font-weight:600;letter-spacing:-.005em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rij-titel .meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rij-rechts{display:flex;align-items:center;gap:10px}
+
+.chev{width:16px;height:16px;color:var(--ink-3);transition:transform .18s ease;flex:none}
+.rij-item[open-state="1"] .chev{transform:rotate(90deg)}
+
+.rij-body{display:none;padding:2px var(--pad) 18px;background:var(--surface-2);border-top:1px solid var(--line-soft)}
+.rij-item[open-state="1"] .rij-body{display:block}
+
+.blok{margin-top:14px}
+.blok > h3,.blok > .lbl{display:block;margin:0 0 8px}
+
+.acties{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
+.melding{font-size:12.5px;color:var(--ink-3);margin-left:auto;align-self:center}
+
+
+/* 6 — VELDEN ================================================================  */
+
+.velden{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px 22px}
+.veld{display:flex;flex-direction:column;gap:3px;min-width:0}
+.veld .val{font-size:14.5px;line-height:1.4;overflow-wrap:anywhere}
+.veld .val a{color:var(--ink);text-decoration:none;border-bottom:1px solid color-mix(in srgb, var(--accent) 45%, transparent)}
+.veld .val a:hover{color:var(--accent-ink);border-bottom-color:var(--accent)}
+.veld.wide{grid-column:1 / -1}
+.veld.wide.rij{flex-direction:row;align-items:center}
+
+.rij{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.stapel{display:flex;flex-direction:column;gap:var(--gap)}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+input[type="text"],input[type="time"],input[type="date"],input[type="number"],
+input[type="search"],input[type="email"],input[type="tel"],input[type="password"],
+select,textarea{
+  font:400 14px/1.4 "IBM Plex Sans",sans-serif;color:var(--ink);background:var(--ground);
+  border:1px solid var(--line);border-radius:var(--radius-s);padding:8px 10px;
+}
+input[type="time"],input[type="date"],input[type="number"]{
+  font-family:"IBM Plex Mono",monospace;font-weight:600;font-variant-numeric:tabular-nums;
+}
+input:focus-visible,select:focus-visible,textarea:focus-visible{border-color:var(--accent)}
+::placeholder{color:var(--ink-3)}
+
+
+/* 7 — KNOPPEN ===============================================================  */
+
+.knop{
+  appearance:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  font:600 13px/1 "Archivo",sans-serif;padding:8px 12px;
+  border:1px solid var(--line);border-radius:var(--radius-s);
+  background:var(--surface);color:var(--ink);
+}
+.knop:hover{border-color:var(--ink-3)}
+.knop[disabled]{opacity:.5;cursor:default}
+.knop.primair{background:var(--accent);border-color:var(--accent);color:#fff}
+:root[data-theme="dark"] .knop.primair{color:#0c1a14}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .knop.primair{color:#0c1a14}}
+.knop.primair:hover{filter:brightness(1.06)}
+.knop.stil{background:none;border-color:transparent;color:var(--ink-3)}
+.knop.stil:hover{color:var(--ink);border-color:var(--line)}
+.knop.gevaar{color:var(--stop);border-color:color-mix(in srgb, var(--stop) 35%, transparent)}
+
+/* Miniknop, bv. "kopieer" achter een veldwaarde. */
+.kopie{
+  appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--ink-3);
+  border-radius:6px;padding:2px 7px;font:500 11px/1.6 "IBM Plex Sans",sans-serif;cursor:pointer;
+}
+.kopie:hover{color:var(--ink);border-color:var(--ink-3)}
+.kopie[data-ok="1"]{color:var(--done);border-color:color-mix(in srgb, var(--done) 45%, transparent)}
+
+
+/* 8 — STATUS EN TELLERS =====================================================
+   Status zegt met vorm én kleur wat er aan de hand is; nooit kleur alleen.   */
+
+.status{font:600 11.5px/1.6 "Archivo",sans-serif;letter-spacing:.03em;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.st-gereed{background:var(--accent-soft);color:var(--accent-ink)}
+.st-wacht {background:var(--warn-soft);color:var(--warn)}
+.st-klaar {background:var(--surface-2);color:var(--done);border:1px solid color-mix(in srgb, var(--done) 30%, transparent)}
+.st-stop  {background:var(--stop-soft);color:var(--stop)}
+
+.count{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;white-space:nowrap;
+  color:var(--accent-ink);background:var(--accent-soft);padding:2px 7px;border-radius:999px;
+}
+.count.warn{color:var(--warn);background:var(--warn-soft)}
+.count.stop{color:var(--stop);background:var(--stop-soft)}
+
+/* Melding boven een scherm (bv. storing op een koppeling). */
+.note{
+  display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--ink-2);
+  background:var(--warn-soft);border:1px solid color-mix(in srgb, var(--warn) 28%, transparent);
+  border-radius:8px;padding:10px 12px;
+}
+.note b{color:var(--ink)}
+.note.stop{background:var(--stop-soft);border-color:color-mix(in srgb, var(--stop) 30%, transparent)}
+
+
+/* 9 — KENTEKEN ==============================================================
+   Geel plaatje met blauwe EU-strook: in één oogopslag herkenbaar in elke lijst. */
+
+.kenteken{
+  font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:11.5px;letter-spacing:.06em;
+  background:var(--plate);color:var(--plate-ink);border-radius:3px;
+  padding:2px 6px 2px 12px;position:relative;white-space:nowrap;
+}
+.kenteken::before{content:"";position:absolute;left:0;top:0;bottom:0;width:8px;background:var(--plate-eu);border-radius:3px 0 0 3px}
+.kenteken.groot{font-size:14px;padding:4px 9px 4px 16px}
+.kenteken.groot::before{width:11px}
+
+
+/* 10 — TABEL ================================================================  */
+
+.tabelwrap{overflow-x:auto}                   /* de pagina schuift nooit zijwaarts */
+table.pvp{width:100%;border-collapse:collapse;font-size:14px}
+table.pvp th{
+  text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);
+  font:600 11px/1.6 "Archivo",sans-serif;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);
+  white-space:nowrap;
+}
+table.pvp td{padding:10px 12px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+table.pvp tr:last-child td{border-bottom:0}
+table.pvp tbody tr:hover{background:var(--surface-2)}
+table.pvp td.num,table.pvp th.num{text-align:right;font-variant-numeric:tabular-nums}
+
+
+/* 11 — VOORTGANGSRING (Lopende) =============================================
+   <svg class="ring" viewBox="0 0 36 36" style="--pct:57">…</svg>
+   met twee <circle class="ring-baan"> en <circle class="ring-vul">.          */
+
+.ring{width:34px;height:34px;flex:none;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:3.4;cx:18;cy:18;r:15}
+.ring .ring-baan{stroke:var(--line)}
+.ring .ring-vul{
+  stroke:var(--accent);stroke-linecap:round;
+  stroke-dasharray:94.2;                                  /* 2πr bij r=15 */
+  stroke-dashoffset:calc(94.2 - (94.2 * var(--pct) / 100));
+  transition:stroke-dashoffset .3s ease;
+}
+.ring-tekst{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--ink-2)}
+
+
+/* 12 — KLEINE SCHERMEN ======================================================  */
+
+@media (max-width:640px){
+  .wrap{padding:18px 14px 48px}
+  .duo{grid-template-columns:1fr}
+  .rij-kop{grid-template-columns:52px 1fr;row-gap:8px}
+  .rij-rechts{grid-column:1 / -1;justify-content:space-between}
+}

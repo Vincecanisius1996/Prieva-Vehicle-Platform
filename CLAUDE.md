@@ -1341,8 +1341,57 @@ versie haalde dat door elkaar en zag dertien inkoopprijzen aan voor verkoopdatum
 - **Eén verbetering per keer**, en test rol-flows voordat je live zet.
 
 ## Stijl
-PRIEVA-huisstijl: font Montserrat, blauwverloop `#0D9EBF → #056A7F`, zwart woordmerk, hexagon-logo,
-géén oranje. Single-file, inline CSS/JS, Nederlandse teksten.
+**De huisstijl wordt vervangen, scherm voor scherm.** Sinds 09-09-2026 draait er dus tijdelijk twee
+stijlen naast elkaar. Single-file, inline CSS/JS, Nederlandse teksten blijft.
+
+- **Nieuw (v1.0, `pvp-stijl.css` + `pvp-stijl-bouwopdracht.md`):** Archivo voor koppen, IBM Plex Sans
+  voor lopende tekst, IBM Plex Mono voor alles wat een getal is. Accent **Prieva-groen `#14634a`**.
+  Elk kenteken krijgt `.kenteken`, elk uitlijnend getal `.mono`, en een status heeft altijd tekst in
+  de badge — nooit kleur alleen.
+- **Oud (tot en met de laatste omzetting):** Montserrat, blauwverloop `#0D9EBF → #056A7F`, hexagon-logo,
+  géén oranje.
+- **Volgorde:** Vandaag (klaar 09-09-2026) → Komende → Lopende → Carport → Logistiek → Verkocht →
+  login en foutmeldingen. Eén scherm per deploy, met een verse back-up vooraf.
+
+### Het omhulsel `.stijl2` is tijdelijk
+De nieuwe stijl hangt niet aan `:root`/`body` maar aan **`.stijl2`**, en `renderVandaag()` zet zijn
+uitvoer in dat omhulsel. Dat moest, want oud en nieuw botsen op naam:
+- **Vijf tokennamen** bestaan in beide met een ándere waarde: `--line` (56× in gebruik), `--ink`,
+  `--radius`, `--accent`, `--shadow`. Zet je het nieuwe `:root`-blok erbóven, dan wint het oude en
+  krijgt de nieuwe stijl stilletjes de oude kleuren; eronder verandert elk scherm tegelijk.
+- **Negen klassenamen**, waarvan **`.note`** de gevaarlijkste: oud is dat een klein grijs
+  hintregeltje (51×), nieuw een geel waarschuwingsvak. Binnen `.stijl2` is die overal `.meta`.
+- De nieuwe stijl kent **22 oude tokens niet** die samen 250+ keer gebruikt worden (`--muted` 54×,
+  `--green` 37×, `--blue` 32×, …); die blijven staan zolang er oude schermen zijn.
+
+**Opruimen zodra het laatste scherm om is:** `.stijl2` promoveren naar `:root` (tokens) resp. `body`,
+de prefix van de overige regels halen, het oude tokenblok en de oude componenten weggooien, en de
+Montserrat-regel uit de `<head>`.
+
+### Wat je bij een volgend scherm moet weten
+- **Klassen die aan JavaScript hangen, niet hernoemen:** `.taakkolom` en `.doel` (slepen
+  Carport↔poetser), `.bon` (`bonSleepEind`), `.logauto`, `.logpartij`, `.soortraster`, `.demo-bar`,
+  `.bpmteller`, `.search`, `.avatar`, plus de `classList`-vlaggen `sleep`, `drag`, `drop`, `over`,
+  `show`, `active`, `breed`, `heeftverouderd`, `geenverbinding`.
+- **Gedeelde bouwstenen krijgen een eigen variant, geen aanpassing.** `takenRing`, `tijdChip` en
+  `komTable` staan ook op Lopende, Carport en Komende; daarom `ringNieuw()`, `tijdStatus()` en
+  `verwachtTabel()` ernaast. Die verdwijnen bij de opruiming.
+- **De kop van een uitklaprij is een `<button>`** (`aria-expanded`), dus er mag géén `<input>`,
+  `<button>` of `<select>` in staan — dat is ongeldige HTML en werkt in geen enkele browser. Op
+  Vandaag zijn *Verzetten* en *Afgeleverd* daarom naar de uitklap verhuisd.
+- **Het uitklappen blijft server-side hertekenen** (`afleverOpen` + `rerender()`); `open-state="0|1"`
+  is alleen het haakje voor de CSS. Geen JS-wijziging nodig.
+- **Controleer na elk scherm dat de ándere schermen byte voor byte gelijk blijven** aan de back-up.
+  Bij ronde 1 was dat zo voor Komende, Lopende, Verkocht, Carport, Logistiek, Logboek en de
+  autopagina.
+
+### Het donkere thema staat nog uit
+De nieuwe stijl brengt een donker thema mee, maar de **oude CSS kent er geen** (nul regels
+`prefers-color-scheme`). Zou het aanstaan, dan werd bij iemand met een donkere Mac alléén het
+omgezette scherm donker en bleef de kop, de navigatie en de pagina eromheen licht — een donker
+eiland, en dat leest slechter dan helemaal geen donker thema. De waarden staan er wél al; aanzetten
+is één blok terugzetten op `@media (prefers-color-scheme: dark)`, en hoe staat in de code beschreven.
+Doe dat pas als het laatste scherm om is.
 
 ## Roadmap (kort)
 - ~~Fase 1: JSON-opslag vervangen door een eigen PostgreSQL-database (los van CRP).~~ **Klaar 15-08-2026.**

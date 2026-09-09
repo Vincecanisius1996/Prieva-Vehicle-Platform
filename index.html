@@ -19,8 +19,295 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- Huisstijl v1.0 (09-09-2026). Montserrat blijft staan zolang er nog schermen in de oude stijl
+     zijn; die regel gaat eruit zodra het laatste scherm om is. -->
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
+  /* ===========================================================================
+     HUISSTIJL v1.0 (09-09-2026) — voorlopig GESCOPED op .stijl2
+     ---------------------------------------------------------------------------
+     De inhoud hieronder is `pvp-stijl.css`, maar elke regel hangt aan `.stijl2`
+     in plaats van aan `:root`/`body`. Dat is met opzet en tijdelijk.
+
+     WAAROM GESCOPED
+     Vijf tokennamen bestaan in beide stijlen met een ándere waarde: --line
+     (56x in gebruik), --ink, --radius, --accent en --shadow. Zet je het nieuwe
+     :root-blok erboven, dan wint het oude en krijgt de nieuwe stijl stilletjes
+     de oude kleuren; zet je het eronder, dan verandert elk scherm tegelijk van
+     kleur. Met een omhulsel kunnen de oude schermen de nieuwe waarden
+     letterlijk niet zien, en verandert alleen wat we deze ronde omschrijven.
+     Custom properties erven, dus binnen het omhulsel klopt alles vanzelf.
+     Negen klassenamen botsen ook, waarvan `.note` de gevaarlijkste is: oud is
+     dat een klein grijs hintregeltje (51x), nieuw een geel waarschuwingsvak.
+
+     HOE DIT WEER WEGGAAT
+     Zodra het laatste scherm is omgezet: `.stijl2` vervangen door `:root`
+     (tokens) resp. `body`, de prefix van de overige regels halen, en het oude
+     tokenblok plus de oude componenten weggooien. Tot die tijd staan oud en
+     nieuw naast elkaar zonder elkaar te raken.
+
+     NIET OVERGENOMEN: .wrap, .appbar, .brand, .who en .tabs uit de
+     bronstijl. Dat is de omhulling van de pagina (kop, navigatie), en die
+     houdt PVP deze ronde nog in de oude vorm — dode CSS is een valkuil op
+     zich. Die komen mee zodra de kop aan de beurt is.
+     ======================================================================== */
+
+  /* 1 — TOKENS. Alle kleuren komen hieruit; nooit een losse hex in een
+     component, dan klopt het donkere thema niet meer. */
+  .stijl2{
+    /* vlakken en lijnen */
+    --ground:#f4f6f4;          /* paginablad                                */
+    --surface:#ffffff;         /* kaart/paneel                              */
+    --surface-2:#eef1ee;       /* ingesprongen vlak, hover, uitgeklapt blok */
+    --line:#d9e0db;            /* rand van een kaart of veld                */
+    --line-soft:#e7ebe7;       /* scheiding binnen een kaart                */
+    /* tekst */
+    --ink:#15201b;             /* koppen en waarden                         */
+    --ink-2:#4c5a53;           /* lopende tekst                             */
+    --ink-3:#78857d;           /* labels, meta, uitleg                      */
+    /* accent (Prieva-groen) */
+    --accent:#14634a; --accent-soft:#e2efe9; --accent-ink:#0f4b38;
+    /* betekeniskleuren — los van het accent */
+    --done:#2e7d4f;
+    --warn:#9a5b00; --warn-soft:#fbeed8;
+    --stop:#a32020; --stop-soft:#f8e4e2;
+    /* kenteken */
+    --plate:#f5c518; --plate-ink:#1a1a1a; --plate-eu:#123a94;
+    /* maatvoering */
+    --radius:10px; --radius-s:7px;
+    --shadow:0 1px 2px rgba(21,32,27,.06), 0 8px 24px -16px rgba(21,32,27,.28);
+    --gap:12px; --pad:16px;
+  }
+  /* Donker thema: alleen de tokens opnieuw zetten, nooit componenten. Het
+     attribuut staat op <html>, de tokens op het omhulsel.
+
+     LET OP — de systeeminstelling doet hier BEWUST nog niets. De rest van PVP
+     heeft geen donker thema (nul regels `prefers-color-scheme` in de oude CSS).
+     Zou dit blok op `@media (prefers-color-scheme: dark)` staan, dan werd bij
+     iemand met een donkere Mac alléén Vandaag donker en bleef de kop, de
+     navigatie en de pagina eromheen licht: een donker eiland, en dat leest
+     slechter dan helemaal geen donker thema. De waarden staan er wel al, zodat
+     het aanzetten straks één handeling is.
+
+     AANZETTEN, zodra het laatste scherm om is: dit blok kopiëren naar
+       @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) … }
+     precies zoals het in pvp-stijl.css staat. */
+  :root[data-theme="dark"] .stijl2{
+    --ground:#111614; --surface:#181f1c; --surface-2:#1f2724;
+    --line:#2c3733; --line-soft:#242d29;
+    --ink:#e8efea; --ink-2:#a7b5ad; --ink-3:#7f8d86;
+    --accent:#5cc79c; --accent-soft:#17332a; --accent-ink:#8fdcba;
+    --done:#5cc79c; --warn:#e0a458; --warn-soft:#3a2c15;
+    --stop:#e58b83; --stop-soft:#3a1f1d;
+    --plate:#e5b813; --plate-ink:#141414;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+  }
+
+  /* 2 — BASIS */
+  .stijl2,.stijl2 *{box-sizing:border-box}
+  .stijl2{
+    background:var(--ground);color:var(--ink);
+    font-family:"IBM Plex Sans", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;
+    display:flex;flex-direction:column;gap:20px;
+  }
+  /* Koppen: Archivo, strak gespatieerd, nooit groter dan nodig. */
+  .stijl2 h1,.stijl2 h2,.stijl2 h3,.stijl2 h4{
+    font-family:"Archivo", ui-sans-serif, system-ui, sans-serif;
+    font-weight:600;letter-spacing:-.01em;text-wrap:balance;margin:0;
+  }
+  .stijl2 h1{font-size:21px;font-weight:700}
+  .stijl2 h2{font-size:15px}
+  .stijl2 h3{font-size:14px}
+  .stijl2 p{margin:0 0 10px}
+  .stijl2 a{color:var(--accent-ink)}
+
+  /* Kapjes-label: het herkenningspunt van de stijl. Boven elk veld en elk blok. */
+  .stijl2 .lbl{
+    font-family:"Archivo", sans-serif;font-size:11px;font-weight:600;
+    text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);
+  }
+  .stijl2 .sub{font-size:12.5px;color:var(--ink-3)}
+  .stijl2 .meta{font-size:12.5px;color:var(--ink-3)}
+
+  /* Alles wat een getal is: mono en tabulair, zodat kolommen uitlijnen. */
+  .stijl2 .mono,.stijl2 .tijd,.stijl2 .bedrag,.stijl2 .nummer,.stijl2 td.num{
+    font-family:"IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric:tabular-nums;font-weight:600;
+  }
+  .stijl2 :where(a,button,input,select,textarea,[tabindex]):focus-visible{
+    outline:2px solid var(--accent);outline-offset:2px;
+  }
+  @media (prefers-reduced-motion: reduce){
+    .stijl2,.stijl2 *{transition:none !important;animation:none !important}
+  }
+
+  /* 3 — PANEEL EN KAART. Onderscheid met opzet: het paneel draagt schaduw, de
+     kaart erbinnen niet. Niet alles is een kaart — een rand is vaak genoeg. */
+  .stijl2 .panel{
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;
+  }
+  .stijl2 .panel-head{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:14px var(--pad);border-bottom:1px solid var(--line-soft);
+  }
+  .stijl2 .panel-body{padding:var(--pad)}
+  .stijl2 .kaart{
+    background:var(--surface);border:1px solid var(--line);border-radius:8px;
+    padding:12px 14px;display:flex;flex-direction:column;gap:8px;
+  }
+  .stijl2 .kaart .titel{font-family:"Archivo",sans-serif;font-weight:600;font-size:13.5px}
+  .stijl2 .kaart ul{margin:0;padding-left:16px;color:var(--ink-2);font-size:13.5px;display:flex;flex-direction:column;gap:4px}
+
+  /* 4 — RIJEN EN UITKLAPPERS. Eén patroon voor alle lijsten. De kop is een
+     knop, dus toetsenbordbediening werkt vanzelf. */
+  .stijl2 .lijst > .rij-item{border-bottom:1px solid var(--line-soft)}
+  .stijl2 .lijst > .rij-item:last-child{border-bottom:0}
+  .stijl2 .rij-kop{
+    width:100%;display:grid;grid-template-columns:58px 1fr auto;gap:14px;align-items:center;
+    padding:12px var(--pad);background:none;border:0;text-align:left;cursor:pointer;color:inherit;font:inherit;
+  }
+  .stijl2 .rij-kop.zonder-tijd{grid-template-columns:1fr auto}
+  .stijl2 .rij-kop:hover{background:var(--surface-2)}
+  .stijl2 .rij-kop:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .stijl2 .rij-item[open-state="1"] .rij-kop{background:var(--surface-2)}
+  .stijl2 .rij-titel{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .stijl2 .rij-titel .naam{font-weight:600;letter-spacing:-.005em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stijl2 .rij-titel .meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .stijl2 .rij-rechts{display:flex;align-items:center;gap:10px}
+  .stijl2 .chev{width:16px;height:16px;color:var(--ink-3);transition:transform .18s ease;flex:none}
+  .stijl2 .rij-item[open-state="1"] .chev{transform:rotate(90deg)}
+  .stijl2 .rij-body{display:none;padding:2px var(--pad) 18px;background:var(--surface-2);border-top:1px solid var(--line-soft)}
+  .stijl2 .rij-item[open-state="1"] .rij-body{display:block}
+  .stijl2 .blok{margin-top:14px}
+  .stijl2 .blok > h3,.stijl2 .blok > .lbl{display:block;margin:0 0 8px}
+  .stijl2 .acties{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
+  .stijl2 .melding{font-size:12.5px;color:var(--ink-3);margin-left:auto;align-self:center}
+
+  /* 5 — VELDEN */
+  .stijl2 .velden{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px 22px}
+  .stijl2 .veld{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .stijl2 .veld .val{font-size:14.5px;line-height:1.4;overflow-wrap:anywhere}
+  .stijl2 .veld.wide{grid-column:1 / -1}
+  .stijl2 .rij{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .stijl2 .stapel{display:flex;flex-direction:column;gap:var(--gap)}
+  .stijl2 input[type="text"],.stijl2 input[type="time"],.stijl2 input[type="date"],
+  .stijl2 input[type="number"],.stijl2 input[type="search"],.stijl2 select,.stijl2 textarea{
+    font:400 14px/1.4 "IBM Plex Sans",sans-serif;color:var(--ink);background:var(--ground);
+    border:1px solid var(--line);border-radius:var(--radius-s);padding:8px 10px;
+  }
+  .stijl2 input[type="time"],.stijl2 input[type="date"],.stijl2 input[type="number"]{
+    font-family:"IBM Plex Mono",monospace;font-weight:600;font-variant-numeric:tabular-nums;
+  }
+  .stijl2 input:focus-visible,.stijl2 select:focus-visible,.stijl2 textarea:focus-visible{border-color:var(--accent)}
+  .stijl2 ::placeholder{color:var(--ink-3)}
+
+  /* 6 — KNOPPEN */
+  .stijl2 .knop{
+    appearance:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+    font:600 13px/1 "Archivo",sans-serif;padding:8px 12px;
+    border:1px solid var(--line);border-radius:var(--radius-s);
+    background:var(--surface);color:var(--ink);
+  }
+  .stijl2 .knop:hover{border-color:var(--ink-3)}
+  .stijl2 .knop[disabled]{opacity:.5;cursor:default}
+  .stijl2 .knop.primair{background:var(--accent);border-color:var(--accent);color:#fff}
+  /* Donkere knoptekst hoort bij het lichtgroene accent van het donkere thema. Loopt mee met het
+     blok hierboven: de systeemvariant staat uit zolang de rest van PVP geen donker thema heeft,
+     want bijna-zwart op donkergroen leest niet. */
+  :root[data-theme="dark"] .stijl2 .knop.primair{color:#0c1a14}
+  .stijl2 .knop.primair:hover{filter:brightness(1.06)}
+  .stijl2 .knop.stil{background:none;border-color:transparent;color:var(--ink-3)}
+  .stijl2 .knop.stil:hover{color:var(--ink);border-color:var(--line)}
+  .stijl2 .knop.gevaar{color:var(--stop);border-color:color-mix(in srgb, var(--stop) 35%, transparent)}
+
+  /* 7 — STATUS EN TELLERS. Status zegt met vorm én kleur wat er aan de hand
+     is; nooit kleur alleen — de tekst staat altijd in de badge. */
+  .stijl2 .status{font:600 11.5px/1.6 "Archivo",sans-serif;letter-spacing:.03em;padding:3px 8px;border-radius:999px;white-space:nowrap}
+  .stijl2 .st-gereed{background:var(--accent-soft);color:var(--accent-ink)}
+  .stijl2 .st-wacht {background:var(--warn-soft);color:var(--warn)}
+  .stijl2 .st-klaar {background:var(--surface-2);color:var(--done);border:1px solid color-mix(in srgb, var(--done) 30%, transparent)}
+  .stijl2 .st-stop  {background:var(--stop-soft);color:var(--stop)}
+  .stijl2 .count{
+    font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;white-space:nowrap;
+    color:var(--accent-ink);background:var(--accent-soft);padding:2px 7px;border-radius:999px;
+  }
+  .stijl2 .count.warn{color:var(--warn);background:var(--warn-soft)}
+  .stijl2 .count.stop{color:var(--stop);background:var(--stop-soft)}
+  /* Let op: dit is de NIEUWE .note (een waarschuwingsvak). De oude .note is een
+     klein grijs hintregeltje en staat nog 51x in de app; binnen .stijl2 is die
+     overal vervangen door .meta. */
+  .stijl2 .note{
+    display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--ink-2);
+    background:var(--warn-soft);border:1px solid color-mix(in srgb, var(--warn) 28%, transparent);
+    border-radius:8px;padding:10px 12px;
+  }
+  .stijl2 .note b{color:var(--ink)}
+  .stijl2 .note.stop{background:var(--stop-soft);border-color:color-mix(in srgb, var(--stop) 30%, transparent)}
+
+  /* 8 — KENTEKEN. Geel plaatje met blauwe EU-strook: in één oogopslag
+     herkenbaar in elke lijst. */
+  .stijl2 .kenteken{
+    font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:11.5px;letter-spacing:.06em;
+    background:var(--plate);color:var(--plate-ink);border-radius:3px;
+    padding:2px 6px 2px 12px;position:relative;white-space:nowrap;
+  }
+  .stijl2 .kenteken::before{content:"";position:absolute;left:0;top:0;bottom:0;width:8px;background:var(--plate-eu);border-radius:3px 0 0 3px}
+  .stijl2 .kenteken.groot{font-size:14px;padding:4px 9px 4px 16px}
+  .stijl2 .kenteken.groot::before{width:11px}
+
+  /* 9 — TABEL */
+  .stijl2 .tabelwrap{overflow-x:auto}   /* de pagina schuift nooit zijwaarts */
+  .stijl2 table.pvp{width:100%;border-collapse:collapse;font-size:14px}
+  .stijl2 table.pvp th{
+    text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);
+    font:600 11px/1.6 "Archivo",sans-serif;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);
+    white-space:nowrap;
+  }
+  .stijl2 table.pvp td{padding:10px 12px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+  .stijl2 table.pvp tr:last-child td{border-bottom:0}
+  .stijl2 table.pvp tbody tr:hover{background:var(--surface-2)}
+  .stijl2 table.pvp td.num,.stijl2 table.pvp th.num{text-align:right;font-variant-numeric:tabular-nums}
+
+  /* 10 — VOORTGANGSRING */
+  .stijl2 .ring{width:34px;height:34px;flex:none;transform:rotate(-90deg)}
+  .stijl2 .ring circle{fill:none;stroke-width:3.4}
+  .stijl2 .ring .ring-baan{stroke:var(--line)}
+  .stijl2 .ring .ring-vul{
+    stroke:var(--accent);stroke-linecap:round;
+    stroke-dasharray:94.2;                              /* 2*pi*r bij r=15 */
+    stroke-dashoffset:calc(94.2 - (94.2 * var(--pct) / 100));
+    transition:stroke-dashoffset .3s ease;
+  }
+  .stijl2 .ring-tekst{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--ink-2)}
+
+  /* 11 — KLEINE SCHERMEN */
+  @media (max-width:640px){
+    .stijl2 .rij-kop{grid-template-columns:52px 1fr;row-gap:8px}
+    .stijl2 .rij-rechts{grid-column:1 / -1;justify-content:space-between}
+  }
+
+  /* 12 — SCHERMSPECIFIEK: Vandaag.
+     Twee dingen die de bronstijl niet kent. `.rij-plat` is een lijstregel zonder uitklap: een
+     to-do heeft een selectievakje en een keuzelijst, en die mogen niet in een <button> staan —
+     geneste bedienbare elementen werken niet. `.kolommen` vervangt de oude .cols, want die hangt
+     aan de oude tokens. */
+  .stijl2 .kolommen{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+  .stijl2 .rij-plat{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:10px var(--pad)}
+  .stijl2 .rij-plat + .rij-plat{border-top:1px solid var(--line-soft)}
+  .stijl2 .rij-plat .tekst{min-width:0}
+  .stijl2 .rij-plat .tekst .naam{font-weight:600;letter-spacing:-.005em}
+  .stijl2 .klikbaar{cursor:pointer}
+  .stijl2 .klikbaar:hover{background:var(--surface-2)}
+  .stijl2 .leegregel{padding:16px var(--pad);color:var(--ink-3);font-size:13.5px}
+  /* Het selectievakje komt uit de oude stijl (JS hangt aan .chk/.box); alleen de kleuren
+     bijtrekken, zodat er geen blauw vinkje in een groen scherm staat. */
+  .stijl2 .chk .box{border-color:var(--line);background:var(--surface)}
+  .stijl2 .chk input:checked + .box{background:var(--accent);border-color:var(--accent)}
+  .stijl2 .chk:hover .box{border-color:var(--accent)}
+
   :root{
     /* PRIEVA huisstijl: blauwverloop #0D9EBF → #056A7F, zwart woordmerk, Montserrat */
     --brand:#0d9ebf; --brand-2:#056a7f;
@@ -985,22 +1272,25 @@ async function notitieWeg(id){
    per ongeluk. */
 function notitiePaneel(){
   if(!apiOk)return "";
-  const rij=n=>`<div class="taak ${n.klaar?'af':''}">
+  const rij=n=>`<div class="rij-plat">
     <label class="chk" title="${n.klaar?'Terugzetten':'Afvinken'}"><input type="checkbox" ${n.klaar?'checked':''} onchange="notitieAf(${n.id},this.checked)"><span class="box"></span></label>
-    <span class="tk">${esc(n.tekst)}${n.auto?` <span class="muted" style="font-size:11px">· ${esc(n.auto)}</span>`:''}
-      <span class="muted" style="font-size:11px">· ${esc(n.door||'?')}${n.ts?' · '+fmtDate(n.ts):''}</span></span>
-    ${isAdmin()?`<button class="btn btn-ghost btn-sm" title="Definitief verwijderen" onclick="notitieWeg(${n.id})">✕</button>`:''}
+    <div class="tekst"><div class="naam" style="${n.klaar?'color:var(--ink-3)':''}">${esc(n.tekst)}</div>
+      <div class="meta">${n.auto?esc(n.auto)+' · ':''}${esc(n.door||'?')}${n.ts?' · '+fmtDate(n.ts):''}</div></div>
+    ${isAdmin()?`<button class="knop stil" title="Definitief verwijderen" onclick="notitieWeg(${n.id})">✕</button>`:''}
   </div>`;
   const af=notities.klaar;
-  return `<div class="card" style="margin-top:22px"><h3>Snelle notities ${notities.open.length?`<span class="gcount">${notities.open.length}</span>`:''}</h3>
-    <div class="card-body">
-      <div style="display:flex;gap:8px;margin-bottom:10px">
-        <input id="notitie-nieuw" class="inp" style="flex:1;min-width:200px" placeholder="Iets wat je even kwijt moet…" onkeydown="if(event.key==='Enter')notitieToevoegen()">
-        <button class="btn btn-primary btn-sm" onclick="notitieToevoegen()">Toevoegen</button>
+  return `<div class="panel">
+    <div class="panel-head"><h2>Snelle notities</h2>${notities.open.length?`<span class="count">${notities.open.length}</span>`:''}</div>
+    <div class="panel-body" style="padding-bottom:12px">
+      <div class="rij" style="flex-wrap:nowrap">
+        <input type="text" id="notitie-nieuw" style="flex:1;min-width:200px" placeholder="Iets wat je even kwijt moet…" onkeydown="if(event.key==='Enter')notitieToevoegen()">
+        <button class="knop primair" onclick="notitieToevoegen()">Toevoegen</button>
       </div>
-      ${notities.open.length?notities.open.map(rij).join(""):`<div class="empty" style="padding:14px">Niets open. Typ hierboven wat er niet als taak in past — een telefoontje, een afspraak, iets om niet te vergeten.</div>`}
-      ${af.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--muted);font-weight:600">${af.length} afgevinkt</summary><div style="margin-top:6px">${af.map(rij).join("")}</div></details>`:''}
-    </div></div>`;
+    </div>
+    ${notities.open.length?`<div class="lijst">${notities.open.map(rij).join("")}</div>`
+      :`<div class="leegregel">Niets open. Typ hierboven wat er niet als taak in past — een telefoontje, een afspraak, iets om niet te vergeten.</div>`}
+    ${af.length?`<details><summary class="meta" style="cursor:pointer;padding:10px var(--pad)">${af.length} afgevinkt</summary><div class="lijst">${af.map(rij).join("")}</div></details>`:''}
+  </div>`;
 }
 /* Betaald / onbetaald per komende auto. De tellers komen kant-en-klaar van de server mee — het
    scherm rekent niets uit. `betalingen` is per auto-id, `betaalTotalen` zijn de drie getallen
@@ -1120,54 +1410,61 @@ function renderVandaag(){
   function todoRow(x){
     const person=x.tk?x.tk.owner:x.v.owner;
     const opts=['<option value="">— toewijzen</option>'].concat(PEOPLE.map(p=>`<option value="${p}" ${person===p?'selected':''}>${p}</option>`)).join("");
-    const ageChip=ts=>{const a=ageStr(ts); return a?` · <span class="agechip" title="Staat zo lang open">⏱ ${a} open</span>`:'';};
+    const ageChip=ts=>{const a=ageStr(ts); return a?` <span class="status st-wacht" title="Staat zo lang open">${a} open</span>`:'';};
     /* Eén soort taakregel. Geen labels "Los" en "Extra" meer: dat waren de twee administraties, en
        die zijn er niet meer. Hangt hij aan een auto, dan staat die auto eronder en klik je erheen. */
     if(x.tk){ const t=x.tk; const veh=t.vehicleId?V.find(v=>v.id===t.vehicleId):null;
       const sub=veh?`${esc(veh.merk)} ${esc(veh.model)} · ${esc(veh.kenteken!=='—'?veh.kenteken:veh.vin)}`
                 : (t.vehicleId?esc(t.auto||t.vehicleId):'Algemene taak');
-      return `<div class="todo"><label class="chk" title="Afvinken"><input type="checkbox" onchange="taakAf(${t.id},this.checked)"><span class="box"></span></label><div class="body" ${veh?`onclick="openVeh('${esc(veh.id)}')" style="cursor:pointer"`:'style="cursor:default"'}><div class="act">${esc(t.tekst)}</div><div class="veh">${sub}${ageChip(t.ts)}</div></div><select class="assign" onchange="taakWie(${t.id},this.value)">${opts}</select></div>`;}
+      return `<div class="rij-plat"><label class="chk" title="Afvinken"><input type="checkbox" onchange="taakAf(${t.id},this.checked)"><span class="box"></span></label><div class="tekst ${veh?'klikbaar':''}" ${veh?`onclick="openVeh('${esc(veh.id)}')"`:''}><div class="naam">${esc(t.tekst)}</div><div class="meta">${sub}${ageChip(t.ts)}</div></div><select onchange="taakWie(${t.id},this.value)">${opts}</select></div>`;}
     const v=x.v,a=x.a;
     // Een verkoopstap is met één klik af; een trajectstap loopt via de auto zelf.
     const vink=a.verkoop?`<label class="chk" title="Afvinken" onclick="event.stopPropagation()"><input type="checkbox" onchange="zetVerkoopstap('${esc(v.id)}','${a.verkoop}',this.checked)"><span class="box"></span></label>`
-                        :`<span class="tk"></span>`;
-    return `<div class="todo">${vink}<div class="body" onclick="openVeh('${v.id}')"><div class="act">${a.actie}</div><div class="veh">${v.merk} ${v.model} · ${v.kenteken!=='—'?v.kenteken:v.vin}${ageChip(v.arrivedAt)}</div></div><select class="assign" onchange="assign('${v.id}',this.value)">${opts}</select></div>`;}
+                        :`<span style="width:24px"></span>`;
+    return `<div class="rij-plat">${vink}<div class="tekst klikbaar" onclick="openVeh('${v.id}')"><div class="naam">${esc(a.actie)}</div><div class="meta">${esc(v.merk)} ${esc(v.model)} ${kentekenHtml(v.kenteken)||`<span class="mono">${esc(v.vin||'')}</span>`}${ageChip(v.arrivedAt)}</div></div><select onchange="assign('${v.id}',this.value)">${opts}</select></div>`;}
   function personCard(name,list){const disp=name==="_"?"Niet toegewezen":name; const av=name==="_"?`<span class="pav" style="background:var(--slate)">?</span>`:pav(name);
-    return `<div class="person-card"><div class="person-head">${av}<span class="pn">${disp}</span><span class="pc">${list.length} ta${list.length===1?'ak':'ken'}</span></div>${list.length?list.map(todoRow).join(""):`<div class="empty" style="padding:16px">Geen open taken</div>`}</div>`;}
+    return `<div class="panel"><div class="panel-head"><span class="rij" style="gap:9px">${av}<h2>${esc(disp)}</h2></span><span class="count${list.length?'':' warn'}">${list.length} ta${list.length===1?'ak':'ken'}</span></div>${list.length?`<div class="lijst">${list.map(todoRow).join("")}</div>`:`<div class="leegregel">Geen open taken</div>`}</div>`;}
 
+  /* Alles binnen <div class="stijl2">: dat omhulsel draagt de nieuwe tokens en componenten. De
+     andere schermen staan er buiten en blijven daardoor letterlijk onaangeraakt. */
   app.innerHTML=`
-    <h1 class="page-title">Vandaag</h1>
-    <p class="page-sub">Je dagelijkse leidraad: hieronder staan alle open taken. Verder onderaan vink je auto's aan zodra ze binnen zijn.</p>
-    ${(()=>{const nr=(bpmData.notifs||[]).filter(n=>!n.seen); if(!nr.length)return ''; return `<div class="banner" style="border-color:#bfe6d1;background:linear-gradient(180deg,#eefaf3,#e3f5ea)">
-      <div class="bi" style="background:var(--green)">${ico("doc",18)}</div>
-      <div style="flex:1"><div class="bt">${nr.length} nieuw BPM-taxatierapport${nr.length===1?'':'en'} van S-TAX</div>
-        <div class="bs">${nr.slice(0,4).map(n=>{const vv=V.find(x=>x.id===n.id);return (vv?`${vv.merk} ${vv.model}`:'Auto')+' · '+fmtDate(n.ts);}).join(' — ')}</div></div>
-      <button class="btn btn-ghost btn-sm" onclick="markBpmSeen()">Gezien</button></div>`;})()}
+    <div class="stijl2">
+    <div>
+      <h1>Vandaag</h1>
+      <p class="sub" style="margin:4px 0 0">Je dagelijkse leidraad: hieronder staan alle open taken. Verder onderaan vink je auto's aan zodra ze binnen zijn.</p>
+    </div>
+    ${(()=>{const nr=(bpmData.notifs||[]).filter(n=>!n.seen); if(!nr.length)return ''; return `<div class="note">
+      <span aria-hidden="true" style="flex:none;margin-top:1px">${ico("doc",18)}</span>
+      <div style="flex:1"><b>${nr.length} nieuw BPM-taxatierapport${nr.length===1?'':'en'} van S-TAX</b><br>
+        ${nr.slice(0,4).map(n=>{const vv=V.find(x=>x.id===n.id);return esc(vv?`${vv.merk} ${vv.model}`:'Auto')+' · '+fmtDate(n.ts);}).join(' — ')}</div>
+      <button class="knop stil" onclick="markBpmSeen()">Gezien</button></div>`;})()}
     ${agentBanner()}
     ${afleverPaneel()}
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 4px 12px">
-      <h3 style="margin:0;font-size:16px">To-do — per persoon <span class="agechip" style="color:var(--accent);background:var(--blue-soft)">${openCount} open</span></h3>
-      ${isAdmin()?`<button class="btn btn-ghost btn-sm" onclick="go('logboek')">${ico("logboek")} Logboek</button>`:''}
+    <div class="rij" style="justify-content:space-between">
+      <span class="rij" style="gap:9px"><h2>To-do — per persoon</h2><span class="count">${openCount} open</span></span>
+      ${isAdmin()?`<button class="knop stil" onclick="go('logboek')">${ico("logboek")} Logboek</button>`:''}
     </div>
-    ${(lop.length||topen.length)? `<div class="cols">${PEOPLE.map(p=>personCard(p,groups[p]||[])).join("")}</div>${groups["_"].length?`<div style="margin-top:16px">${personCard("_",groups["_"])}</div>`:""}`
-      : `<div class="card"><div class="empty"><div class="eb">${ico("inbox",26)}</div>Nog geen open taken. Vink onderaan een auto op binnen, of voeg met <b>${ico("plus")} To-do</b> rechtsboven een losse taak toe.</div></div>`}
+    ${(lop.length||topen.length)? `<div class="kolommen">${PEOPLE.map(p=>personCard(p,groups[p]||[])).join("")}</div>${groups["_"].length?personCard("_",groups["_"]):""}`
+      : `<div class="panel"><div class="panel-body"><p class="meta" style="margin:0">Nog geen open taken. Vink onderaan een auto op binnen, of voeg met <b>To-do</b> rechtsboven een losse taak toe.</p></div></div>`}
     ${advertentiePaneel()}
     ${notitiePaneel()}
-    <div style="margin-top:22px">${garantiePaneel()}</div>
-    <div class="kpis" style="margin-top:22px">
-      <div class="kpi"><div class="bar" style="background:var(--blue)"></div><div class="lab">Komende</div><div class="val">${kom.length}</div><div class="sub">nog niet binnen</div></div>
-      <div class="kpi"><div class="bar" style="background:var(--green)"></div><div class="lab">Binnengekomen</div><div class="val">${lop.length}</div><div class="sub">aangevinkt</div></div>
-      <div class="kpi"><div class="bar" style="background:var(--accent)"></div><div class="lab">Open taken</div><div class="val">${openCount}</div><div class="sub">stap te zetten</div></div>
-      <div class="kpi"><div class="bar" style="background:var(--slate)"></div><div class="lab">Niet toegewezen</div><div class="val">${groups["_"].length}</div><div class="sub">nog niemand op</div></div>
+    ${garantiePaneel()}
+    <div class="panel"><div class="panel-body"><div class="velden">
+      <div class="veld"><span class="lbl">Komende</span><span class="val mono">${kom.length}</span><span class="meta">nog niet binnen</span></div>
+      <div class="veld"><span class="lbl">Binnengekomen</span><span class="val mono">${lop.length}</span><span class="meta">aangevinkt</span></div>
+      <div class="veld"><span class="lbl">Open taken</span><span class="val mono">${openCount}</span><span class="meta">stap te zetten</span></div>
+      <div class="veld"><span class="lbl">Niet toegewezen</span><span class="val mono">${groups["_"].length}</span><span class="meta">nog niemand op</span></div>
+    </div></div></div>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="rij" style="gap:9px"><h2>Verwacht binnenkort</h2><span class="count">${verwacht.length}</span></span>
+        <button class="knop stil" onclick="go('komende')">Alle komende →</button>
+      </div>
+      <div class="panel-body" style="padding-bottom:8px"><p class="meta" style="margin:0">Je weet nog niet precies welke van de verwachte auto's morgen komen — vink ze aan zodra ze er zijn. Elke vink start stap 1 (RDW-foto's) en zet de to-do in gang.</p></div>
+      ${verwacht.length?verwachtTabel(verwacht):`<div class="leegregel">Alle verwachte auto's zijn aangevinkt.</div>`}
     </div>
-    <div class="banner">
-      <div class="bi">${ico("taken",21)}</div>
-      <div><div class="bt">Afvinken bij binnenkomst</div>
-        <div class="bs">Je weet nog niet precies welke van de verwachte auto's morgen komen — vink ze aan zodra ze er zijn. Elke vink start stap 1 (RDW-foto's) en zet de to-do in gang.</div></div>
-    </div>
-    <div class="card" style="margin-bottom:18px"><h3>Verwacht binnenkort — aanvinken zodra binnen <span class="btn btn-ghost btn-sm" onclick="go('komende')">Alle komende →</span></h3>
-      <div class="card-body" style="padding:0 4px">${verwacht.length?komTable(verwacht):`<div class="empty">Alle verwachte auto's zijn aangevinkt.</div>`}</div></div>
     ${agentRegel()}
+    </div>
   `;
 }
 
@@ -1179,7 +1476,7 @@ function agentRegel(){
   const nu=Date.now();
   const oud=t=>{ if(!t) return 'nog nooit'; const m=Math.round((nu-t)/60000);
     return m<2?'zojuist':m<90?m+' min geleden':m<36*60?Math.round(m/60)+' uur geleden':Math.round(m/1440)+' dagen geleden'; };
-  return `<div class="note" style="text-align:right;margin:0 4px 6px">${
+  return `<div class="meta" style="text-align:right">${
     agents.map(a=>`${AGENT_NAMEN[a.naam]||a.naam}: ${a.ok===false?'<b>loopt vast</b> — laatst gelukt '+oud(a.geluktTs):'bijgewerkt '+oud(a.geluktTs)}`).join(' · ')}</div>`;
 }
 /* ===== Logboek (alleen admin: Vince & Floris) ===== */
@@ -2359,22 +2656,24 @@ function advertentieKaart(v){
 function advertentiePaneel(){
   const lijst=advertentieWerk.werk.filter(w=>w.stand!=='concept');
   if(!lijst.length)return '';
-  const rij=w=>`<div class="todo">
-      <div class="body" onclick="openVeh('${esc(w.id)}')" title="Naar de auto">
-        <div class="act">${esc((w.merk||'')+' '+(w.model||''))} <span class="muted" style="font-weight:500">${esc(w.uitv||'')}</span></div>
-        <div class="muted" style="font-size:11px;margin-top:2px">
-          ${w.soortWerk==='nieuw'?'nieuw opbouwen':'aanvullen — staat al in Mobilox'}
-          ${w.coc?' · CoC aanwezig':''}${w.docs?` · ${w.docs} document${w.docs===1?'':'en'}`:''}
-          ${w.stand==='bezig'?' · mee bezig':''}</div>
+  const rij=w=>`<div class="rij-plat">
+      <span></span>
+      <div class="tekst klikbaar" onclick="openVeh('${esc(w.id)}')" title="Naar de auto">
+        <div class="naam">${esc((w.merk||'')+' '+(w.model||''))} <span class="meta">${esc(w.uitv||'')}</span></div>
+        <div class="meta">${kentekenHtml(w.kenteken)}
+          <span>${w.soortWerk==='nieuw'?'nieuw opbouwen':'aanvullen — staat al in Mobilox'}${w.coc?' · CoC aanwezig':''}${w.docs?` · ${w.docs} document${w.docs===1?'':'en'}`:''}</span>
+          ${w.stand==='bezig'?`<span class="status st-wacht">mee bezig</span>`:''}</div>
       </div>
-      ${w.kenteken&&w.kenteken!=='—'?`<span class="vanwie">${esc(w.kenteken)}</span>`:''}
-      <button class="btn btn-ghost btn-sm" onclick="advertentieStand('${esc(w.id)}','concept')" title="Het concept staat klaar in Mobilox">Concept klaar</button>
+      <button class="knop" onclick="advertentieStand('${esc(w.id)}','concept')" title="Het concept staat klaar in Mobilox">Concept klaar</button>
     </div>`;
-  return `<div style="margin-top:22px"><div class="card"><h3>Advertenties voorbereiden
-      <span class="muted" style="font-weight:500;font-size:12px">${lijst.length} auto${lijst.length===1?'':"'s"}${advertentieWerk.concept?` · ${advertentieWerk.concept} concept klaar`:''}</span></h3>
-    <div style="padding:2px 0">${lijst.map(rij).join('')}</div>
-    <div class="note" style="margin:0 16px 12px">De advertentie kan af zodra de auto binnen is; alleen de foto's ontbreken dan nog.</div>
-    </div></div>`;
+  return `<div class="panel">
+    <div class="panel-head">
+      <span class="rij" style="gap:9px"><h2>Advertenties voorbereiden</h2><span class="count">${lijst.length}</span></span>
+      ${advertentieWerk.concept?`<span class="status st-klaar">${advertentieWerk.concept} concept klaar</span>`:''}
+    </div>
+    <div class="panel-body" style="padding-bottom:8px"><p class="meta" style="margin:0">De advertentie kan af zodra de auto binnen is; alleen de foto's ontbreken dan nog.</p></div>
+    <div class="lijst">${lijst.map(rij).join('')}</div>
+  </div>`;
 }
 
 /* De kaart op de autopagina. `mag` zegt wat deze rol mag: Carport ziet dezelfde regels maar mag
@@ -2806,13 +3105,13 @@ function agentBanner(){
   if(!stuk.length) return '';
   const oud=t=>{ if(!t) return 'nog nooit gelukt'; const m=Math.round((nu-t)/60000);
     return m<90?`laatste keer ${m} min geleden`:`laatste keer ${Math.round(m/60)} uur geleden`; };
-  return `<div class="banner" style="border-color:#f3d3c9;background:linear-gradient(180deg,#fdf1ec,#fbe7df)">
-    <div class="bi" style="background:var(--amber)">${ico("waarschuwing",18)}</div>
-    <div style="flex:1"><div class="bt">${stuk.length===1?'Een achtergrondtaak loopt niet':'Achtergrondtaken lopen niet'}</div>
-      <div class="bs">${stuk.map(a=>`${AGENT_NAMEN[a.naam]||a.naam}: ${oud(a.geluktTs)}${a.melding&&a.ok===false?' — '+esc(a.melding):''}`).join(' · ')}.
-        ${stuk.some(a=>(AGENT_SOORT[a.naam]||AGENT_STANDAARD).voedtScherm)?'Wat hieronder staat kan verouderd zijn.':''}
-        ${[...new Set(stuk.map(a=>(AGENT_SOORT[a.naam]||AGENT_STANDAARD).slot).filter(Boolean))].join(' ')}
-      </div></div></div>`;
+  return `<div class="note stop">
+    <span aria-hidden="true" style="flex:none;margin-top:1px">${ico("waarschuwing",18)}</span>
+    <div><b>${stuk.length===1?'Een achtergrondtaak loopt niet':'Achtergrondtaken lopen niet'}</b><br>
+      ${stuk.map(a=>`${AGENT_NAMEN[a.naam]||a.naam}: ${oud(a.geluktTs)}${a.melding&&a.ok===false?' — '+esc(a.melding):''}`).join(' · ')}.
+      ${stuk.some(a=>(AGENT_SOORT[a.naam]||AGENT_STANDAARD).voedtScherm)?'Wat hieronder staat kan verouderd zijn.':''}
+      ${[...new Set(stuk.map(a=>(AGENT_SOORT[a.naam]||AGENT_STANDAARD).slot).filter(Boolean))].join(' ')}
+    </div></div>`;
 }
 // De openstaande werkbon van een auto, als die een afleverdatum heeft. Gebruikt op Lopende en op
 // de auto zelf, zodat de afleverdatum niet alleen op de Carport-pagina staat.
@@ -2835,6 +3134,51 @@ function takenVan(vehicleId){
            totaal: carport.length+eigen.length,
            af: carport.filter(t=>t.klaar).length+eigen.filter(t=>t.klaar).length };
 }
+/* ===== Bouwstenen van de nieuwe huisstijl (09-09-2026) =====
+   Eigen varianten náást takenRing/tijdChip/komTable in plaats van een wijziging daaraan: die
+   staan ook op Lopende, Carport en Komende, en die schermen zijn deze ronde niet aan de beurt.
+   Ze verdwijnen zodra het laatste scherm om is en er nog één stijl over is. */
+const kentekenHtml = k => (k && k !== '—') ? `<span class="kenteken">${esc(k)}</span>` : '';
+
+function ringNieuw(af,totaal,titel){
+  if(!totaal) return '';
+  const pct=Math.round(af/totaal*100);
+  // cx/cy/r staan als attribuut en niet in de CSS: als geometrie-eigenschap zijn ze pas recent
+  // in CSS te zetten, en een ring die nergens staat is erger dan een regel meer markup.
+  return `<span class="rij" style="gap:6px" title="${esc(titel||`${af} van de ${totaal} taken afgevinkt`)}">
+    <svg class="ring" viewBox="0 0 36 36" style="--pct:${pct}" aria-hidden="true">
+      <circle class="ring-baan" cx="18" cy="18" r="15"></circle>
+      <circle class="ring-vul" cx="18" cy="18" r="15"></circle>
+    </svg><span class="ring-tekst">${af}/${totaal}</span></span>`;
+}
+
+/* Zelfde rekenwerk als tijdChip, andere verpakking: een .status-badge in plaats van een .dl-chip. */
+function tijdStatus(tot,label){
+  const t=esc(label||'');
+  if(!tot) return `<span class="status st-wacht" title="${t}">geen datum</span>`;
+  const over=tot-Date.now();
+  const dag=n=>n===1?'1 dag':n+' dagen', uur=n=>n===1?'1 uur':n+' uur';
+  if(over<=0){ const d=Math.ceil(-over/86400000); return `<span class="status st-stop" title="${t}">${dag(d)} over tijd</span>`; }
+  const d=Math.floor(over/86400000), u=Math.floor((over%86400000)/3600000);
+  const tekst = d>0 ? (dag(d)+(d<7?' '+uur(u):'')) : (u>0?uur(u):'minder dan een uur');
+  return `<span class="status ${d>=2?'st-gereed':'st-wacht'}" title="${t}">nog ${tekst}</span>`;
+}
+
+/* De verwachte auto's onderaan Vandaag. Een eigen tabel en niet komTable(): die staat ook op
+   Komende, en dat scherm blijft deze ronde zoals het was. */
+function verwachtTabel(lijst){
+  return `<div class="tabelwrap"><table class="pvp">
+    <thead><tr><th>Binnen</th><th>Auto</th><th>Kenteken</th><th class="num">Km</th><th>Transport</th><th>Soort</th></tr></thead>
+    <tbody>${lijst.slice().sort(nieuwsteEerst).map(v=>`<tr class="klikbaar" onclick="openVeh('${esc(v.id)}')">
+      <td onclick="event.stopPropagation()"><label class="chk" title="Aanvinken zodra de auto er is"><input type="checkbox" onchange="arrive('${esc(v.id)}',this.checked)"><span class="box"></span></label></td>
+      <td><span class="naam">${esc(v.merk||'')} ${esc(v.model||'')}</span><div class="meta">${esc(v.uitv||'')}</div></td>
+      <td>${kentekenHtml(v.kenteken)||`<span class="mono">${esc(v.vin||'')}</span>`}</td>
+      <td class="num">${v.km==null?'—':Number(v.km).toLocaleString('nl-NL')}</td>
+      <td class="mono">${esc(v.batch||'—')}</td>
+      <td><span class="status ${v.importAuto?'st-wacht':'st-gereed'}">${v.importAuto?'Import':'NL / inruil'}</span></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
 function takenRing(af,totaal,titel){
   if(!totaal) return '';
   const pct=Math.round(af/totaal*100);
@@ -2898,7 +3242,7 @@ function afleverPaneel(){
       <div class="taakkolom" style="flex:1;min-width:250px" data-kant="${kant}"
            ondragover="taakSleepOver(event,this)" ondragleave="this.classList.remove('doel')" ondrop="taakSleepDrop(event,this)">
         <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">
-          <span style="font-weight:700;font-size:12px">${titel}</span>${tijdChip(tot,uitleg)}
+          <span class="lbl">${titel}</span>${tijdStatus(tot,uitleg)}
         </div>
         ${taken.length?taken.map(t=>`<div class="taak ${t.klaar?'af':''}" style="padding:4px 0" draggable="true" ondragstart="taakSleepStart(event,${t.id},'${t.soort}')" ondragend="taakSleepEind()" title="Sleep naar de andere kolom als dit werk daar hoort">
             <label class="chk" title="Afvinken"><input type="checkbox" ${t.klaar?'checked':''} onchange="carportTaakAf(${t.id},this.checked)"><span class="box"></span></label>
@@ -2906,40 +3250,52 @@ function afleverPaneel(){
             <span class="tk">${esc(t.tekst)}</span>
             ${t.door==='mobilox'?`<span class="vanwie" title="Uit de verkoopovereenkomst">Overeenkomst</span>`:''}
             ${t.door==='carport'?`<span class="vanwie">Carport</span>`:''}
-          </div>`).join(''):`<div class="note" style="margin:0">Niets te doen.</div>`}
+          </div>`).join(''):`<div class="meta">Niets te doen.</div>`}
       </div>`;
-    return `<div class="bon">
-      <div class="bon-kop" onclick="afleverKlap(${b.id})" style="cursor:pointer">
-        <span class="bon-greep" style="cursor:pointer">${uit?'▾':'▸'}</span>
-        <div class="bon-auto"><div class="nm">${esc(a.merk||'')} ${esc(a.model||'')}</div>
-          <div class="id">${a.kenteken&&a.kenteken!=='—'?esc(a.kenteken):esc(a.vin||'')} · aflevering ${esc(b.afleverdatum)}</div></div>
-        ${tijdChip(aflever,`Aflevering ${b.afleverdatum}`)}
-        ${b.status!=='open'?`<span class="badge b-lopende" title="Carport heeft dit werk afgemeld">Carport klaar</span>`:''}
-        ${takenRing(tv.af,tv.totaal,`${tv.af} van de ${tv.totaal} taken afgevinkt`)||`<span class="note" style="margin:0">geen taken</span>`}
-        ${magPlannen()?`<span onclick="event.stopPropagation()" style="display:flex;gap:6px;align-items:center">
-          <input class="inp" id="afl-datum-${b.id}" style="width:118px;padding:4px 8px;font-size:12px" value="${esc(b.afleverdatum||'')}" title="Afleverdatum verzetten" onkeydown="if(event.key==='Enter')afleverDatum(${b.id})">
-          <button class="btn btn-ghost btn-sm" onclick="afleverDatum(${b.id})" title="Nieuwe datum opslaan">Verzetten</button>
-          <button class="btn btn-primary btn-sm" onclick="afleveren(${b.id})" title="De auto staat bij de klant">Afgeleverd</button>
-        </span>`:''}
-      </div>
-      ${uit?`<div class="bon-body" style="display:flex;gap:26px;flex-wrap:wrap">
+    /* De kop is een echte <button>, zodat Tab en Enter werken. Daarom staan het datumveld en de
+       knoppen Verzetten/Afgeleverd nu ín de uitklap en niet meer in de kopregel: een <input> of
+       <button> binnen een <button> is ongeldig en werkt in geen enkele browser betrouwbaar. */
+    return `<div class="rij-item" open-state="${uit?1:0}">
+      <button class="rij-kop" aria-expanded="${uit}" aria-controls="afl-${b.id}" onclick="afleverKlap(${b.id})">
+        <span class="tijd">${esc((b.afleverdatum||'').slice(0,5))}</span>
+        <span class="rij-titel">
+          <span class="naam">${esc(a.merk||'')} ${esc(a.model||'')}</span>
+          <span class="meta">${kentekenHtml(a.kenteken)||`<span class="mono">${esc(a.vin||'')}</span>`} aflevering ${esc(b.afleverdatum||'')}</span>
+        </span>
+        <span class="rij-rechts">
+          ${tijdStatus(aflever,`Aflevering ${b.afleverdatum}`)}
+          ${b.status!=='open'?`<span class="status st-klaar" title="Carport heeft dit werk afgemeld">Carport klaar</span>`:''}
+          ${ringNieuw(tv.af,tv.totaal,`${tv.af} van de ${tv.totaal} taken afgevinkt`)||`<span class="meta">geen taken</span>`}
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </span>
+      </button>
+      ${uit?`<div class="rij-body" id="afl-${b.id}"><div style="display:flex;gap:26px;flex-wrap:wrap">
         ${takenlijst('Bij Carport',carportTaken,carportTot,`Klaar ${marge} dagen vóór aflevering, zodat de auto nog naar de poetser kan`,'carport')}
         ${takenlijst('Bij de poetser',poetsTaken,aflever,`Vóór de aflevering op ${b.afleverdatum}`,'poetser')}
         ${tv.eigen.length?`<div style="flex:1;min-width:250px">
-          <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span style="font-weight:700;font-size:12px">Bij Prieva</span>
-            <span class="note" style="margin:0">taken op deze auto</span></div>
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px"><span class="lbl">Bij Prieva</span>
+            <span class="meta">taken op deze auto</span></div>
           ${tv.eigen.map(st=>`<div class="taak ${st.klaar?'af':''}" style="padding:4px 0">
             <label class="chk" title="Afvinken"><input type="checkbox" ${st.klaar?'checked':''} onchange="taakAf(${st.id},this.checked)"><span class="box"></span></label>
             <span class="tk">${esc(st.tekst)}</span>${st.owner?`<span class="vanwie">${esc(st.owner)}</span>`:''}
           </div>`).join('')}
         </div>`:''}
+      </div>
+      ${magPlannen()?`<div class="acties">
+        <input type="text" id="afl-datum-${b.id}" style="width:124px" value="${esc(b.afleverdatum||'')}" title="Afleverdatum verzetten" onkeydown="if(event.key==='Enter')afleverDatum(${b.id})">
+        <button class="knop" onclick="afleverDatum(${b.id})" title="Nieuwe datum opslaan">Verzetten</button>
+        <button class="knop primair" onclick="afleveren(${b.id})" title="De auto staat bij de klant">Afgeleverd</button>
+      </div>`:''}
       </div>`:''}
     </div>`;
   };
-  return `<div class="card"><h3>Geplande afleveringen <span class="gcount">${lijst.length}</span></h3><div class="card-body">
-    <div class="note" style="margin-top:0">De eerstvolgende bovenaan. Klik een auto open om te zien wat er nog ligt — Carport moet ${marge} dagen vóór de aflevering klaar zijn, daarna is de poetser aan de beurt. Staat de auto bij de klant, druk dan op <b>Afgeleverd</b>.</div>
-    ${lijst.map(rij).join('')}
-  </div></div>` + afgeleverdPaneel();
+  return `<div class="panel">
+    <div class="panel-head"><h2>Geplande afleveringen</h2><span class="count">${lijst.length}</span></div>
+    <div class="panel-body" style="padding-bottom:0">
+      <p class="meta" style="margin:0 0 4px">De eerstvolgende bovenaan. Klap een auto open om te zien wat er nog ligt — Carport moet ${marge} dagen vóór de aflevering klaar zijn, daarna is de poetser aan de beurt. Staat de auto bij de klant, druk dan op <b>Afgeleverd</b>.</p>
+    </div>
+    <div class="lijst">${lijst.map(rij).join('')}</div>
+  </div>` + afgeleverdPaneel();
 }
 
 /* Wat er de afgelopen twee weken is afgeleverd. Kort zichtbaar en niet langer: dit is er om een
@@ -2952,14 +3308,15 @@ function afgeleverdPaneel(){
   // Ingeklapt, want een afgeleverde auto is geen werk meer. Hij staat er alleen voor het geval iemand
   // zich vergist heeft; dan is Terugzetten één klik weg. Uitklappen kost een klik, in beeld staan
   // kost iedereen elke dag ruimte.
-  return `<details style="margin:-6px 4px 18px"><summary class="note" style="cursor:pointer">Afgeleverd — ${l.length} de laatste ${AFGELEVERD_DAGEN} dagen</summary>
-    <div style="margin-top:8px">
-    ${l.map(b=>{const a=b.auto||{};return `<div class="taak af" style="padding:7px 0">
-      <span class="tk"><b>${esc(a.merk||'')} ${esc(a.model||'')}</b> · ${esc(a.kenteken&&a.kenteken!=='—'?a.kenteken:a.vin||'')}
-        — afgeleverd ${esc(b.afgeleverdDatum||'')}${b.afgeleverdDoor?' door '+esc(b.afgeleverdDoor):''}</span>
-      ${magPlannen()?`<button class="btn btn-ghost btn-sm" onclick="afleverTerug(${b.id})">Terugzetten</button>`:''}
+  return `<details><summary class="meta" style="cursor:pointer">Afgeleverd — ${l.length} de laatste ${AFGELEVERD_DAGEN} dagen</summary>
+    <div class="panel" style="margin-top:8px"><div class="lijst">
+    ${l.map(b=>{const a=b.auto||{};return `<div class="rij-plat">
+      <span></span>
+      <span class="tekst"><span class="naam">${esc(a.merk||'')} ${esc(a.model||'')}</span>
+        <span class="meta">${kentekenHtml(a.kenteken)||`<span class="mono">${esc(a.vin||'')}</span>`} afgeleverd ${esc(b.afgeleverdDatum||'')}${b.afgeleverdDoor?' door '+esc(b.afgeleverdDoor):''}</span></span>
+      ${magPlannen()?`<button class="knop stil" onclick="afleverTerug(${b.id})">Terugzetten</button>`:''}
     </div>`;}).join('')}
-    </div></details>`;
+    </div></div></details>`;
 }
 
 /* De drie handelingen rond afleveren. Ze lezen daarna opnieuw in en tekenen de héle pagina opnieuw:
@@ -3002,21 +3359,23 @@ function garantieOpen(){ return garantie.filter(g=>g.status==='open'); }
 function garantieKaart(g){
   const auto=g.auto?`${esc(g.auto.merk)} ${esc(g.auto.model)}`:'';
   const opts=['<option value="">— niemand —</option>'].concat(PEOPLE.map(pp=>`<option value="${pp}" ${g.owner===pp?'selected':''}>${pp}</option>`)).join("");
-  return `<div class="bon" data-gar="${g.id}">
-    <div class="bon-kop">
-      <div class="bon-auto"><div class="nm">${esc(g.omschrijving)}</div>
-        <div class="id">${g.kenteken?esc(g.kenteken):'geen kenteken'}${auto?' · '+auto:(g.kenteken?' · auto niet in PVP gevonden':'')} · gemeld ${fmtDate(g.ts)} door ${esc(g.door||'')}</div></div>
-      <select class="assign" onchange="garantieDoe({actie:'toewijzen',id:${g.id},owner:this.value})">${opts}</select>
-      <button class="btn btn-primary btn-sm" onclick="garantieDoe({actie:'afhandelen',id:${g.id},af:true},'Afgehandeld')">Afgehandeld</button>
-    </div>
-    <div class="bon-body">
-      ${g.melding?`<details><summary class="note" style="cursor:pointer;margin:0 0 8px">De melding zoals binnengekomen</summary><div class="notitie technisch" style="white-space:pre-wrap">${esc(g.melding)}</div></details>`:''}
-      ${g.notities.map(n=>`<div class="notitie klant">${esc(n.tekst)}<div class="wie">${esc(n.door)} · ${fmtDate(n.ts)}</div></div>`).join("")}
-      <div style="display:flex;gap:7px;align-items:center;margin-top:8px;flex-wrap:wrap">
-        <input id="gnot-${g.id}" class="inp" style="flex:1;min-width:200px" placeholder="Notitie…" onkeydown="if(event.key==='Enter')garantieNotitie(${g.id})">
-        <button class="btn btn-ghost btn-sm" onclick="garantieNotitie(${g.id})">Notitie</button>
-        ${g.vehicleId?`<button class="btn btn-ghost btn-sm" onclick="openVeh('${g.vehicleId}')">Naar de auto</button>`:''}
+  return `<div class="kaart" data-gar="${g.id}" style="margin-bottom:10px">
+    <div class="rij" style="justify-content:space-between">
+      <div style="min-width:0">
+        <div class="titel">${esc(g.omschrijving)}</div>
+        <div class="meta">${g.kenteken?kentekenHtml(g.kenteken):'geen kenteken'}${auto?' '+auto:(g.kenteken?' auto niet in PVP gevonden':'')} · gemeld ${fmtDate(g.ts)} door ${esc(g.door||'')}</div>
       </div>
+      <span class="rij">
+        <select onchange="garantieDoe({actie:'toewijzen',id:${g.id},owner:this.value})">${opts}</select>
+        <button class="knop primair" onclick="garantieDoe({actie:'afhandelen',id:${g.id},af:true},'Afgehandeld')">Afgehandeld</button>
+      </span>
+    </div>
+    ${g.melding?`<details><summary class="meta" style="cursor:pointer">De melding zoals binnengekomen</summary><div class="notitie technisch" style="white-space:pre-wrap">${esc(g.melding)}</div></details>`:''}
+    ${g.notities.map(n=>`<div class="notitie klant">${esc(n.tekst)}<div class="wie">${esc(n.door)} · ${fmtDate(n.ts)}</div></div>`).join("")}
+    <div class="rij">
+      <input type="text" id="gnot-${g.id}" style="flex:1;min-width:200px" placeholder="Notitie…" onkeydown="if(event.key==='Enter')garantieNotitie(${g.id})">
+      <button class="knop" onclick="garantieNotitie(${g.id})">Notitie</button>
+      ${g.vehicleId?`<button class="knop stil" onclick="openVeh('${g.vehicleId}')">Naar de auto</button>`:''}
     </div></div>`;
 }
 function garantieNotitie(id){
@@ -3037,22 +3396,25 @@ function garantieToevoegen(){
 }
 function garantiePaneel(){
   const open=garantieOpen(), af=garantie.filter(g=>g.status!=='open');
-  return `<div class="card"><h3>Garantiegevallen <span class="gcount">${open.length}</span></h3><div class="card-body">
-    <div class="note" style="margin-top:0">Meldingen over auto's die al geleverd zijn. Ze staan hier omdat ze bij geen enkele fase horen en anders uit beeld raken.</div>
-    ${open.length?open.map(garantieKaart).join(""):`<div class="empty" style="padding:18px">Geen lopende garantiegevallen.</div>`}
-    <details style="margin-top:10px"><summary class="note" style="cursor:pointer">Nieuw garantiegeval toevoegen</summary>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px">
-        <input id="gar-kenteken" class="inp" style="width:150px" placeholder="Kenteken">
-        <input id="gar-oms" class="inp" style="flex:1;min-width:220px" placeholder="Waar gaat het over? (bijv. koppeling slipt)">
-        <select id="gar-wie" class="assign">${['<option value="">— niemand —</option>'].concat(PEOPLE.map(pp=>`<option value="${pp}">${pp}</option>`)).join("")}</select>
-      </div>
-      <textarea id="gar-mail" class="inp" rows="4" style="width:100%;margin-top:8px" placeholder="Plak hier de mail zoals je hem kreeg — die wordt ongewijzigd bewaard."></textarea>
-      <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="garantieToevoegen()">Toevoegen</button>
-    </details>
-    ${af.length?`<details style="margin-top:10px"><summary class="note" style="cursor:pointer">Afgehandeld (${af.length})</summary>
-      <div style="margin-top:8px">${af.map(g=>`<div class="taak af"><span class="tk">${esc(g.omschrijving)} · ${esc(g.kenteken||'')} — afgehandeld ${g.afTs?fmtDate(g.afTs):''} door ${esc(g.afDoor||'')}</span>
-        <button class="btn btn-ghost btn-sm" onclick="garantieDoe({actie:'afhandelen',id:${g.id},af:false},'Weer op open gezet')">Heropenen</button></div>`).join("")}</div></details>`:''}
-  </div></div>`;
+  return `<div class="panel">
+    <div class="panel-head"><h2>Garantiegevallen</h2><span class="count${open.length?' warn':''}">${open.length}</span></div>
+    <div class="panel-body">
+      <p class="meta" style="margin:0 0 12px">Meldingen over auto's die al geleverd zijn. Ze staan hier omdat ze bij geen enkele fase horen en anders uit beeld raken.</p>
+      ${open.length?open.map(garantieKaart).join(""):`<p class="meta" style="margin:0">Geen lopende garantiegevallen.</p>`}
+      <details style="margin-top:12px"><summary class="meta" style="cursor:pointer">Nieuw garantiegeval toevoegen</summary>
+        <div class="rij" style="margin-top:9px">
+          <input type="text" id="gar-kenteken" style="width:150px" placeholder="Kenteken">
+          <input type="text" id="gar-oms" style="flex:1;min-width:220px" placeholder="Waar gaat het over? (bijv. koppeling slipt)">
+          <select id="gar-wie">${['<option value="">— niemand —</option>'].concat(PEOPLE.map(pp=>`<option value="${pp}">${pp}</option>`)).join("")}</select>
+        </div>
+        <textarea id="gar-mail" rows="4" style="width:100%;margin-top:8px" placeholder="Plak hier de mail zoals je hem kreeg — die wordt ongewijzigd bewaard."></textarea>
+        <button class="knop primair" style="margin-top:8px" onclick="garantieToevoegen()">Toevoegen</button>
+      </details>
+      ${af.length?`<details style="margin-top:10px"><summary class="meta" style="cursor:pointer">Afgehandeld (${af.length})</summary>
+        <div style="margin-top:8px">${af.map(g=>`<div class="rij" style="justify-content:space-between;padding:6px 0;border-top:1px solid var(--line-soft)">
+          <span class="meta">${esc(g.omschrijving)} · ${esc(g.kenteken||'')} — afgehandeld ${g.afTs?fmtDate(g.afTs):''} door ${esc(g.afDoor||'')}</span>
+          <button class="knop stil" onclick="garantieDoe({actie:'afhandelen',id:${g.id},af:false},'Weer op open gezet')">Heropenen</button></div>`).join("")}</div></details>`:''}
+    </div></div>`;
 }
 /* ===== Carport: werkbonnen en planning =====
    De deadline is de gewenste afleverdatum min de marge (standaard 2 dagen), zodat de auto daarna nog
